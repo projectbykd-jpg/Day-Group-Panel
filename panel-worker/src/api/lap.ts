@@ -1,4 +1,4 @@
-// Menu "Laporan Harian" — endpoint Worker.
+// Menu "Laporan Harian" â€” endpoint Worker.
 // Fase A: kredensial (Setting) + Lap Motion + Lap Mozart (API JSON, jalan langsung
 // di Worker). Lap Admin (scraper berat) menyusul lewat GitHub Actions.
 import { requireSession } from "./auth";
@@ -109,7 +109,7 @@ export async function lapRunMotion(env: Env, token: string, startDate: string, e
 				firstStatus === 401
 					? "Token Motion (x-access-token) kedaluwarsa / salah. Perbarui di menu Setting."
 					: cf
-						? "Motion 403 diblokir Cloudflare — API menolak request dari Worker. Modul ini perlu jalur GitHub Actions."
+						? "Motion 403 diblokir Cloudflare â€” API menolak request dari Worker. Modul ini perlu jalur GitHub Actions."
 						: "Motion 403: " + firstText.slice(0, 160),
 		};
 	}
@@ -300,7 +300,7 @@ export async function lapRunMotion(env: Env, token: string, startDate: string, e
 		env,
 		s.username,
 		"LAP MOTION",
-		`${startDate}..${endDate} — DP ${motionDpPga.length}, pending ${pgaPendingError.length}, WD ${motionWdPga.length}` + (truncated ? " (terpotong)" : ""),
+		`${startDate}..${endDate} â€” DP ${motionDpPga.length}, pending ${pgaPendingError.length}, WD ${motionWdPga.length}` + (truncated ? " (terpotong)" : ""),
 		"BERHASIL",
 		"",
 	);
@@ -308,176 +308,51 @@ export async function lapRunMotion(env: Env, token: string, startDate: string, e
 }
 
 // =========================================================================
-// LAP MOZART  (port scrapeStepMozart)
+// LAP MOZART  (via GitHub Actions — API Mozart di belakang Cloudflare menolak
+// request dari Cloudflare Worker, jadi scrape dijalankan di runner GitHub)
 // =========================================================================
 export async function lapRunMozart(
 	env: Env,
 	token: string,
 	startDate: string,
 	endDate: string,
-	opts: { depo?: boolean; wd?: boolean; panelId?: number } = {},
+	_opts: { depo?: boolean; wd?: boolean; panelId?: number } = {},
 ) {
 	const s = await requireSession(env, token, { ignoreMaintenance: true });
 	const c = await lapLoadCreds(env, s.username);
 	if (!c.cookieMozart) return { success: false, message: "Cookie Mozart belum diisi di menu Setting!" };
-
-	const base = normLink(c.linkMozart, "https://test.com");
-	const cookie = c.cookieMozart.trim();
-	const panelId = opts.panelId === undefined || Number.isNaN(opts.panelId) ? 0 : Number(opts.panelId);
-	const doDepo = opts.depo !== false;
-	const doWd = opts.wd !== false;
-	const PAGE = 100;
-
-	const mkHeaders = (ref: string): Record<string, string> => ({
-		accept: "application/json, text/plain, */*",
-		"accept-language": "en-US,en;q=0.9",
-		cookie,
-		origin: base,
-		referer: base + ref,
-		"user-agent": UA,
-		"sec-ch-ua": '"Chromium";v="128", "Not;A=Brand";v="24"',
-		"sec-ch-ua-mobile": "?0",
-		"sec-ch-ua-platform": '"Windows"',
-		"sec-fetch-dest": "empty",
-		"sec-fetch-mode": "cors",
-		"sec-fetch-site": "same-origin",
-		"x-requested-with": "XMLHttpRequest",
-	});
-	const fetchAll = async (path: string, ref: string, baseBody: Rec) => {
-		const rows: Rec[] = [];
-		for (let page = 0; page < MOZART_PAGE_CAP; page++) {
-			let j: Rec | null = null;
-			try {
-				const r = await fetch(base + path, {
-					method: "POST",
-					headers: { "content-type": "application/json", ...mkHeaders(ref) },
-					body: JSON.stringify({ ...baseBody, page_number: page, page_size: PAGE }),
-				});
-				const text = await r.text();
-				if (r.status === 401) throw new Error("MOZART 401: session/token ditolak / kedaluwarsa. Perbarui cookie Mozart.");
-				if (r.status === 403) {
-					const cf = /cloudflare|attention required|cf-ray|just a moment|challenge/i.test(text);
-					throw new Error(
-						cf
-							? "MOZART 403 diblokir Cloudflare — API Mozart menolak request dari Worker. Modul ini perlu dipindah ke GitHub Actions."
-							: "MOZART 403: " + text.slice(0, 160),
-					);
-				}
-				if (r.status >= 400) throw new Error("MOZART HTTP " + r.status + ": " + text.slice(0, 160));
-				j = JSON.parse(text);
-			} catch (e) {
-				if (page === 0) throw e;
-				break;
-			}
-			const found = mozartFindRows(j);
-			rows.push(...found);
-			if (found.length < PAGE) return { rows, truncated: false };
-		}
-		return { rows, truncated: true };
-	};
-
-	let depositData: Rec[] = [];
-	let withdrawData: Rec[] = [];
-	let truncated = false;
-	try {
-		if (doDepo) {
-			const d = await fetchAll("/api/transactions/fetchTransaction", "/transactions", {
-				panel_id: panelId,
-				start_date: startDate,
-				end_date: endDate,
-				not_done_filter: false,
-				filter_by: null,
-			});
-			truncated = truncated || d.truncated;
-			depositData = d.rows.map((r) => ({
-				date: String(pick(r, ["created_at", "date", "transaction_date", "trx_date", "waktu", "time"], "-")),
-				username: String(pick(r, ["username", "user", "player", "user_id", "nama_user"], "-")),
-				name: String(pick(r, ["name", "sender_name", "recipient", "nama", "account_name"], "-")),
-				amount: num(pick(r, ["amount", "nominal", "jumlah"], 0)),
-				bank: String(pick(r, ["bank", "bank_name", "bank_code", "app"], "-")),
-				accountNumber: String(pick(r, ["account_number", "rekening", "bank_account", "no_rek"], "-")),
-				status: String(pick(r, ["status", "status_description", "state", "transaction_status"], "SUCCESS")),
-				panel: String(pick(r, ["panel", "panel_name", "panelName"], "-")),
-			}));
-		}
-		if (doWd) {
-			const w = await fetchAll("/api/wd/fetchWithdrawal", "/wd", {
-				panel_id: panelId,
-				start_date: startDate,
-				end_date: endDate,
-				filter_by: { minimum_amount: 0 },
-			});
-			truncated = truncated || w.truncated;
-			withdrawData = w.rows.map((r) => ({
-				date: String(pick(r, ["created_at", "date", "transaction_date", "trx_date", "waktu", "time"], "-")),
-				username: String(pick(r, ["username", "user", "player", "user_id"], "-")),
-				name: String(pick(r, ["name", "recipient", "recipient_name", "nama", "account_name"], "-")),
-				panel: String(pick(r, ["panel", "panel_name", "panelName"], "-")),
-				amount: num(pick(r, ["amount", "nominal", "jumlah"], 0)),
-				bank: String(pick(r, ["destination", "bank", "bank_name", "bank_code", "app", "to_bank"], "-")),
-				accountNumber: String(pick(r, ["account_number", "rekening", "bank_account", "no_rek"], "-")),
-				status: String(pick(r, ["status", "status_description", "state", "transaction_status"], "-")),
-			}));
-		}
-	} catch (e) {
-		return { success: false, message: e instanceof Error ? e.message : String(e) };
+	const r = await dispatchScrapeJob(env, s.username, "mozart", startDate, endDate);
+	if (r.success && !("reused" in r)) {
+		await logActivity(env, s.username, "LAP MOZART", `Tarik ${startDate}..${endDate} dipicu`, "INFO", "");
 	}
-
-	const sum = (a: Rec[]) => a.reduce((n, x) => n + (num(x.amount) || 0), 0);
-	const summary = {
-		totalDepoRecords: depositData.length,
-		totalDepoAmount: sum(depositData),
-		totalWdRecords: withdrawData.length,
-		totalWdAmount: sum(withdrawData),
-		netAmount: sum(depositData) - sum(withdrawData),
-	};
-	await lapSaveResults(env, s.username, {
-		mozartDepo: depositData,
-		mozartWd: withdrawData,
-		_mozartMeta: [{ summary, truncated, at: startDate + "|" + endDate }],
-	});
-	await logActivity(
-		env,
-		s.username,
-		"LAP MOZART",
-		`${startDate}..${endDate} — DP ${depositData.length}, WD ${withdrawData.length}` + (truncated ? " (terpotong)" : ""),
-		"BERHASIL",
-		"",
-	);
-	return { success: true, startDate, endDate, depositData, withdrawData, summary, truncated };
+	return r;
 }
 
 // =========================================================================
-// LAP ADMIN — via GitHub Actions (scraper berat)
+// LAP ADMIN â€” via GitHub Actions (scraper berat)
 // =========================================================================
 const GH_API = "https://api.github.com";
 
-export async function lapRunAdmin(env: Env, token: string, startDate: string, endDate: string) {
-	const s = await requireSession(env, token, { ignoreMaintenance: true });
+async function dispatchScrapeJob(env: Env, username: string, kind: "admin" | "mozart", startDate: string, endDate: string) {
 	if (!env.GH_TOKEN || !env.GH_REPO) {
-		return { success: false, message: "GitHub Actions belum dikonfigurasi (GH_TOKEN/GH_REPO). Hubungi admin." };
+		return { success: false as const, message: "GitHub Actions belum dikonfigurasi (GH_TOKEN/GH_REPO). Hubungi admin." };
 	}
-	const c = await lapLoadCreds(env, s.username);
-	if (!c.linkAdmin || !c.cookieAdmin) {
-		return { success: false, message: "Link & Cookie Admin belum diisi di menu Setting!" };
-	}
-	// job yang masih jalan untuk user ini -> jangan dobel
 	const running = await env.DB.prepare(
-		`SELECT id FROM lap_job WHERE username = ? AND kind = 'admin' AND status IN ('pending','running')
+		`SELECT id FROM lap_job WHERE username = ? AND kind = ? AND status IN ('pending','running')
 		 AND created_at > datetime('now','+7 hours','-30 minutes') LIMIT 1`,
 	)
-		.bind(s.username)
+		.bind(username, kind)
 		.first<{ id: string }>();
-	if (running) return { success: true, jobId: running.id, message: "Scan sebelumnya masih berjalan.", reused: true };
+	if (running) return { success: true as const, jobId: running.id, message: "Proses sebelumnya masih berjalan.", reused: true };
 
 	const jobId = crypto.randomUUID().replace(/-/g, "");
 	const key = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "").slice(0, 16);
-	const params = JSON.stringify({ startDate, endDate, key });
+	const params = JSON.stringify({ kind, startDate, endDate, key });
 	await env.DB.prepare(
 		`INSERT INTO lap_job (id, username, kind, status, params, message, created_at, updated_at)
-		 VALUES (?, ?, 'admin', 'pending', ?, 'Menunggu GitHub Actions...', ?, ?)`,
+		 VALUES (?, ?, ?, 'pending', ?, 'Menunggu GitHub Actions...', ?, ?)`,
 	)
-		.bind(jobId, s.username, params, tsNow(), tsNow())
+		.bind(jobId, username, kind, params, tsNow(), tsNow())
 		.run();
 
 	const callback = env.PUBLIC_URL || "https://panel-worker.projectbykd.workers.dev";
@@ -494,23 +369,32 @@ export async function lapRunAdmin(env: Env, token: string, startDate: string, en
 	if (resp.status !== 204) {
 		const body = await resp.text();
 		let hint = "";
-		if (resp.status === 404) hint = " — workflow scrape.yml belum ada. Push repo daygroup-scraper dulu.";
-		else if (resp.status === 403) hint = " — token GitHub kurang izin (butuh Actions: Read and write) atau belum akses repo daygroup-scraper.";
-		else if (resp.status === 422) hint = " — branch 'main' belum ada di repo (repo masih kosong).";
-		const detail = (() => {
-			try {
-				return " [" + (JSON.parse(body).message || "") + "]";
-			} catch {
-				return "";
-			}
-		})();
+		if (resp.status === 404) hint = " â€” workflow scrape.yml belum ada. Push repo daygroup-scraper dulu.";
+		else if (resp.status === 403) hint = " â€” token GitHub kurang izin (butuh Actions: Read and write) atau belum akses repo daygroup-scraper.";
+		else if (resp.status === 422) hint = " â€” branch 'main' belum ada di repo (repo masih kosong).";
+		let detail = "";
+		try {
+			detail = " [" + (JSON.parse(body).message || "") + "]";
+		} catch {
+			/* ignore */
+		}
 		await env.DB.prepare(`UPDATE lap_job SET status='error', message=?, updated_at=? WHERE id=?`)
 			.bind("GitHub " + resp.status + detail, tsNow(), jobId)
 			.run();
-		return { success: false, message: "Gagal memicu GitHub Actions (" + resp.status + ")" + detail + hint };
+		return { success: false as const, message: "Gagal memicu GitHub Actions (" + resp.status + ")" + detail + hint };
 	}
-	await logActivity(env, s.username, "LAP ADMIN", `Scan ${startDate}..${endDate} dipicu (job ${jobId.slice(0, 8)})`, "INFO", "");
-	return { success: true, jobId, message: "Scan dijalankan di GitHub Actions — ~1-3 menit." };
+	return { success: true as const, jobId, message: "Dijalankan di GitHub Actions â€” ~1-3 menit." };
+}
+
+export async function lapRunAdmin(env: Env, token: string, startDate: string, endDate: string) {
+	const s = await requireSession(env, token, { ignoreMaintenance: true });
+	const c = await lapLoadCreds(env, s.username);
+	if (!c.linkAdmin || !c.cookieAdmin) return { success: false, message: "Link & Cookie Admin belum diisi di menu Setting!" };
+	const r = await dispatchScrapeJob(env, s.username, "admin", startDate, endDate);
+	if (r.success && !("reused" in r)) {
+		await logActivity(env, s.username, "LAP ADMIN", `Scan ${startDate}..${endDate} dipicu`, "INFO", "");
+	}
+	return r;
 }
 
 export async function lapAdminStatus(env: Env, token: string, jobId: string) {
@@ -535,7 +419,7 @@ export async function lapJobStart(env: Env, jobId: string, key: string) {
 		.bind(jobId)
 		.first<{ username: string; status: string; params: string }>();
 	if (!row) return { success: false, message: "job tidak ada" };
-	let p: { startDate?: string; endDate?: string; key?: string } = {};
+	let p: { kind?: string; startDate?: string; endDate?: string; key?: string } = {};
 	try {
 		p = JSON.parse(row.params || "{}");
 	} catch {
@@ -546,10 +430,14 @@ export async function lapJobStart(env: Env, jobId: string, key: string) {
 		.bind(tsNow(), jobId)
 		.run();
 	const c = await lapLoadCreds(env, row.username);
+	const kind = p.kind || "admin";
 	return {
 		success: true,
-		creds: { linkAdmin: c.linkAdmin, cookieAdmin: c.cookieAdmin },
-		params: { startDate: p.startDate, endDate: p.endDate },
+		creds:
+			kind === "mozart"
+				? { linkMozart: c.linkMozart, cookieMozart: c.cookieMozart }
+				: { linkAdmin: c.linkAdmin, cookieAdmin: c.cookieAdmin },
+		params: { kind, startDate: p.startDate, endDate: p.endDate },
 	};
 }
 

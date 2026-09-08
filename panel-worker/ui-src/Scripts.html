@@ -654,9 +654,10 @@
       const meta = (lapResults._mozartMeta && lapResults._mozartMeta[0]) || {};
       const sm = meta.summary || {};
       const dp = lapResults.mozartDepo || [], wd = lapResults.mozartWd || [];
-      host.innerHTML = lapHeaderCard('fa-cubes-stacked', 'Lap Mozart', 'Deposit & Withdraw Mozart (m-banking)', `
+      host.innerHTML = lapHeaderCard('fa-cubes-stacked', 'Lap Mozart', 'Deposit & Withdraw Mozart (m-banking) — via GitHub Actions', `
         ${lapDateBar('lapMozart', lapRunMozart)}
-        ${meta.truncated ? '<div class="text-[11px] text-amber-300 mt-1">⚠ Data terpotong (batas request Worker).</div>' : ''}
+        <div id="lapMozartProgress" class="text-[11px] text-cyan-300 mt-1"></div>
+        ${meta.truncated ? '<div class="text-[11px] text-amber-300 mt-1">⚠ Data terpotong.</div>' : ''}
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3">
           ${lapStatCard('DP Record', lapFmt(sm.totalDepoRecords), 'text-emerald-400')}
           ${lapStatCard('DP Nominal', lapFmt(sm.totalDepoAmount), 'text-emerald-400')}
@@ -672,23 +673,42 @@
             r => [r.username, r.amount].join('\t'))}
         </div>`);
     }
+    let lapMozartJobId = null, lapMozartPollTimer = null;
     function lapRunMozart() {
       lapEnsureConfig(() => {
         if (!lapConfig || !lapConfig.tokenMozart) { toast('Isi Cookie Mozart di menu Setting dulu'); switchPage('lap-setting'); return; }
         const sd = document.getElementById('lapMozartStart').value, ed = document.getElementById('lapMozartEnd').value;
         if (!sd || !ed) { toast('Pilih tanggal'); return; }
-        lapBusy('lapMozart', true, 'Menghubungi API Mozart...');
+        lapBusy('lapMozart', true, 'Memicu GitHub Actions...');
+        const prog = document.getElementById('lapMozartProgress');
         google.script.run.withSuccessHandler(res => {
-          lapBusy('lapMozart', false, '');
-          if (!res || !res.success) { toast((res && res.message) || 'Gagal'); return; }
-          lapResults.mozartDepo = res.depositData || [];
-          lapResults.mozartWd = res.withdrawData || [];
-          lapResults._mozartMeta = [{ summary: res.summary, truncated: res.truncated }];
-          renderLapPage('lap-mozart');
-          toast('Mozart: DP ' + lapResults.mozartDepo.length + ' · WD ' + lapResults.mozartWd.length);
-        }).withFailureHandler(e => { lapBusy('lapMozart', false, 'Gagal'); toast((e && e.message) || 'Gagal'); })
+          if (!res || !res.success) { lapBusy('lapMozart', false, ''); toast((res && res.message) || 'Gagal'); return; }
+          lapMozartJobId = res.jobId;
+          if (prog) prog.textContent = res.message || 'Berjalan...';
+          lapPollMozart();
+        }).withFailureHandler(e => { lapBusy('lapMozart', false, ''); toast((e && e.message) || 'Gagal'); })
           .lapRunMozart(currentSessionToken, sd, ed, {});
       });
+    }
+    function lapPollMozart() {
+      clearTimeout(lapMozartPollTimer);
+      if (!lapMozartJobId) return;
+      const prog = document.getElementById('lapMozartProgress');
+      google.script.run.withSuccessHandler(res => {
+        if (!res || !res.success) { lapBusy('lapMozart', false, ''); if (prog) prog.textContent = (res && res.message) || 'Job hilang'; return; }
+        if (prog) prog.textContent = ({pending:'⏳ Antre di GitHub Actions...', running:'⚙️ Scraping Mozart...', done:'✅ Selesai', error:'❌ '+res.message}[res.status]) || res.status;
+        if (res.status === 'done') {
+          lapBusy('lapMozart', false, '');
+          lapResults = res.results || lapResults;
+          lapMozartJobId = null;
+          renderLapPage('lap-mozart');
+          toast('Mozart: DP ' + (lapResults.mozartDepo||[]).length + ' · WD ' + (lapResults.mozartWd||[]).length);
+          return;
+        }
+        if (res.status === 'error') { lapBusy('lapMozart', false, ''); toast(res.message || 'Gagal'); lapMozartJobId = null; return; }
+        lapMozartPollTimer = setTimeout(lapPollMozart, 5000);
+      }).withFailureHandler(() => { lapMozartPollTimer = setTimeout(lapPollMozart, 7000); })
+        .lapAdminStatus(currentSessionToken, lapMozartJobId);
     }
 
     // ---------- ADMIN (via GitHub Actions) ----------
