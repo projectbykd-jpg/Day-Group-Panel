@@ -45,6 +45,24 @@ export const INVEST_PASARAN: [string, string][] = [
 const INVEST_UA =
 	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36";
 
+/**
+ * Bersihkan BASE_URL yang sering salah tempel:
+ *  - buang query string / fragment (mis. "...?passkey=xxx")
+ *  - buang segmen "index.php" / "login.php" di ujung
+ *  - pastikan diakhiri "/"
+ * Halaman scan dipanggil sebagai "<base>admin_invoice13.php?..." jadi base HARUS
+ * cuma "scheme://host/[path/]".
+ */
+export function normalizeInvestBaseUrl(raw: string): string {
+	let s = String(raw || "").trim();
+	if (!s) return INVEST_DEFAULT_CONFIG.BASE_URL;
+	s = s.split("#")[0].split("?")[0];
+	s = s.replace(/\/(?:index|login|main|home)\.php\/?$/i, "/");
+	if (!/^https?:\/\//i.test(s)) s = "https://" + s;
+	if (!s.endsWith("/")) s += "/";
+	return s;
+}
+
 // ---------------------------------------------------------------------------
 // CONFIG (per-user) — invest_config
 // ---------------------------------------------------------------------------
@@ -62,7 +80,7 @@ export async function investLoadConfig(env: Env, user: string): Promise<InvestCo
 		cfg.LIMIT_3D = Number(row.limit_3d ?? INVEST_DEFAULT_CONFIG.LIMIT_3D);
 		cfg.LIMIT_4D = Number(row.limit_4d ?? INVEST_DEFAULT_CONFIG.LIMIT_4D);
 	}
-	if (cfg.BASE_URL && !cfg.BASE_URL.endsWith("/")) cfg.BASE_URL += "/";
+	cfg.BASE_URL = normalizeInvestBaseUrl(cfg.BASE_URL);
 	return cfg;
 }
 
@@ -75,8 +93,7 @@ export async function investSaveConfig(env: Env, user: string, data: Record<stri
 		const n = Number(raw);
 		return raw === "" || isNaN(n) ? (INVEST_DEFAULT_CONFIG[k] as number) : n;
 	};
-	let baseUrl = pick("BASE_URL") || INVEST_DEFAULT_CONFIG.BASE_URL;
-	if (!baseUrl.endsWith("/")) baseUrl += "/";
+	const baseUrl = normalizeInvestBaseUrl(pick("BASE_URL"));
 
 	await env.DB.prepare(
 		`INSERT INTO invest_config

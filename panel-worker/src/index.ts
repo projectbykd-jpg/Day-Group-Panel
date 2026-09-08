@@ -134,6 +134,47 @@ export default {
 				return json({ ok: false, message: "unauthorized" }, 401);
 			}
 			const job = url.searchParams.get("job") || "all";
+
+			// Diagnosa sementara: /__cron?key=...&job=debug&user=<username>&path=<path>
+			if (job === "debug") {
+				const dbgUser = url.searchParams.get("user") || "Admin";
+				const cfgRow = await env.DB.prepare(`SELECT base_url, phpsessid, koderedis, cookie_extra FROM invest_config WHERE username = ?`)
+					.bind(dbgUser)
+					.first<Record<string, string>>();
+				if (!cfgRow) return json({ ok: false, message: "no invest_config for " + dbgUser });
+				let baseUrl = String(cfgRow.base_url || "");
+				if (!baseUrl.endsWith("/")) baseUrl += "/";
+				const cookie = cfgRow.cookie_extra
+					? cfgRow.cookie_extra
+					: "PHPSESSID=" + cfgRow.phpsessid + (cfgRow.koderedis ? "; koderedis=" + cfgRow.koderedis : "");
+				const paths = (url.searchParams.get("path") || "admin_invoice13.php?psr=p33190").split("|");
+				const results: unknown[] = [];
+				for (const p of paths) {
+					try {
+						const r = await fetch(baseUrl + p, {
+							headers: {
+								Cookie: cookie,
+								"User-Agent":
+									"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36",
+							},
+							redirect: "manual",
+						});
+						const body = await r.text();
+						results.push({
+							url: baseUrl + p,
+							status: r.status,
+							location: r.headers.get("location"),
+							len: body.length,
+							hasPeriode: /name=["']?periode["']?[^>]*value=["'](\d+)["']/i.test(body),
+							snippet: body.slice(0, 600),
+						});
+					} catch (e) {
+						results.push({ url: baseUrl + p, error: e instanceof Error ? e.message : String(e) });
+					}
+				}
+				return json({ ok: true, baseUrl, cookiePreview: cookie.slice(0, 20) + "…", results });
+			}
+
 			const out: Record<string, unknown> = { ok: true, job, ts: Date.now() };
 			try {
 				if (job === "autopost" || job === "all") {

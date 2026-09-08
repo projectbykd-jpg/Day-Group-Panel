@@ -26,7 +26,7 @@ const PUMP_BUDGET_MS = 55_000; // total per tick
 // Cloudflare membatasi subrequest per invocation (50 di plan Free). fetch ke panel
 // agen + query D1 sama-sama dihitung. Jadi tiap tick hanya boleh ~38 fetch, sisanya
 // disambung tick berikutnya lewat cursor.
-const FETCH_BUDGET_PER_TICK = 38;
+const FETCH_BUDGET_PER_TICK = 42;
 const RAW_FLUSH_AT = 300;
 
 const ROW_RE_SRC =
@@ -64,21 +64,20 @@ function firstDate(html: string): string | null {
 	const m = new RegExp(ROW_RE_SRC, "g").exec(html);
 	return m ? m[2] : null;
 }
-function countUsersFromPages(pages: string[]): Record<string, number> {
-	const users: Record<string, number> = {};
-	const seen: Record<string, number> = {};
-	for (const html of pages) {
-		const re = new RegExp(ROW_RE_SRC, "g");
-		let mm: RegExpExecArray | null;
-		while ((mm = re.exec(html)) !== null) {
-			const id = mm[1];
-			const user = (mm[3] || "").trim();
-			if (seen[id]) continue;
-			seen[id] = 1;
-			users[user] = (users[user] || 0) + 1;
-		}
+/** Hitung baris BARU (belum pernah dilihat) di 1 halaman, akumulasi ke seen/users. */
+function eatRows(html: string, seen: Record<string, number>, users: Record<string, number>): number {
+	const re = new RegExp(ROW_RE_SRC, "g");
+	let mm: RegExpExecArray | null;
+	let got = 0;
+	while ((mm = re.exec(html)) !== null) {
+		const id = mm[1];
+		const user = (mm[3] || "").trim();
+		if (seen[id]) continue;
+		seen[id] = 1;
+		users[user] = (users[user] || 0) + 1;
+		got++;
 	}
-	return users;
+	return got;
 }
 
 interface RawRow {
@@ -150,6 +149,7 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number)
 
 		const [kode, nama] = pas[cursor];
 		const marketBuffer: RawRow[] = [];
+		const fetchesBefore = fetches;
 		let aborted = false;
 		try {
 			const head0 = await doFetch("admin_invoice13.php?psr=" + kode);
@@ -175,26 +175,25 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number)
 
 					for (const g of INVEST_GAMES) {
 						if (totals[g] <= limits[g]) continue;
-						const pages: string[] = [];
+						// Paginasi sadar-dedup: berhenti begitu 1 halaman tidak menambah
+						// baris baru (server agen sering mengabaikan start/end).
+						const seen: Record<string, number> = {};
+						const counts: Record<string, number> = {};
 						let start = 0;
-						if (g === maxG) {
-							pages.push(page1);
-							start = INVEST_PAGE_SIZE;
-						}
-						let pageCount = g === maxG ? 1 : 0;
-						for (; start <= totals[g]; start += INVEST_PAGE_SIZE) {
-							if (++pageCount > INVEST_MAX_PAGES_PER_GAME || !budgetLeft()) {
+						let pageNo = 0;
+						for (;;) {
+							if (pageNo >= INVEST_MAX_PAGES_PER_GAME || !budgetLeft()) {
 								aborted = !budgetLeft();
 								break;
 							}
-							const html = await doFetch(framePath(per, g, start, INVEST_PAGE_SIZE));
-							pages.push(html);
-							if (countRows(html) === 0) {
-								pages.pop();
-								break;
-							}
+							const html =
+								pageNo === 0 && g === maxG ? page1 : await doFetch(framePath(per, g, start, INVEST_PAGE_SIZE));
+							pageNo++;
+							const got = eatRows(html, seen, counts);
+							if (got === 0) break;
+							start += INVEST_PAGE_SIZE;
+							if (start > totals[g]) break;
 						}
-						const counts = countUsersFromPages(pages);
 						for (const uu of Object.keys(counts)) {
 							if (counts[uu] > limits[g]) {
 								marketBuffer.push({
@@ -236,13 +235,26 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number)
 			aborted = false;
 		}
 
-		if (aborted) {
-			// pasaran ini belum tuntas -> jangan majukan cursor, sambung tick berikutnya.
+		const fetchesThisMarket = fetches - fetchesBefore;
+		if (aborted && fetchesThisMarket < 24) {
+			// Baru mulai pasaran ini -> anggaran tick habis di batas. Sambung pasaran
+			// yang sama di tick berikutnya (cursor tidak maju).
 			await pauseAndReturn();
 			return;
 		}
+		if (aborted) {
+			// Pasaran ini terlalu besar untuk 1 invocation (batas subrequest Free).
+			// Simpan yang sudah didapat (parsial), lalu MAJU supaya tidak stuck selamanya.
+			console.warn(`invest: pasaran ${nama} (idx ${cursor}) parsial — batas subrequest.`);
+		}
 		buffer.push(...marketBuffer);
 		if (buffer.length >= RAW_FLUSH_AT) await flushRaw(env, user, buffer);
+		if (aborted) {
+			// commit progres & lanjut tick berikutnya dari pasaran berikutnya.
+			cursor++;
+			await pauseAndReturn();
+			return;
+		}
 	}
 
 	await flushRaw(env, user, buffer);
@@ -259,13 +271,6 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number)
 	} catch {
 		/* abaikan */
 	}
-}
-
-function countRows(html: string): number {
-	const re = new RegExp(ROW_RE_SRC, "g");
-	let n = 0;
-	while (re.exec(html) !== null) n++;
-	return n;
 }
 
 // ---------------------------------------------------------------------------
