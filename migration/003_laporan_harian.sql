@@ -14,22 +14,21 @@ CREATE TABLE IF NOT EXISTS lap_credentials (
   updated_at   TEXT NOT NULL DEFAULT (datetime('now','+7 hours'))
 );
 
--- Snapshot hasil per (operator, modul). data = JSON array baris.
+
 CREATE TABLE IF NOT EXISTS lap_result (
   username   TEXT NOT NULL,
-  module     TEXT NOT NULL,          -- register | reportAgent | checkCoin | idSelisih | withdrawPgaIdf | motionDpPga | motionPendingError | motionWd | mozartDepo | mozartWd | _meta
+  module     TEXT NOT NULL,
   data       TEXT NOT NULL DEFAULT '[]',
   updated_at TEXT NOT NULL DEFAULT (datetime('now','+7 hours')),
   PRIMARY KEY (username, module)
 );
 
--- Pelacakan job scrape (dipakai jalur GitHub Actions).
 CREATE TABLE IF NOT EXISTS lap_job (
-  id         TEXT PRIMARY KEY,       -- uuid
+  id         TEXT PRIMARY KEY,
   username   TEXT NOT NULL,
-  kind       TEXT NOT NULL,          -- admin | motion | mozart
-  status     TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | error
-  params     TEXT NOT NULL DEFAULT '{}',       -- {startDate,endDate,...}
+  kind       TEXT NOT NULL,   
+  status     TEXT NOT NULL DEFAULT 'pending',
+  params     TEXT NOT NULL DEFAULT '{}',     
   message    TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now','+7 hours')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now','+7 hours'))

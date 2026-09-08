@@ -37,12 +37,17 @@ export async function lapLoadCreds(env: Env, username: string): Promise<LapCreds
 
 export async function lapSaveCreds(env: Env, username: string, data: Partial<LapCreds>): Promise<LapCreds> {
 	const cur = await lapLoadCreds(env, username);
+	const linkAdminRaw = pick(data.linkAdmin, cur.linkAdmin);
+	const linkMotionRaw = pick(data.linkMotion, cur.linkMotion);
+	const linkMozartRaw = pick(data.linkMozart, cur.linkMozart);
 	const next: LapCreds = {
-		linkAdmin: pick(data.linkAdmin, cur.linkAdmin),
+		// Link disimpan sebagai scheme://host saja — path seperti "/wd" atau
+		// "/riwayat-pga" bikin URL API salah.
+		linkAdmin: linkAdminRaw ? hostOnly(linkAdminRaw) : "",
 		cookieAdmin: pick(data.cookieAdmin, cur.cookieAdmin),
-		linkMotion: pick(data.linkMotion, cur.linkMotion),
+		linkMotion: linkMotionRaw ? hostOnly(linkMotionRaw) : "",
 		tokenMotion: pick(data.tokenMotion, cur.tokenMotion),
-		linkMozart: pick(data.linkMozart, cur.linkMozart),
+		linkMozart: linkMozartRaw ? hostOnly(linkMozartRaw) : "",
 		cookieMozart: pick(data.cookieMozart, cur.cookieMozart),
 	};
 	await env.DB.prepare(
@@ -111,6 +116,15 @@ export function normLink(raw: string, fallback: string): string {
 	let s = String(raw || "").trim() || fallback;
 	if (!/^https?:\/\//i.test(s)) s = "https://" + s;
 	return s.replace(/\/+$/, "");
+}
+
+/** Ambil scheme://host saja (buang path/query/hash) — untuk base URL API. */
+export function hostOnly(raw: string, fallback = ""): string {
+	let s = String(raw || "").trim() || fallback;
+	if (!s) return "";
+	if (!/^https?:\/\//i.test(s)) s = "https://" + s;
+	const m = s.match(/^(https?:\/\/[^/\s?#]+)/i);
+	return m ? m[1] : s.replace(/\/+$/, "");
 }
 
 export function num(v: unknown): number {
