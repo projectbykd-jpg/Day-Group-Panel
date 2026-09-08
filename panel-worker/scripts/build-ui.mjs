@@ -45,6 +45,7 @@ const ARG_MAP = {
 	adminRunActivityBackup: ["token"],
 	setupAutoPostTriggers: ["token"],
 	adminGetAutoPostWebhook: ["token"],
+	adminSetAutoPost: ["token", "enabled"],
 	adminRunAutoPostNow: ["token"],
 	setupActivityBackupTrigger: ["token"],
 	investGetConfig: ["token"],

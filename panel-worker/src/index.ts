@@ -10,8 +10,12 @@ import {
 	adminDeleteUser,
 	adminListActiveSessions,
 	adminListUsers,
+	adminPruneActivityLog,
 	adminResetUserLock,
 	adminSaveUser,
+	adminSetAutoPost,
+	adminSetLogRetention,
+	pruneActivityLogCron,
 } from "./api/admin";
 import { setMaintenance } from "./api/settings";
 import { getCurrentUserProfile, getLivePanelData } from "./api/live";
@@ -40,6 +44,19 @@ import { investPump } from "./lib/invest-scan";
 
 type Handler = (env: Env, body: Record<string, unknown>) => Promise<unknown>;
 const s = (v: unknown) => String(v ?? "");
+
+// Pangkas Activity Log sekali per hari WIB (dikunci lewat KV).
+async function dailyPrune(env: Env): Promise<number | "skip"> {
+	const dayKey = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+	const guard = "retention:" + dayKey;
+	try {
+		if (await env.SESS.get(guard)) return "skip";
+		await env.SESS.put(guard, "1", { expirationTtl: 172800 });
+	} catch {
+		/* lanjut */
+	}
+	return pruneActivityLogCron(env).catch(() => 0);
+}
 
 const ROUTES: Record<string, Handler> = {
 	// auth
@@ -88,7 +105,12 @@ const ROUTES: Record<string, Handler> = {
 		),
 	adminRunAutoPostNow: (env, b) => adminRunAutoPostNow(env, s(b.token)),
 	setupAutoPostTriggers: (env, b) => setupAutoPostTriggers(env, s(b.token)),
-	adminGetAutoPostWebhook: (env, b) => adminGetAutoPostWebhook(env, s(b.token)),
+	adminGetAutoPostWebhook: (env, b) => adminGetAutoPostWebhook(env, s(b.token), s(b.__origin)),
+	adminSetAutoPost: (env, b) => adminSetAutoPost(env, s(b.token), !!b.enabled),
+
+	// retensi activity log (nama lama frontend: "backup")
+	adminRunActivityBackup: (env, b) => adminPruneActivityLog(env, s(b.token)),
+	setupActivityBackupTrigger: (env, b) => adminSetLogRetention(env, s(b.token)),
 
 	// invest
 	investGetConfig: (env, b) => investGetConfig(env, s(b.token)),
@@ -112,6 +134,7 @@ export default {
 			} catch {
 				return json({ success: false, message: "Body JSON tidak valid." }, 400);
 			}
+			body.__origin = url.origin;
 			const action = s(body.action);
 			const handler = ROUTES[action];
 			if (!handler) return json({ success: false, message: "Aksi tidak dikenal: " + action }, 404);
@@ -179,6 +202,7 @@ export default {
 			try {
 				if (job === "autopost" || job === "all") {
 					out.autopost = await runAutoPostRouter(env);
+					out.pruned = await dailyPrune(env);
 				}
 				if (job === "invest" || job === "all") {
 					await investPump(env);
@@ -212,6 +236,7 @@ export default {
 
 		if (event.cron === "*/5 * * * *") {
 			await runAutoPostRouter(env).catch((e) => console.error("auto-post router error", e));
+			await dailyPrune(env).catch((e) => console.error("prune error", e));
 		} else {
 			await investPump(env).catch((e) => console.error("invest pump error", e));
 		}

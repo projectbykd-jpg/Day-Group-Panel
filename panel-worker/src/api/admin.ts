@@ -1,9 +1,31 @@
 // Port PanelCore.gs: adminListUsersInternal_ / adminSaveUserInternal_ /
-// adminDeleteUserInternal_ / adminResetUserLockInternal_ + adminListActiveSessions.
+// adminDeleteUserInternal_ / adminResetUserLockInternal_ + adminListActiveSessions
+// + kontrol Auto Posting & retensi Activity Log (versi Cloudflare).
 import { requireSession } from "./auth";
 import { hashPassword } from "../lib/crypto";
 import { logActivity } from "../lib/activity";
+import { getUserProfile } from "../lib/db";
 import { SessionRecord } from "../lib/session";
+import { tsNow } from "../lib/time";
+
+const OFFSET_MS = 7 * 60 * 60 * 1000;
+const msToWIB = (ms: number): string =>
+	ms ? new Date(ms + OFFSET_MS).toISOString().slice(0, 19).replace("T", " ") : "-";
+
+async function getSetting(env: Env, key: string): Promise<string> {
+	const r = await env.DB.prepare(`SELECT value FROM settings WHERE key = ?`).bind(key).first<{ value: string }>();
+	return String(r?.value ?? "");
+}
+async function setSetting(env: Env, key: string, value: string): Promise<void> {
+	await env.DB.prepare(
+		`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+	)
+		.bind(key, value)
+		.run();
+}
+export async function isAutoPostEnabled(env: Env): Promise<boolean> {
+	return String(await getSetting(env, "autopost_enabled") || "TRUE").toUpperCase().trim() !== "FALSE";
+}
 
 const ROLES = ["ADMIN", "OPERATOR", "VIEWER"];
 const STATUSES = ["AKTIF", "NONAKTIF", "TERKUNCI"];
@@ -211,21 +233,125 @@ export async function adminResetUserLock(env: Env, token: string, targetUsername
 export async function adminListActiveSessions(env: Env, token: string) {
 	await requireSession(env, token, { admin: true });
 	const list = await env.SESS.list({ prefix: "dg_" });
-	const out: { token: string; username: string; createdAt: string }[] = [];
+	const now = Date.now();
+
+	// Kelompokkan token per username.
+	const byUser: Record<string, { username: string; count: number; firstLoginMs: number; lastExpiresMs: number }> = {};
 	for (const k of list.keys) {
 		const raw = await env.SESS.get(k.name);
 		if (!raw) continue;
+		let rec: SessionRecord;
 		try {
-			const rec = JSON.parse(raw) as SessionRecord;
-			out.push({
-				token: k.name.slice(0, 12) + "…",
-				username: rec.username,
-				createdAt: new Date(rec.createdAt).toISOString(),
-			});
+			rec = JSON.parse(raw) as SessionRecord;
 		} catch {
-			/* skip */
+			continue;
 		}
+		if (!rec.username || !rec.expiresAt || Number(rec.expiresAt) <= now) continue;
+		const key = rec.username.toLowerCase();
+		if (!byUser[key]) byUser[key] = { username: rec.username, count: 0, firstLoginMs: 0, lastExpiresMs: 0 };
+		const g = byUser[key];
+		g.count++;
+		const created = Number(rec.createdAt || 0);
+		if (created && (!g.firstLoginMs || created < g.firstLoginMs)) g.firstLoginMs = created;
+		if (Number(rec.expiresAt) > g.lastExpiresMs) g.lastExpiresMs = Number(rec.expiresAt);
 	}
-	out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-	return out;
+
+	const sessions = [];
+	for (const key of Object.keys(byUser).sort()) {
+		const g = byUser[key];
+		const p = await getUserProfile(env, g.username);
+		const websites = p ? p.websites : [];
+		const telegramOn = !!(p && p.permissions.telegram);
+		sessions.push({
+			username: g.username,
+			displayName: p ? p.displayName : g.username,
+			role: p ? p.role : "-",
+			websites: websites.join(", "),
+			telegram: telegramOn,
+			sessions: g.count,
+			loginAt: msToWIB(g.firstLoginMs),
+			expiresAt: msToWIB(g.lastExpiresMs),
+			autoPostEligible: telegramOn && websites.length > 0,
+		});
+	}
+
+	return {
+		success: true,
+		generatedAt: tsNow(),
+		autoPostEnabled: await isAutoPostEnabled(env),
+		totalUsers: sessions.length,
+		totalSessions: sessions.reduce((n, s) => n + s.sessions, 0),
+		sessions,
+	};
+}
+
+// --- Kontrol Auto Posting Prediksi (settings.autopost_enabled) ------------
+export async function adminSetAutoPost(env: Env, token: string, enabled: boolean) {
+	const s = await requireSession(env, token, { admin: true });
+	await setSetting(env, "autopost_enabled", enabled ? "TRUE" : "FALSE");
+	await setSetting(env, "updated_by", s.username);
+	await setSetting(env, "updated_at", tsNow());
+	await logActivity(
+		env,
+		s.username,
+		"AUTO POSTING",
+		enabled ? "Auto posting prediksi diaktifkan" : "Auto posting prediksi dinonaktifkan",
+		"BERHASIL",
+		"",
+	);
+	return {
+		success: true,
+		enabled,
+		message: enabled
+			? "Auto Posting Prediksi AKTIF. Pastikan cron eksternal memanggil /__cron?job=autopost tiap menit."
+			: "Auto Posting Prediksi DINONAKTIFKAN. Router akan melewati semua sesi jam.",
+	};
+}
+
+// --- Retensi Activity Log (pengganti "backup" sheet Apps Script) ----------
+const LOG_RETENTION_DAYS = 7;
+
+export async function adminPruneActivityLog(env: Env, token: string) {
+	const s = await requireSession(env, token, { admin: true });
+	const cutoff = new Date(Date.now() + OFFSET_MS - LOG_RETENTION_DAYS * 864e5).toISOString().slice(0, 10);
+	const before = await env.DB.prepare(`SELECT COUNT(*) n FROM activity_log`).first<{ n: number }>();
+	await env.DB.prepare(`DELETE FROM activity_log WHERE substr(ts,1,10) < ?`).bind(cutoff).run();
+	const after = await env.DB.prepare(`SELECT COUNT(*) n FROM activity_log`).first<{ n: number }>();
+	const removed = Number(before?.n ?? 0) - Number(after?.n ?? 0);
+	await setSetting(env, "log_pruned_at", tsNow());
+	await logActivity(
+		env,
+		s.username,
+		"RETENSI LOG",
+		`Pangkas log < ${cutoff}: ${removed} baris dihapus, tersisa ${after?.n ?? 0}.`,
+		"BERHASIL",
+		"",
+	);
+	return {
+		success: true,
+		removed,
+		remaining: Number(after?.n ?? 0),
+		message: `${removed} baris log lama (> ${LOG_RETENTION_DAYS} hari) dihapus. Tersisa ${after?.n ?? 0} baris.`,
+	};
+}
+
+export async function adminSetLogRetention(env: Env, token: string) {
+	const s = await requireSession(env, token, { admin: true });
+	await setSetting(env, "log_retention_enabled", "TRUE");
+	await logActivity(env, s.username, "RETENSI LOG", "Auto retensi log 7 hari diaktifkan", "BERHASIL", "");
+	return {
+		success: true,
+		message:
+			`Auto retensi AKTIF: cron harian akan menghapus log lebih tua dari ${LOG_RETENTION_DAYS} hari ` +
+			"(dijalankan lewat /__cron). Tidak ada sheet backup terpisah — semua log di database utama.",
+	};
+}
+
+/** Dipanggil dari cron harian (index.ts) — hening, tanpa sesi. */
+export async function pruneActivityLogCron(env: Env): Promise<number> {
+	if (String(await getSetting(env, "log_retention_enabled") || "TRUE").toUpperCase() === "FALSE") return 0;
+	const cutoff = new Date(Date.now() + OFFSET_MS - LOG_RETENTION_DAYS * 864e5).toISOString().slice(0, 10);
+	const res = await env.DB.prepare(`DELETE FROM activity_log WHERE substr(ts,1,10) < ?`).bind(cutoff).run();
+	await setSetting(env, "log_pruned_at", tsNow());
+	return res.meta?.changes ?? 0;
 }

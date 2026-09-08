@@ -108,15 +108,17 @@ export async function getDashboardData(env: Env, profile: UserProfile, opts: Das
 		 ORDER BY id DESC LIMIT ? OFFSET ?`,
 	)
 		.bind(...args, opts.pageSize, offset)
-		.all<ActivityRow>();
-	const rows: ActivityRow[] = (rowsRes.results ?? []).map((r) => ({
-		ts: r.ts ?? "",
-		username: r.username ?? "",
-		action: r.action ?? "",
-		status: r.status ?? "",
-		detail: r.detail ?? "",
-		content: r.content ?? "",
-	}));
+		.all<Record<string, string>>();
+	// Frontend lama membaca baris sebagai ARRAY: [ts, user, action, status, detail, content, source].
+	const rows: string[][] = (rowsRes.results ?? []).map((r) => [
+		r.ts ?? "",
+		r.username ?? "",
+		r.action ?? "",
+		r.status ?? "",
+		r.detail ?? "",
+		r.content ?? "",
+		"HARI INI",
+	]);
 
 	// Statistik: cakupan HARI INI untuk user ini (admin = semua user hari ini).
 	const statArgs: unknown[] = [today];
@@ -175,6 +177,7 @@ export async function getDashboardData(env: Env, profile: UserProfile, opts: Das
 			hasPrev: page > 1,
 			hasNext: page < totalPages,
 		},
+		sourceInfo: { currentTotal: total, backupTotal: 0, archiveScanned: 0, scanLimited: false },
 		filterOptions: {
 			usernames: await distinct("username"),
 			actions: await distinct("action"),

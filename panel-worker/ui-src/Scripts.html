@@ -466,6 +466,8 @@
         if (Date.now() - pageFetchedAt.users > NAV_FRESH_MS) { loadUsers(); pageFetchedAt.users = Date.now(); }
       } else if (key === 'sesi') {
         if (Date.now() - pageFetchedAt.sesi > NAV_FRESH_MS) { loadActiveSessions(); pageFetchedAt.sesi = Date.now(); }
+      } else if (key === 'autopost') {
+        loadAutoPostStatus();
       }
       if (!fromNav) pumpLivePoll(true);
     }
@@ -2130,21 +2132,48 @@
         .adminRunActivityBackup(currentSessionToken);
     }
 
-    function installAutoPostTrigger() {
+    let autoPostEnabledState = null;
+    function paintAutoPostToggle() {
+      const btn = document.getElementById('autoPostToggleBtn');
       const status = document.getElementById('autoPostStatus');
-      if (status) status.textContent = 'Mengaktifkan trigger auto posting prediksi...';
+      if (btn) {
+        const on = !!autoPostEnabledState;
+        btn.innerHTML = on
+          ? '<i class="fa-solid fa-power-off mr-2"></i>NONAKTIFKAN AUTO POSTING'
+          : '<i class="fa-solid fa-power-off mr-2"></i>AKTIFKAN AUTO POSTING';
+        btn.className = (on
+          ? 'bg-gradient-to-r from-rose-500 to-red-600 text-white'
+          : 'bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950')
+          + ' px-4 py-3 rounded-2xl text-[10px] font-extrabold';
+      }
+      if (status && autoPostEnabledState !== null) {
+        status.textContent = autoPostEnabledState
+          ? 'Status: AKTIF — router akan mengirim tiap sesi jam selama ada operator login.'
+          : 'Status: NONAKTIF — tidak ada prediksi/penutup yang dikirim otomatis.';
+        status.className = 'text-[10px] mt-2 ' + (autoPostEnabledState ? 'text-emerald-400' : 'text-rose-300');
+      }
+    }
+    function loadAutoPostStatus() {
       google.script.run
-        .withSuccessHandler(result => {
-          const message = (result && result.message) || 'Auto Posting Prediksi aktif.';
-          if (status) status.textContent = message;
-          toast(message);
+        .withSuccessHandler(d => {
+          if (d && typeof d.autoPostEnabled === 'boolean') { autoPostEnabledState = d.autoPostEnabled; paintAutoPostToggle(); }
         })
-        .withFailureHandler(error => {
-          const message = (error && error.message) || 'Gagal mengaktifkan Auto Posting.';
-          if (status) status.textContent = message;
-          toast(message);
-        })
-        .setupAutoPostTriggers(currentSessionToken);
+        .withFailureHandler(() => {})
+        .adminListActiveSessions(currentSessionToken);
+    }
+    function toggleAutoPost() {
+      const turnOn = !autoPostEnabledState;
+      const btn = document.getElementById('autoPostToggleBtn');
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>MENYIMPAN...'; }
+      const done = (result, ok) => {
+        if (btn) btn.disabled = false;
+        autoPostEnabledState = turnOn;
+        paintAutoPostToggle();
+        toast((result && result.message) || (ok ? 'Tersimpan' : 'Gagal'));
+      };
+      const run = turnOn
+        ? google.script.run.withSuccessHandler(r => done(r, true)).withFailureHandler(e => done({ message: (e && e.message) || 'Gagal' }, false)).setupAutoPostTriggers(currentSessionToken)
+        : google.script.run.withSuccessHandler(r => done(r, true)).withFailureHandler(e => done({ message: (e && e.message) || 'Gagal' }, false)).adminSetAutoPost(currentSessionToken, false);
     }
 
     function showAutoPostWebhook() {
@@ -2152,14 +2181,18 @@
       if (box) { box.style.display = 'block'; box.textContent = 'Mengambil URL webhook...'; }
       google.script.run
         .withSuccessHandler(r => {
-          if (!r || !r.url || !box) { toast('Gagal mengambil URL webhook'); return; }
+          if (!r || !r.url || !box) { toast('Gagal mengambil URL cron'); return; }
           const times = (r.slots || []).join(', ');
+          const fld = (label, val) =>
+            '<div style="margin-top:6px;font-weight:700">' + label + '</div>'
+            + '<input readonly onclick="this.select()" value="' + String(val).replace(/"/g, '&quot;') + '" style="width:100%;margin-top:3px;padding:7px 9px;border-radius:9px;background:rgba(2,6,23,.55);border:1px solid rgba(34,211,238,.25);color:#a5f3fc;font-size:9px;font-family:monospace">';
           box.innerHTML =
-            'URL webhook untuk cron eksternal (mis. <b>cron-job.org</b>) — method <b>GET</b>, tiap hari:'
-            + '<input readonly onclick="this.select()" value="' + r.url.replace(/"/g, '&quot;') + '" style="width:100%;margin-top:5px;padding:7px 9px;border-radius:9px;background:rgba(2,6,23,.55);border:1px solid rgba(34,211,238,.25);color:#a5f3fc;font-size:9px;font-family:monospace">'
-            + '<div style="margin-top:6px">Jadwal cron (waktu <b>' + escapeHtml(r.timezone || 'WIB') + '</b>): <b class="text-cyan-300">' + escapeHtml(times) + '</b></div>'
-            + '<div style="margin-top:4px;color:#64748b">Trigger 5-menit tetap jalan sebagai cadangan bila cron mati.</div>';
-          try { navigator.clipboard.writeText(r.url); toast('URL webhook disalin'); } catch (e) {}
+            'Pasang di <b>cron-job.org</b> (gratis) — method <b>GET</b>, jalankan <b>tiap 1 menit</b>:'
+            + fld('Auto Posting Prediksi', r.url)
+            + (r.urlInvest ? fld('Pump Scan INVEST', r.urlInvest) : '')
+            + '<div style="margin-top:8px">Jam sesi (' + escapeHtml(r.timezone || 'WIB') + '): <b class="text-cyan-300">' + escapeHtml(times) + '</b></div>'
+            + '<div style="margin-top:4px;color:#64748b">Router memilih sendiri sesi yang jatuh tempo, susulan sampai 90 menit.</div>';
+          try { navigator.clipboard.writeText(r.url); toast('URL cron auto-posting disalin'); } catch (e) {}
         })
         .withFailureHandler(e => {
           if (box) box.textContent = 'Gagal: ' + ((e && e.message) || e);
@@ -2208,7 +2241,7 @@
       if (!body) return;
       const rows = (data && Array.isArray(data.sessions)) ? data.sessions : [];
       if (meta) {
-        const apState = data && data.autoPostEnabled ? 'AKTIF' : 'NONAKTIF (Auto Post Prediksi = FALSE)';
+        const apState = data && data.autoPostEnabled ? 'AKTIF' : 'NONAKTIF';
         meta.textContent = `${data ? data.totalUsers : 0} user online • ${data ? data.totalSessions : 0} sesi • Auto Posting: ${apState} • per ${data ? data.generatedAt : '-'}`;
       }
       const sig = JSON.stringify(rows.map(s => [s.username, s.sessions, s.expiresAt, s.autoPostEligible]));

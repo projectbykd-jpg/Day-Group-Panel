@@ -234,26 +234,39 @@ export async function adminRunAutoPostNow(env: Env, token: string) {
 }
 
 export async function setupAutoPostTriggers(env: Env, token: string) {
-	await requireSession(env, token, { admin: true });
+	const s = await requireSession(env, token, { admin: true });
+	await env.DB.prepare(
+		`INSERT INTO settings (key, value) VALUES ('autopost_enabled','TRUE')
+		 ON CONFLICT(key) DO UPDATE SET value = 'TRUE'`,
+	).run();
+	await logActivity(env, s.username, "AUTO POSTING", "Auto posting prediksi diaktifkan", "BERHASIL", "");
 	return {
 		success: true,
 		installed: true,
+		enabled: true,
 		message:
-			"Di Cloudflare, auto posting dijalankan oleh Cron Trigger bawaan Worker (tiap 5 menit) — tidak perlu dipasang manual. Pastikan minimal satu user login supaya router aktif.",
+			"Auto Posting Prediksi AKTIF. Penjadwalan dijalankan oleh cron eksternal yang memanggil " +
+			"/__cron?job=autopost tiap menit (lihat tombol URL CRON). Butuh minimal 1 operator login saat jam sesi.",
 	};
 }
 
-export async function adminGetAutoPostWebhook(env: Env, token: string) {
+export async function adminGetAutoPostWebhook(env: Env, token: string, origin?: string) {
 	await requireSession(env, token, { admin: true });
 	const slots = Array.from(
 		new Set(JADWAL_PREDIKSI_CONFIG.map((x) => x.jam).concat(CLOSING_PREDICTION_SLOTS)),
 	).sort();
+	const base = String(origin || "").replace(/\/+$/, "");
+	const key = env.CRON_KEY || "";
 	return {
 		success: true,
-		url: "",
+		url: base && key ? `${base}/__cron?key=${key}&job=autopost` : "",
+		urlInvest: base && key ? `${base}/__cron?key=${key}&job=invest` : "",
 		slots,
-		timezone: "GMT+7",
-		message: "Cron Trigger Worker sudah menjalankan router tiap 5 menit; webhook eksternal tidak diperlukan lagi.",
+		timezone: "GMT+7 (WIB)",
+		everyMinute: true,
+		message:
+			"Pasang di cron-job.org / GitHub Actions: panggil URL di atas dengan method GET tiap 1 menit. " +
+			"Router cek sendiri slot mana yang jatuh tempo (toleransi susulan 90 menit).",
 	};
 }
 
