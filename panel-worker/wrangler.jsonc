@@ -27,13 +27,14 @@
 		}
 	],
 	"vars": {
-		"TZ_OFFSET_HOURS": "7"
+		"TZ_OFFSET_HOURS": "7",
+		"CRON_KEY": "2ivwrtzgczxuwe1w637k0l4ki9g4hthh2m64jnrz"
 	},
 	"assets": {
 		"directory": "./public/",
 		"binding": "ASSETS",
 		"not_found_handling": "single-page-application",
-		"run_worker_first": ["/api", "/health", "/__scheduled"]
+		"run_worker_first": ["/api", "/health", "/__cron", "/__scheduled"]
 	},
 	"triggers": {
 		"crons": ["*/5 * * * *", "* * * * *"]

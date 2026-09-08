@@ -22,7 +22,11 @@ import {
 const OFFSET_MS = 7 * 60 * 60 * 1000;
 const PUMP_FLAG = "invest:pump:running";
 const USER_SLICE_MS = 45_000; // maks per user per tick
-const PUMP_BUDGET_MS = 55_000; // total per tick (cron scheduled boleh lebih lama, tapi tetap dijaga)
+const PUMP_BUDGET_MS = 55_000; // total per tick
+// Cloudflare membatasi subrequest per invocation (50 di plan Free). fetch ke panel
+// agen + query D1 sama-sama dihitung. Jadi tiap tick hanya boleh ~38 fetch, sisanya
+// disambung tick berikutnya lewat cursor.
+const FETCH_BUDGET_PER_TICK = 38;
 const RAW_FLUSH_AT = 300;
 
 const ROW_RE_SRC =
@@ -116,36 +120,53 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number)
 	const limits: Record<string, number> = { "2D": cfg.LIMIT_2D, "3D": cfg.LIMIT_3D, "4D": cfg.LIMIT_4D };
 	const buffer: RawRow[] = [];
 
-	await investSetState(env, user, { state: "running", cursor, total: pas.length });
-
 	if (cursor === 0) {
 		await env.DB.prepare(`DELETE FROM invest_raw WHERE owner = ?`).bind(user).run();
+		await investSetState(env, user, { state: "running", cursor, total: pas.length, message: "Scan berjalan…" });
 	}
 
+	// Wrapper penghitung subrequest.
+	let fetches = 0;
+	const doFetch = (path: string): Promise<string> => {
+		fetches++;
+		return investFetch(cfg, path);
+	};
+	const budgetLeft = () => Date.now() < deadlineMs && fetches < FETCH_BUDGET_PER_TICK;
+
+	const pauseAndReturn = async () => {
+		await flushRaw(env, user, buffer);
+		await investSetState(env, user, {
+			state: "running",
+			cursor,
+			message: `Scan berjalan — pasaran ${cursor}/${pas.length}…`,
+		});
+	};
+
 	for (; cursor < pas.length; cursor++) {
-		if (Date.now() >= deadlineMs) {
-			await flushRaw(env, user, buffer);
-			await investSetState(env, user, {
-				state: "running",
-				cursor,
-				message: `Scan berjalan — pasaran ${cursor}/${pas.length}…`,
-			});
+		if (!budgetLeft()) {
+			await pauseAndReturn();
 			return;
 		}
 
 		const [kode, nama] = pas[cursor];
+		const marketBuffer: RawRow[] = [];
+		let aborted = false;
 		try {
-			const head0 = await investFetch(cfg, "admin_invoice13.php?psr=" + kode);
+			const head0 = await doFetch("admin_invoice13.php?psr=" + kode);
 			const open = parsePeriode(head0);
 			if (open) {
 				for (let i = 0; i < INVEST_PERIODE_LOOKBACK; i++) {
+					if (!budgetLeft()) {
+						aborted = true;
+						break;
+					}
 					const per = open - i;
-					const head = i === 0 ? head0 : await investFetch(cfg, "admin_invoice13.php?psr=" + kode + "&periode=" + per + "&tombol=2D");
+					const head = i === 0 ? head0 : await doFetch("admin_invoice13.php?psr=" + kode + "&periode=" + per + "&tombol=2D");
 					const totals = parseTotals(head);
 					const maxG = maxGame(totals);
 					if (totals[maxG] === 0) continue;
 
-					const page1 = await investFetch(cfg, framePath(per, maxG, 0, INVEST_PAGE_SIZE));
+					const page1 = await doFetch(framePath(per, maxG, 0, INVEST_PAGE_SIZE));
 					const pdate = firstDate(page1);
 					if (pdate) {
 						if (pdate < yesterday) break;
@@ -154,7 +175,6 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number)
 
 					for (const g of INVEST_GAMES) {
 						if (totals[g] <= limits[g]) continue;
-						// kumpulkan halaman
 						const pages: string[] = [];
 						let start = 0;
 						if (g === maxG) {
@@ -163,12 +183,13 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number)
 						}
 						let pageCount = g === maxG ? 1 : 0;
 						for (; start <= totals[g]; start += INVEST_PAGE_SIZE) {
-							if (++pageCount > INVEST_MAX_PAGES_PER_GAME) break;
-							const html = await investFetch(cfg, framePath(per, g, start, INVEST_PAGE_SIZE));
-							const before = pages.length;
+							if (++pageCount > INVEST_MAX_PAGES_PER_GAME || !budgetLeft()) {
+								aborted = !budgetLeft();
+								break;
+							}
+							const html = await doFetch(framePath(per, g, start, INVEST_PAGE_SIZE));
 							pages.push(html);
-							// berhenti kalau halaman ini tak memuat baris baru
-							if (countRows(html) === 0 && pages.length > before) {
+							if (countRows(html) === 0) {
 								pages.pop();
 								break;
 							}
@@ -176,7 +197,7 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number)
 						const counts = countUsersFromPages(pages);
 						for (const uu of Object.keys(counts)) {
 							if (counts[uu] > limits[g]) {
-								buffer.push({
+								marketBuffer.push({
 									tanggal: pdate || today,
 									bettor: uu,
 									pasaran: nama,
@@ -187,7 +208,9 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number)
 								});
 							}
 						}
+						if (aborted) break;
 					}
+					if (aborted) break;
 				}
 			}
 		} catch (e) {
@@ -200,21 +223,26 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number)
 				});
 				return;
 			}
-			buffer.push({
+			marketBuffer.length = 0;
+			marketBuffer.push({
 				tanggal: today,
 				bettor: "(ERROR)",
 				pasaran: nama,
 				periode: "-",
-				game: "-",
+				game: String((e instanceof Error ? e.message : String(e)) || "error").slice(0, 120),
 				line: 0,
 				limitVal: 0,
 			});
-			// simpan pesan error pada kolom bettor tidak muat -> pakai raw dengan pasaran+error
-			buffer[buffer.length - 1].game = String((e instanceof Error ? e.message : String(e)) || "error").slice(0, 120);
+			aborted = false;
 		}
 
+		if (aborted) {
+			// pasaran ini belum tuntas -> jangan majukan cursor, sambung tick berikutnya.
+			await pauseAndReturn();
+			return;
+		}
+		buffer.push(...marketBuffer);
 		if (buffer.length >= RAW_FLUSH_AT) await flushRaw(env, user, buffer);
-		await investSetState(env, user, { cursor: cursor + 1 });
 	}
 
 	await flushRaw(env, user, buffer);

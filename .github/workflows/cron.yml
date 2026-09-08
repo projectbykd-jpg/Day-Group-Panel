@@ -1,0 +1,22 @@
+name: Panel cron (fallback)
+
+# Cadangan kalau Cron Trigger bawaan Cloudflare tidak jalan.
+# GitHub Actions minimal 5 menit & kadang telat 5-15 menit, jadi untuk INVEST
+# yang butuh tiap menit tetap pakai cron-job.org. Ini cukup buat auto-post prediksi
+# (slot punya toleransi susulan 90 menit).
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger auto-post + invest pump
+        run: |
+          curl -fsS --max-time 60 \
+            "https://panel-worker.projectbykd.workers.dev/__cron?key=${{ secrets.CRON_KEY }}&job=autopost" || true
+          curl -fsS --max-time 60 \
+            "https://panel-worker.projectbykd.workers.dev/__cron?key=${{ secrets.CRON_KEY }}&job=invest" || true

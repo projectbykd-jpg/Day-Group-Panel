@@ -126,6 +126,30 @@ export default {
 			return new Response("panel-worker OK", { headers: { "content-type": "text/plain" } });
 		}
 
+		// Endpoint cron eksternal (fallback kalau Cron Trigger Cloudflare tidak jalan).
+		// Panggil tiap menit dari cron-job.org / GitHub Actions / UptimeRobot:
+		//   https://panel-worker.projectbykd.workers.dev/__cron?key=<CRON_KEY>&job=all
+		if (url.pathname === "/__cron") {
+			if (!env.CRON_KEY || url.searchParams.get("key") !== env.CRON_KEY) {
+				return json({ ok: false, message: "unauthorized" }, 401);
+			}
+			const job = url.searchParams.get("job") || "all";
+			const out: Record<string, unknown> = { ok: true, job, ts: Date.now() };
+			try {
+				if (job === "autopost" || job === "all") {
+					out.autopost = await runAutoPostRouter(env);
+				}
+				if (job === "invest" || job === "all") {
+					await investPump(env);
+					out.invest = "pumped";
+				}
+			} catch (e) {
+				out.ok = false;
+				out.error = e instanceof Error ? e.message : String(e);
+			}
+			return json(out);
+		}
+
 		// selain /api dan /health -> serahkan ke static assets (Index.html panel).
 		return env.ASSETS.fetch(request);
 	},
@@ -133,11 +157,22 @@ export default {
 	// Cron Triggers:
 	//   "*/5 * * * *" -> router auto-post prediksi
 	//   "* * * * *"   -> pump scan INVEST (lanjutkan user yang state-nya 'running')
-	async scheduled(event, env, ctx): Promise<void> {
+	async scheduled(event, env, _ctx): Promise<void> {
+		try {
+			await env.DB.prepare(
+				`INSERT INTO settings (key, value) VALUES ('cron_heartbeat', ?)
+				 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+			)
+				.bind(new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 19).replace("T", " ") + " | cron=" + event.cron)
+				.run();
+		} catch (e) {
+			console.error("cron heartbeat error", e);
+		}
+
 		if (event.cron === "*/5 * * * *") {
-			ctx.waitUntil(runAutoPostRouter(env).catch((e) => console.error("auto-post router error", e)));
+			await runAutoPostRouter(env).catch((e) => console.error("auto-post router error", e));
 		} else {
-			ctx.waitUntil(investPump(env).catch((e) => console.error("invest pump error", e)));
+			await investPump(env).catch((e) => console.error("invest pump error", e));
 		}
 	},
 } satisfies ExportedHandler<Env>;
