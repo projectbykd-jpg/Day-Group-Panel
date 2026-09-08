@@ -69,9 +69,16 @@ export async function lapRunMotion(env: Env, token: string, startDate: string, e
 	const headers: Record<string, string> = {
 		"x-access-token": tokenClean,
 		accept: "application/json, text/plain, */*",
+		"accept-language": "en-US,en;q=0.9",
 		"user-agent": UA,
 		referer: base + "/riwayat-pga",
 		origin: base,
+		"sec-ch-ua": '"Chromium";v="128", "Not;A=Brand";v="24"',
+		"sec-ch-ua-mobile": "?0",
+		"sec-ch-ua-platform": '"Windows"',
+		"sec-fetch-dest": "empty",
+		"sec-fetch-mode": "cors",
+		"sec-fetch-site": "same-origin",
 	};
 	const urlDepo = `${base}/api/deposit/list/pga`;
 	const urlWd = `${base}/api/withdraw/list/pga`;
@@ -80,16 +87,47 @@ export async function lapRunMotion(env: Env, token: string, startDate: string, e
 	const pCreate = { page: 0, start: 0, limit: LIMIT, count: 0, date1: startDate, date2: endDate, filter_status: "1", filter_by: "1", sort: { field: "created_at", order: "desc" } };
 	const pWd = { page: 0, start: 0, limit: LIMIT, count: 0, date1: startDate, date2: endDate, filter_status: "1", filter_by: "0" };
 
-	const first = await postJsonBatch([
-		{ url: urlDepo, headers, body: pPaid },
+	// Panggilan pertama manual -> tangkap status untuk diagnosa.
+	let firstText = "";
+	let firstStatus = 0;
+	try {
+		const fr = await fetch(urlDepo, {
+			method: "POST",
+			headers: { "content-type": "application/json", ...headers },
+			body: JSON.stringify(pPaid),
+		});
+		firstStatus = fr.status;
+		firstText = await fr.text();
+	} catch (e) {
+		return { success: false, message: "Tidak bisa menghubungi API Motion: " + (e instanceof Error ? e.message : String(e)) };
+	}
+	if (firstStatus === 401 || firstStatus === 403) {
+		const cf = /cloudflare|attention required|just a moment|cf-ray|challenge/i.test(firstText);
+		return {
+			success: false,
+			message:
+				firstStatus === 401
+					? "Token Motion (x-access-token) kedaluwarsa / salah. Perbarui di menu Setting."
+					: cf
+						? "Motion 403 diblokir Cloudflare — API menolak request dari Worker. Modul ini perlu jalur GitHub Actions."
+						: "Motion 403: " + firstText.slice(0, 160),
+		};
+	}
+	if (firstStatus >= 400) return { success: false, message: "Motion HTTP " + firstStatus + ": " + firstText.slice(0, 160) };
+
+	let parsedPaid: Rec | null = null;
+	try {
+		parsedPaid = JSON.parse(firstText) as Rec;
+	} catch {
+		return { success: false, message: "Respons Motion bukan JSON: " + firstText.slice(0, 160) };
+	}
+	const rest = await postJsonBatch([
 		{ url: urlDepo, headers, body: pCreate },
 		{ url: urlWd, headers, body: pWd },
 	]);
 	let fetched = 3;
-	const parsedPaid = first[0] as Rec | null;
-	const parsedCreate = first[1] as Rec | null;
-	const parsedWd = first[2] as Rec | null;
-	if (!parsedPaid) return { success: false, message: "Token Motion kedaluwarsa / API tidak merespons. Perbarui x-access-token." };
+	const parsedCreate = rest[0] as Rec | null;
+	const parsedWd = rest[1] as Rec | null;
 	if (parsedPaid.success === false || parsedPaid.error) {
 		return { success: false, message: "API Motion menolak: " + (parsedPaid.msg || parsedPaid.message || parsedPaid.error || "unknown") };
 	}
@@ -292,10 +330,18 @@ export async function lapRunMozart(
 
 	const mkHeaders = (ref: string): Record<string, string> => ({
 		accept: "application/json, text/plain, */*",
+		"accept-language": "en-US,en;q=0.9",
 		cookie,
 		origin: base,
 		referer: base + ref,
 		"user-agent": UA,
+		"sec-ch-ua": '"Chromium";v="128", "Not;A=Brand";v="24"',
+		"sec-ch-ua-mobile": "?0",
+		"sec-ch-ua-platform": '"Windows"',
+		"sec-fetch-dest": "empty",
+		"sec-fetch-mode": "cors",
+		"sec-fetch-site": "same-origin",
+		"x-requested-with": "XMLHttpRequest",
 	});
 	const fetchAll = async (path: string, ref: string, baseBody: Rec) => {
 		const rows: Rec[] = [];
@@ -307,9 +353,18 @@ export async function lapRunMozart(
 					headers: { "content-type": "application/json", ...mkHeaders(ref) },
 					body: JSON.stringify({ ...baseBody, page_number: page, page_size: PAGE }),
 				});
-				if (r.status === 401) throw new Error("MOZART 401: session/token ditolak / kedaluwarsa.");
-				if (r.status === 403) throw new Error("MOZART 403: ditolak server (mungkin Cloudflare).");
-				j = JSON.parse(await r.text());
+				const text = await r.text();
+				if (r.status === 401) throw new Error("MOZART 401: session/token ditolak / kedaluwarsa. Perbarui cookie Mozart.");
+				if (r.status === 403) {
+					const cf = /cloudflare|attention required|cf-ray|just a moment|challenge/i.test(text);
+					throw new Error(
+						cf
+							? "MOZART 403 diblokir Cloudflare — API Mozart menolak request dari Worker. Modul ini perlu dipindah ke GitHub Actions."
+							: "MOZART 403: " + text.slice(0, 160),
+					);
+				}
+				if (r.status >= 400) throw new Error("MOZART HTTP " + r.status + ": " + text.slice(0, 160));
+				j = JSON.parse(text);
 			} catch (e) {
 				if (page === 0) throw e;
 				break;
@@ -438,10 +493,21 @@ export async function lapRunAdmin(env: Env, token: string, startDate: string, en
 	});
 	if (resp.status !== 204) {
 		const body = await resp.text();
+		let hint = "";
+		if (resp.status === 404) hint = " — workflow scrape.yml belum ada. Push repo daygroup-scraper dulu.";
+		else if (resp.status === 403) hint = " — token GitHub kurang izin (butuh Actions: Read and write) atau belum akses repo daygroup-scraper.";
+		else if (resp.status === 422) hint = " — branch 'main' belum ada di repo (repo masih kosong).";
+		const detail = (() => {
+			try {
+				return " [" + (JSON.parse(body).message || "") + "]";
+			} catch {
+				return "";
+			}
+		})();
 		await env.DB.prepare(`UPDATE lap_job SET status='error', message=?, updated_at=? WHERE id=?`)
-			.bind("Gagal trigger GitHub Actions: " + resp.status + " " + body.slice(0, 200), tsNow(), jobId)
+			.bind("GitHub " + resp.status + detail, tsNow(), jobId)
 			.run();
-		return { success: false, message: "Gagal memicu GitHub Actions (" + resp.status + ")." };
+		return { success: false, message: "Gagal memicu GitHub Actions (" + resp.status + ")" + detail + hint };
 	}
 	await logActivity(env, s.username, "LAP ADMIN", `Scan ${startDate}..${endDate} dipicu (job ${jobId.slice(0, 8)})`, "INFO", "");
 	return { success: true, jobId, message: "Scan dijalankan di GitHub Actions — ~1-3 menit." };

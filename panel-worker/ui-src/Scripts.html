@@ -610,10 +610,11 @@
       host.innerHTML = lapHeaderCard('fa-bolt-lightning', 'Lap Motion', 'Motion DP PGA · PGA Pending/Error · PGA Withdraw', `
         ${lapDateBar('lapMotion', lapRunMotion)}
         ${meta.truncated ? '<div class="text-[11px] text-amber-300 mt-1">⚠ Data terpotong (batas request Worker). Untuk periode besar pakai Lap Admin nanti.</div>' : ''}
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 mt-3">
           ${lapStatCard('Transaksi Paid', lapFmt(sm.totalTransaksiPaid), 'text-cyan-400')}
-          ${lapStatCard('Nominal Paid', lapFmt(sm.totalNominalPaidAt), 'text-emerald-400')}
+          ${lapStatCard('Total By Paid At', lapFmt(sm.totalNominalPaidAt), 'text-emerald-400')}
           ${lapStatCard('Transaksi Create', lapFmt(sm.totalTransaksiCreate), 'text-indigo-400')}
+          ${lapStatCard('Total By Created At', lapFmt(sm.totalNominalCreatedAt), 'text-slate-100')}
           ${lapStatCard('Pending / Error', lapFmt(sm.totalPendingErrorCount), 'text-rose-400')}
         </div>
         <div id="lapMotionTables">
