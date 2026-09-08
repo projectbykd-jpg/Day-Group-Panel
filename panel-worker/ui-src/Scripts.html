@@ -861,10 +861,11 @@
           ${lapTable('withdraw_pga_idf', ['NO','DATE','USER (TO)','OPERATOR (BY)','NOMINAL'], wd,
             (r,i) => `<tr>${td(i+1)}${td(r.date)}${td(r.to,'font-bold text-cyan-300')}${td(r.by,'text-indigo-300')}${td(lapFmt(r.nominal),'text-right font-bold text-cyan-400')}</tr>`,
             (r,i) => [i+1,r.date,r.to,r.by,r.nominal].join('\t'), ['to','by'], {title:'Withdraw PGA-IDF'})}
+          <div class="text-[10px] text-slate-500 mt-3 mb-1">Riwayat koin: <b class="text-slate-300">${lapFmt(cc.length)}</b> baris · ${lapFmt(ccmeta.pagesScanned)} halaman di-scan · baris abu-abu = transaksi PGA/reject (tidak dihitung selisih)</div>
           ${lapTable('check_coin', ['NO','DATE','INFO','TO','BY','DEPOSIT','WITHDRAW','LAST COIN','SELISIH','HITUNG'],
             (lapResults.checkCoin || []),
-            (r,i) => { const sel = r.selisih !== 0; const bg = r.isFinalRow ? 'bg-cyan-950/40 font-bold text-cyan-300' : (sel ? 'bg-rose-950/25' : '');
-              return `<tr class="${bg}">${td(r.no)}${td(r.date)}${td(r.info,'font-semibold')}${td(r.to,'font-bold')}${td(r.by)}${td(r.deposit?lapFmt(r.deposit):'','text-right text-emerald-400')}${td(r.withdraw?lapFmt(r.withdraw):'','text-right text-rose-400')}${td(lapFmt(r.lastCoin),'text-right')}${td(lapFmt(r.selisih),'text-right '+(sel?'text-rose-400 font-bold':'text-slate-600'))}${td(lapFmt(r.calcCoin),'text-right text-cyan-400')}</tr>`; },
+            (r,i) => { const sel = r.selisih !== 0 && !r.excluded; const bg = r.isFinalRow ? 'bg-cyan-950/40 font-bold text-cyan-300' : (sel ? 'bg-rose-950/25' : (r.excluded ? 'opacity-45' : ''));
+              return `<tr class="${bg}">${td(r.no)}${td(r.date)}${td(r.info,'font-semibold')}${td(r.to,'font-bold')}${td(r.by)}${td(r.deposit?lapFmt(r.deposit):'','text-right text-emerald-400')}${td(r.withdraw?lapFmt(r.withdraw):'','text-right text-rose-400')}${td(lapFmt(r.lastCoin),'text-right')}${td(r.excluded?'—':lapFmt(r.selisih),'text-right '+(sel?'text-rose-400 font-bold':'text-slate-600'))}${td(r.excluded?'—':lapFmt(r.calcCoin),'text-right text-cyan-400')}</tr>`; },
             (r,i) => [r.no,r.date,r.info,r.to,r.by,r.deposit,r.withdraw,r.lastCoin,r.selisih,r.calcCoin].join('\t'), ['to','by','info'], {title:'Riwayat Koin (Check Selisih)'})}
         </div>`);
       if (lapTblState.register) lapTblState.register.prefilter = rows => lapAdminF.refType==='all' ? rows : rows.filter(r => r.type === lapAdminF.refType);
