@@ -1476,176 +1476,95 @@
     function showSendResult(result) {
       lastSendResult = result;
 
-      const labels = {
-        telegram: 'Telegram',
-        linktree: 'LinkTree',
-        panelz: 'Panel-Z'
-      };
+      const labels = { telegram: 'Telegram', linktree: 'LinkTree', panelz: 'Panel-Z' };
+      const icons = { telegram: 'fa-brands fa-telegram', linktree: 'fa-solid fa-link', panelz: 'fa-solid fa-bolt' };
+      const sysKeys = Object.keys(labels);
+      const esc = escapeHtml;
+      const safe = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
-      const icons = {
-        telegram: 'fa-brands fa-telegram',
-        linktree: 'fa-solid fa-link',
-        panelz: 'fa-solid fa-bolt'
-      };
+      const websiteResults = Array.isArray(result.websiteResults) ? result.websiteResults : [];
 
-      let success = 0;
-      let failed = 0;
-      let blocked = 0;
-      let already = 0;
-      let skipped = 0;
+      let success = 0, failed = 0, blocked = 0, already = 0;
+      const okSites = [], dupSites = [], problemSites = [];
 
-      const websiteResults = Array.isArray(result.websiteResults)
-        ? result.websiteResults
-        : [];
+      websiteResults.forEach(site => {
+        const vals = sysKeys.map(k => String((site[k] || {}).status || '').toUpperCase());
+        vals.forEach(s => {
+          if (s === 'BERHASIL') success++;
+          else if (s === 'GAGAL') failed++;
+          else if (s === 'DIBLOKIR') blocked++;
+          else if (s === 'SUDAH DIKIRIM') already++;
+        });
+        const hasBad = vals.includes('GAGAL') || vals.includes('DIBLOKIR');
+        if (hasBad) problemSites.push(site);
+        else if (vals.includes('BERHASIL')) okSites.push(site);
+        else dupSites.push(site);
+      });
 
-      const cards = websiteResults.map(siteResult => {
-        const systemKeys = Object.keys(labels);
+      // Kasus umum (semua lancar / semua duplikat) -> cukup toast, tanpa modal.
+      if (!problemSites.length) {
+        const nOk = okSites.length, nDup = dupSites.length;
+        if (nOk && nDup) toast(`Berhasil ${nOk} website, ${nDup} sudah dikirim (dilewati)`);
+        else if (nOk) toast(`Berhasil dikirim ke ${nOk} website`);
+        else if (nDup) toast(`${nDup} website sudah pernah dikirim — tidak dikirim ulang`);
+        else toast('Tidak ada website yang diproses');
+        return;
+      }
 
-        const systemCards = systemKeys.map(key => {
-          const item = siteResult[key] || {
-            status: 'TIDAK DIPROSES',
-            reason: 'Tidak ada hasil'
-          };
+      // Ada yang gagal/diblokir -> modal ringkas, fokus ke yang bermasalah.
+      const problemCards = problemSites.map(site => {
+        const okChips = sysKeys
+          .filter(k => String((site[k] || {}).status || '').toUpperCase() === 'BERHASIL')
+          .map(k => `<span class="mini-chip status-ok">✓ ${labels[k]}</span>`).join('');
 
-          const status = String(item.status || 'TIDAK DIPROSES').toUpperCase();
-          if (status === 'BERHASIL') success++;
-          else if (status === 'GAGAL') failed++;
-          else if (status === 'DIBLOKIR') blocked++;
-          else if (status === 'SUDAH DIKIRIM') already++;
-          else skipped++;
-
-          const statusClass =
-            status === 'BERHASIL'
-              ? 'status-ok'
-              : (status === 'GAGAL' || status === 'DIBLOKIR')
-                ? 'status-bad'
-                : 'status-skip';
-
-          const websiteSafe = String(siteResult.website || '')
-            .replace(/\\/g, '\\\\')
-            .replace(/'/g, "\\'");
-
-          const canRetry =
-            status === 'GAGAL' &&
-            !/tidak diizinkan/i.test(String(item.reason || ''));
-
-          const retryButton = canRetry
-            ? `<button onclick="retryOneSystem('${key}','${websiteSafe}')" class="retry-mini">
-                 <i class="fa-solid fa-rotate-right mr-1"></i>COBA ULANG
-               </button>`
+        const badRows = sysKeys.map(k => {
+          const it = site[k] || {};
+          const s = String(it.status || '').toUpperCase();
+          if (s !== 'GAGAL' && s !== 'DIBLOKIR') return '';
+          const canRetry = s === 'GAGAL' && !/tidak diizinkan/i.test(String(it.reason || ''));
+          const retry = canRetry
+            ? `<button onclick="retryOneSystem('${k}','${safe(site.website)}')" class="retry-mini"><i class="fa-solid fa-rotate-right mr-1"></i>COBA ULANG</button>`
             : '';
-
-          return `
-            <div class="system-compact">
+          return `<div class="system-compact">
               <div class="system-compact-top">
-                <span class="system-compact-name">
-                  <i class="${icons[key]} mr-1.5 text-slate-400"></i>${labels[key]}
-                </span>
-                <span class="system-compact-status ${statusClass}">
-                  ${escapeHtml(status)}
-                </span>
+                <span class="system-compact-name"><i class="${icons[k]} mr-1.5 text-slate-400"></i>${labels[k]}</span>
+                <span class="system-compact-status status-bad">${esc(s)}</span>
               </div>
-              <div class="system-compact-reason">
-                ${escapeHtml(item.reason || '-')}
-              </div>
-              ${retryButton}
-            </div>
-          `;
+              <div class="system-compact-reason">${esc(it.reason || '-')}</div>
+              ${retry}
+            </div>`;
         }).join('');
 
-        const statuses = systemKeys.map(key =>
-          String((siteResult[key] || {}).status || '').toUpperCase()
-        );
-
-        const allDuplicate = statuses.every(status =>
-          status === 'SUDAH DIKIRIM' ||
-          status === 'DIBLOKIR' ||
-          status === 'SKIP'
-        );
-
-        const hasSuccess = statuses.includes('BERHASIL');
-        const hasFailure = statuses.includes('GAGAL');
-
-        let websiteBadge = 'HASIL PROSES';
-        let websiteBadgeClass = 'text-slate-400';
-
-        if (allDuplicate) {
-          websiteBadge = 'DUPLIKAT DIBLOKIR';
-          websiteBadgeClass = 'text-rose-300';
-        } else if (hasSuccess && hasFailure) {
-          websiteBadge = 'SEBAGIAN BERHASIL';
-          websiteBadgeClass = 'text-amber-300';
-        } else if (hasSuccess) {
-          websiteBadge = 'BERHASIL DIKIRIM';
-          websiteBadgeClass = 'text-emerald-300';
-        } else if (hasFailure) {
-          websiteBadge = 'GAGAL';
-          websiteBadgeClass = 'text-rose-300';
-        }
-
-        const duplicateDetails = systemKeys
-          .map(key => siteResult[key])
-          .filter(item =>
-            item &&
-            String(item.status || '').toUpperCase() === 'SUDAH DIKIRIM'
-          );
-
-        const blockedNote = allDuplicate
-          ? `<div class="blocked-note">
-               <b>Pengiriman ulang diblokir.</b>
-               Data yang sama sudah pernah berhasil dikirim ke website ini.
-               ${duplicateDetails.length
-                 ? 'Detail waktu dan user tercantum pada setiap sistem.'
-                 : ''}
-             </div>`
-          : '';
-
-        return `
-          <div class="website-result-card">
+        return `<div class="website-result-card">
             <div class="website-result-head">
-              <b class="text-sm text-cyan-300">
-                ${escapeHtml(siteResult.website || '-')}
-              </b>
-              <span class="text-[9px] ${websiteBadgeClass}">
-                ${websiteBadge}
-              </span>
+              <b class="text-sm text-cyan-300">${esc(site.website || '-')}</b>
+              <span class="text-[9px] text-rose-300">PERLU DICEK</span>
             </div>
-            <div class="system-compact-grid">
-              ${systemCards}
-            </div>
-            ${blockedNote}
-          </div>
-        `;
+            ${okChips ? `<div class="mini-chip-row">${okChips}</div>` : ''}
+            <div class="grid gap-2">${badRows}</div>
+          </div>`;
       }).join('');
 
-      document.getElementById('systemResultList').innerHTML =
-        cards || '<div class="text-xs text-slate-400">Tidak ada website yang diproses.</div>';
+      const flatLine = (site, kind) => {
+        const cls = kind === 'ok' ? 'status-ok' : 'status-skip';
+        const txt = kind === 'ok' ? '✓ Terkirim' : '⊘ Sudah dikirim';
+        return `<div class="result-flat-line"><span class="text-slate-300">${esc(site.website || '-')}</span><span class="${cls}">${txt}</span></div>`;
+      };
+      const restBlock = (okSites.length || dupSites.length)
+        ? `<div class="result-flat-wrap">${okSites.map(s => flatLine(s, 'ok')).join('')}${dupSites.map(s => flatLine(s, 'dup')).join('')}</div>`
+        : '';
 
-      // Ringkasan: hanya angka yang > 0, 3 warna semantik saja (hijau/merah/abu),
-      // tanpa rincian waktu per-kanal yang bikin penuh.
+      document.getElementById('systemResultList').innerHTML = problemCards + restBlock;
+
       const summaryParts = [];
       if (success) summaryParts.push(`<span class="summary-pill status-ok">${success} berhasil</span>`);
       if (failed) summaryParts.push(`<span class="summary-pill status-bad">${failed} gagal</span>`);
       if (blocked) summaryParts.push(`<span class="summary-pill status-bad">${blocked} tidak diizinkan</span>`);
       if (already) summaryParts.push(`<span class="summary-pill status-skip">${already} sudah dikirim</span>`);
-      if (skipped) summaryParts.push(`<span class="summary-pill status-skip">${skipped} dilewati</span>`);
-      if (!summaryParts.length) summaryParts.push(`<span class="summary-pill status-skip">Tidak ada yang diproses</span>`);
-      if (result && result.performance) {
-        const ms = Number(result.performance.totalMs || result.durationMs || 0);
-        if (ms) summaryParts.push(`<span class="summary-pill status-skip">⚡ ${(ms / 1000).toFixed(1)}s</span>`);
-      }
-
       document.getElementById('resultSummary').innerHTML = summaryParts.join('');
 
       const titleEl = document.querySelector('#sendResultModal h3');
-      if (titleEl) {
-        titleEl.textContent =
-          already > 0 && success > 0
-            ? 'Website baru dikirim, duplikat dilewati'
-            : already > 0 && success === 0
-              ? 'Semua website sudah pernah dikirim'
-              : 'Status setiap website & sistem';
-      }
+      if (titleEl) titleEl.textContent = `${problemSites.length} website perlu dicek`;
 
       document.getElementById('sendResultModal').classList.add('open');
     }
