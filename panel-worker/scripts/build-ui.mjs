@@ -56,6 +56,10 @@ const ARG_MAP = {
 	investResetScan: ["token"],
 	investGetStatus: ["token"],
 	investGetWarnings: ["token"],
+	lapGetConfig: ["token"],
+	lapSaveConfig: ["token", "data"],
+	lapRunMotion: ["token", "startDate", "endDate"],
+	lapRunMozart: ["token", "startDate", "endDate", "opts"],
 };
 
 const shim = `<script>

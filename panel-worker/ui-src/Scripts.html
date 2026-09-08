@@ -438,7 +438,7 @@
       const kicker = document.getElementById('headerKicker');
       if (kicker) kicker.textContent = HEADER_KICKER[page] || 'DAY-GROUP PANEL';
 
-      if (LAP_PAGES.includes(page)) renderLapPlaceholder(page);
+      if (LAP_PAGES.includes(page)) renderLapPage(page);
 
       if (page !== 'invest') stopInvestPolling();
 
@@ -485,34 +485,220 @@
       pumpLivePoll(true); // sinkron cepat sesuai halaman baru
     }
 
-    // Placeholder Laporan Harian (Lap Admin / Motion / Mozart / Setting).
-    // Modul scraper penuh sedang dipindahkan dari Apps Script.
-    function renderLapPlaceholder(page) {
+    // ================= LAPORAN HARIAN (port PANEL AUTO) =================
+    let lapConfig = null;
+    let lapResults = {};
+    const lapFmt = n => Number(n || 0).toLocaleString('en-US');
+    function lapToday() { return new Date(Date.now() + 7*3600*1000).toISOString().slice(0,10); }
+
+    function lapEnsureConfig(cb) {
+      if (lapConfig) { cb && cb(); return; }
+      google.script.run.withSuccessHandler(res => {
+        if (res && res.success) { lapConfig = res.config || {}; lapResults = res.results || {}; }
+        cb && cb();
+      }).withFailureHandler(() => cb && cb()).lapGetConfig(currentSessionToken);
+    }
+
+    function renderLapPage(page) {
       const host = document.getElementById('lap-page');
       if (!host) return;
-      const titles = {
-        'lap-admin': ['Lap Admin', 'fa-table-list', 'Register, Report Agent, Check Selisih Koin, Withdraw PGA-IDF'],
-        'lap-motion': ['Lap Motion', 'fa-bolt-lightning', 'Motion DP PGA, PGA Pending/Error, PGA Withdraw'],
-        'lap-mozart': ['Lap Mozart', 'fa-cubes-stacked', 'Deposit & Withdraw Mozart (m-banking)'],
-        'lap-setting': ['Setting Laporan Harian', 'fa-sliders', 'Link & Cookie Admin, Token Motion, Cookie Mozart']
+      lapEnsureConfig(() => {
+        if (page === 'lap-setting') lapRenderSetting(host);
+        else if (page === 'lap-motion') lapRenderMotion(host);
+        else if (page === 'lap-mozart') lapRenderMozart(host);
+        else lapRenderAdmin(host);
+      });
+    }
+
+    function lapHeaderCard(icon, title, sub, inner) {
+      return `<div class="glass-card rounded-3xl p-5 sm:p-6 flex flex-col gap-4">
+        <div class="flex items-center gap-3 border-b border-white/5 pb-3">
+          <div class="w-11 h-11 rounded-2xl bg-sky-500/12 border border-sky-500/25 flex items-center justify-center text-sky-300 text-lg"><i class="fa-solid ${icon}"></i></div>
+          <div><h2 class="text-lg font-black text-white">${title}</h2><p class="text-[11px] text-slate-400">${sub}</p></div>
+        </div>${inner}</div>`;
+    }
+
+    function lapDateBar(prefix, onRun) {
+      window['__lapRun_' + prefix] = onRun;
+      return `<div class="flex flex-wrap items-end gap-2.5">
+        <div><label class="block text-[10px] font-bold text-slate-400 mb-1">TANGGAL MULAI</label>
+          <input type="date" id="${prefix}Start" value="${lapToday()}" class="glass-inner rounded-xl px-3 py-2 text-xs text-slate-100"></div>
+        <div><label class="block text-[10px] font-bold text-slate-400 mb-1">TANGGAL SELESAI</label>
+          <input type="date" id="${prefix}End" value="${lapToday()}" class="glass-inner rounded-xl px-3 py-2 text-xs text-slate-100"></div>
+        <button id="${prefix}Btn" onclick="window['__lapRun_${prefix}']()" class="bg-gradient-to-r from-cyan-400 to-blue-600 text-slate-950 font-extrabold px-5 py-2.5 rounded-xl text-xs"><i class="fa-solid fa-play mr-2"></i>TARIK DATA</button>
+        <span id="${prefix}Status" class="text-[11px] text-slate-400"></span>
+      </div>`;
+    }
+    function lapBusy(prefix, on, msg) {
+      const b = document.getElementById(prefix + 'Btn'), s = document.getElementById(prefix + 'Status');
+      if (b) { b.disabled = on; b.innerHTML = on ? '<i class="fa-solid fa-spinner fa-spin mr-2"></i>MENARIK...' : '<i class="fa-solid fa-play mr-2"></i>TARIK DATA'; }
+      if (s) s.textContent = msg || '';
+    }
+    function lapStatCard(label, val, color) {
+      return `<div class="glass-inner rounded-2xl p-3.5"><div class="text-[10px] font-bold text-slate-400 uppercase">${label}</div><div class="text-lg font-black mt-1 ${color||'text-slate-50'}">${val}</div></div>`;
+    }
+    function lapTable(id, headers, rows, rowFn, copyRows) {
+      window['__lapCopy_' + id] = () => {
+        if (!rows || !rows.length) { toast('Data kosong'); return; }
+        navigator.clipboard.writeText(rows.map(copyRows).join('\n')).then(() => toast(rows.length + ' baris disalin'));
       };
-      const t = titles[page] || ['Laporan Harian', 'fa-file-invoice-dollar', ''];
-      host.innerHTML = `
-        <div class="glass-card rounded-3xl p-6 sm:p-8 flex flex-col gap-4">
-          <div class="flex items-center gap-3">
-            <div class="w-11 h-11 rounded-2xl bg-sky-500/12 border border-sky-500/25 flex items-center justify-center text-sky-300 text-lg"><i class="fa-solid ${t[1]}"></i></div>
-            <div>
-              <h2 class="text-lg font-black text-white">${t[0]}</h2>
-              <p class="text-xs text-slate-400">${t[2]}</p>
-            </div>
+      const head = headers.map(h => `<th class="px-3 py-2 text-left">${h}</th>`).join('');
+      const body = (rows && rows.length)
+        ? rows.map((r, i) => rowFn(r, i)).join('')
+        : `<tr><td colspan="${headers.length}" class="px-3 py-6 text-center text-slate-500 italic text-[11px]">Belum ada data.</td></tr>`;
+      return `<div class="flex items-center justify-between mt-4 mb-1.5">
+          <div class="text-xs font-bold text-slate-200">${id.replace(/_/g,' ').toUpperCase()} <span class="text-slate-500">(${rows ? rows.length : 0})</span></div>
+          <button onclick="window['__lapCopy_${id}']()" class="glass-inner px-3 py-1.5 rounded-lg text-[10px] font-bold"><i class="fa-regular fa-copy mr-1.5"></i>COPY</button>
+        </div>
+        <div class="overflow-x-auto rounded-xl border border-white/5"><table class="w-full text-[11px] text-slate-300 font-mono min-w-[560px]">
+          <thead class="bg-slate-900/60 text-slate-400 text-[9px] uppercase"><tr>${head}</tr></thead>
+          <tbody>${body}</tbody></table></div>`;
+    }
+    const td = (v, cls) => `<td class="px-3 py-1.5 ${cls||''}">${v==null?'':v}</td>`;
+
+    // ---------- SETTING ----------
+    function lapRenderSetting(host) {
+      const c = lapConfig || {};
+      host.innerHTML = lapHeaderCard('fa-sliders', 'Setting Laporan Harian', 'Kredensial per operator — tersimpan di database panel.', `
+        <div class="glass-inner rounded-2xl p-4 border border-cyan-500/15 text-[11px] text-slate-400 leading-relaxed">
+          Ambil di DevTools (F12): <b>Cookie Admin</b> → Application ▸ Cookies ▸ nilai <code class="text-cyan-300">PHPSESSID</code> (format <code>PHPSESSID=xxx</code>).
+          <b>Token Motion</b> → Network ▸ header <code class="text-cyan-300">x-access-token</code>. <b>Cookie Mozart</b> → Application ▸ Cookies ▸ <code class="text-cyan-300">atoken</code> (atau seluruh string cookie).
+        </div>
+        <div class="grid gap-3 mt-1">
+          <div class="grid sm:grid-cols-2 gap-3">
+            <input id="lapLinkAdmin" placeholder="Link Admin (https://ag.suksesbogil.com)" value="${(c.linkAdmin||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
+            <input id="lapCookieAdmin" placeholder="Cookie Admin — PHPSESSID=..." value="${(c.cookiesAdmin||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
           </div>
-          <div class="glass-inner rounded-2xl p-4 border border-amber-500/20 bg-amber-500/5 text-[13px] text-amber-200 leading-relaxed">
-            <b><i class="fa-solid fa-screwdriver-wrench mr-1.5"></i>Sedang dipindahkan.</b>
-            Modul <b>Laporan Harian</b> (scraper Admin / Motion / Mozart dari PANEL AUTO Apps Script)
-            sedang di-port ke Worker ini. Struktur menu sudah disiapkan; fungsi tarik data menyusul
-            di update berikutnya.
+          <div class="grid sm:grid-cols-2 gap-3">
+            <input id="lapLinkMotion" placeholder="Link Motion (https://motionv2.com)" value="${(c.linkMotion||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
+            <input id="lapTokenMotion" placeholder="Token Motion (x-access-token)" value="${(c.tokenMotion||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
           </div>
-        </div>`;
+          <div class="grid sm:grid-cols-2 gap-3">
+            <input id="lapLinkMozart" placeholder="Link Mozart" value="${(c.linkMozart||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
+            <input id="lapTokenMozart" placeholder="Cookie Mozart (atoken=... atau full cookie)" value="${(c.tokenMozart||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
+          </div>
+          <button id="lapSaveBtn" onclick="lapSaveSetting()" class="bg-gradient-to-r from-emerald-400 to-teal-500 text-slate-950 font-extrabold py-2.5 rounded-xl text-xs mt-1"><i class="fa-solid fa-floppy-disk mr-2"></i>SIMPAN KONFIGURASI</button>
+          <span id="lapSaveStatus" class="text-[11px] text-slate-400"></span>
+        </div>`);
+    }
+    function lapSaveSetting() {
+      const payload = {
+        linkAdmin: document.getElementById('lapLinkAdmin').value.trim(),
+        cookiesAdmin: document.getElementById('lapCookieAdmin').value.trim(),
+        linkMotion: document.getElementById('lapLinkMotion').value.trim(),
+        tokenMotion: document.getElementById('lapTokenMotion').value.trim(),
+        linkMozart: document.getElementById('lapLinkMozart').value.trim(),
+        tokenMozart: document.getElementById('lapTokenMozart').value.trim()
+      };
+      const btn = document.getElementById('lapSaveBtn'), st = document.getElementById('lapSaveStatus');
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>MENYIMPAN...'; }
+      google.script.run.withSuccessHandler(res => {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-2"></i>SIMPAN KONFIGURASI'; }
+        if (res && res.success) { lapConfig = res.config; if (st) st.textContent = 'Tersimpan ✓'; toast('Konfigurasi tersimpan'); }
+        else { if (st) st.textContent = (res && res.message) || 'Gagal'; toast('Gagal menyimpan'); }
+      }).withFailureHandler(e => {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-2"></i>SIMPAN KONFIGURASI'; }
+        if (st) st.textContent = 'Gagal: ' + ((e && e.message) || e);
+      }).lapSaveConfig(currentSessionToken, payload);
+    }
+
+    // ---------- MOTION ----------
+    function lapRenderMotion(host) {
+      const meta = (lapResults._motionMeta && lapResults._motionMeta[0]) || {};
+      const sm = meta.summary || {};
+      const dp = lapResults.motionDpPga || [], pe = lapResults.motionPendingError || [], wd = lapResults.motionWd || [];
+      host.innerHTML = lapHeaderCard('fa-bolt-lightning', 'Lap Motion', 'Motion DP PGA · PGA Pending/Error · PGA Withdraw', `
+        ${lapDateBar('lapMotion', lapRunMotion)}
+        ${meta.truncated ? '<div class="text-[11px] text-amber-300 mt-1">⚠ Data terpotong (batas request Worker). Untuk periode besar pakai Lap Admin nanti.</div>' : ''}
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3">
+          ${lapStatCard('Transaksi Paid', lapFmt(sm.totalTransaksiPaid), 'text-cyan-400')}
+          ${lapStatCard('Nominal Paid', lapFmt(sm.totalNominalPaidAt), 'text-emerald-400')}
+          ${lapStatCard('Transaksi Create', lapFmt(sm.totalTransaksiCreate), 'text-indigo-400')}
+          ${lapStatCard('Pending / Error', lapFmt(sm.totalPendingErrorCount), 'text-rose-400')}
+        </div>
+        <div id="lapMotionTables">
+          ${lapTable('motion_dp_pga', ['CREATED','PAID','USER','REF','WEBSITE','VENDOR','NOMINAL','FEE','STATUS'], dp,
+            r => `<tr>${td(r.createdAt)}${td(r.paidAt,'text-emerald-400')}${td(r.user,'font-bold text-cyan-300')}${td(r.refNo,'text-[10px]')}${td(r.game)}${td(r.vendor,'text-[10px]')}${td(lapFmt(r.amount),'text-right')}${td(lapFmt(r.fee),'text-right text-amber-400')}${td(r.status,'text-center text-emerald-400')}</tr>`,
+            r => [r.createdAt,r.paidAt,r.user,r.refNo,r.game,r.vendor,r.amount,r.fee,r.status].join('\t'))}
+          ${lapTable('pga_pending_error', ['CREATED','PAID','USER','REF','WEBSITE','VENDOR','NOMINAL','KETERANGAN'], pe,
+            r => `<tr class="bg-rose-950/10">${td(r.createdAt)}${td(r.paidAt)}${td(r.user,'font-bold text-rose-300')}${td(r.refNo,'text-[10px]')}${td(r.game)}${td(r.vendor,'text-[10px]')}${td(lapFmt(r.amount),'text-right')}${td(r.status,'text-center text-rose-300')}</tr>`,
+            r => [r.createdAt,r.paidAt,r.user,r.refNo,r.game,r.vendor,r.amount,r.status].join('\t'))}
+          ${lapTable('pga_withdraw', ['PAYOUT','CREATED','USER','BANK','REKENING','REF','NOMINAL','STATUS','ADMIN'], wd,
+            r => `<tr>${td(r.payoutAt,'text-purple-300')}${td(r.createdAt)}${td(r.user,'font-bold text-cyan-300')}${td(r.bank,'text-[10px]')}${td(r.accountNumber,'text-[10px]')}${td(r.refNo,'text-[9px]')}${td(lapFmt(r.amount),'text-right text-purple-300')}${td(r.status,'text-center')}${td(r.adminName,'text-[10px]')}</tr>`,
+            r => [r.user,r.amount].join('\t'))}
+        </div>`);
+    }
+    function lapRunMotion() {
+      lapEnsureConfig(() => {
+        if (!lapConfig || !lapConfig.tokenMotion) { toast('Isi Token Motion di menu Setting dulu'); switchPage('lap-setting'); return; }
+        const sd = document.getElementById('lapMotionStart').value, ed = document.getElementById('lapMotionEnd').value;
+        if (!sd || !ed) { toast('Pilih tanggal'); return; }
+        lapBusy('lapMotion', true, 'Menghubungi API Motion...');
+        google.script.run.withSuccessHandler(res => {
+          lapBusy('lapMotion', false, '');
+          if (!res || !res.success) { toast((res && res.message) || 'Gagal'); return; }
+          lapResults.motionDpPga = res.motionDpPga || [];
+          lapResults.motionPendingError = res.pgaPendingError || [];
+          lapResults.motionWd = res.motionWdPga || [];
+          lapResults._motionMeta = [{ summary: res.summary, truncated: res.truncated }];
+          renderLapPage('lap-motion');
+          toast('Motion: DP ' + lapResults.motionDpPga.length + ' · WD ' + lapResults.motionWd.length);
+        }).withFailureHandler(e => { lapBusy('lapMotion', false, 'Gagal'); toast((e && e.message) || 'Gagal'); })
+          .lapRunMotion(currentSessionToken, sd, ed);
+      });
+    }
+
+    // ---------- MOZART ----------
+    function lapRenderMozart(host) {
+      const meta = (lapResults._mozartMeta && lapResults._mozartMeta[0]) || {};
+      const sm = meta.summary || {};
+      const dp = lapResults.mozartDepo || [], wd = lapResults.mozartWd || [];
+      host.innerHTML = lapHeaderCard('fa-cubes-stacked', 'Lap Mozart', 'Deposit & Withdraw Mozart (m-banking)', `
+        ${lapDateBar('lapMozart', lapRunMozart)}
+        ${meta.truncated ? '<div class="text-[11px] text-amber-300 mt-1">⚠ Data terpotong (batas request Worker).</div>' : ''}
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3">
+          ${lapStatCard('DP Record', lapFmt(sm.totalDepoRecords), 'text-emerald-400')}
+          ${lapStatCard('DP Nominal', lapFmt(sm.totalDepoAmount), 'text-emerald-400')}
+          ${lapStatCard('WD Record', lapFmt(sm.totalWdRecords), 'text-rose-400')}
+          ${lapStatCard('WD Nominal', lapFmt(sm.totalWdAmount), 'text-rose-400')}
+        </div>
+        <div>
+          ${lapTable('mozart_deposit', ['DATE','USER','NAMA PENGIRIM','BANK','REKENING','NOMINAL','STATUS'], dp,
+            r => `<tr>${td(r.date)}${td(r.username,'font-bold text-cyan-300')}${td(r.name)}${td(r.bank,'uppercase text-[10px]')}${td(r.accountNumber,'text-[10px]')}${td(lapFmt(r.amount),'text-right text-emerald-400')}${td(r.status,'text-center uppercase text-[10px]')}</tr>`,
+            r => [r.username, r.amount].join('\t'))}
+          ${lapTable('mozart_withdraw', ['DATE','USER','NAMA REKENING','BANK','REKENING','NOMINAL','STATUS'], wd,
+            r => `<tr>${td(r.date)}${td(r.username,'font-bold text-rose-300')}${td(r.name)}${td(r.bank,'uppercase text-[10px]')}${td(r.accountNumber,'text-[10px]')}${td(lapFmt(r.amount),'text-right text-rose-400')}${td(r.status,'text-center uppercase text-[10px]')}</tr>`,
+            r => [r.username, r.amount].join('\t'))}
+        </div>`);
+    }
+    function lapRunMozart() {
+      lapEnsureConfig(() => {
+        if (!lapConfig || !lapConfig.tokenMozart) { toast('Isi Cookie Mozart di menu Setting dulu'); switchPage('lap-setting'); return; }
+        const sd = document.getElementById('lapMozartStart').value, ed = document.getElementById('lapMozartEnd').value;
+        if (!sd || !ed) { toast('Pilih tanggal'); return; }
+        lapBusy('lapMozart', true, 'Menghubungi API Mozart...');
+        google.script.run.withSuccessHandler(res => {
+          lapBusy('lapMozart', false, '');
+          if (!res || !res.success) { toast((res && res.message) || 'Gagal'); return; }
+          lapResults.mozartDepo = res.depositData || [];
+          lapResults.mozartWd = res.withdrawData || [];
+          lapResults._mozartMeta = [{ summary: res.summary, truncated: res.truncated }];
+          renderLapPage('lap-mozart');
+          toast('Mozart: DP ' + lapResults.mozartDepo.length + ' · WD ' + lapResults.mozartWd.length);
+        }).withFailureHandler(e => { lapBusy('lapMozart', false, 'Gagal'); toast((e && e.message) || 'Gagal'); })
+          .lapRunMozart(currentSessionToken, sd, ed, {});
+      });
+    }
+
+    // ---------- ADMIN (Fase B: GitHub Actions) ----------
+    function lapRenderAdmin(host) {
+      host.innerHTML = lapHeaderCard('fa-table-list', 'Lap Admin', 'Register · Report Agent · Check Selisih Koin · Withdraw PGA-IDF', `
+        <div class="glass-inner rounded-2xl p-4 border border-amber-500/20 bg-amber-500/5 text-[13px] text-amber-200 leading-relaxed">
+          <b><i class="fa-solid fa-screwdriver-wrench mr-1.5"></i>Fase B — sedang dibangun.</b>
+          Modul Admin narik 300-400 halaman untuk website besar, jadi dijalankan lewat
+          <b>GitHub Actions</b> (gratis, tanpa batas). Menyusul di update berikutnya.
+          Sementara, gunakan <b>Lap Motion</b> & <b>Lap Mozart</b> yang sudah aktif.
+        </div>`);
     }
 
     /* Menu admin: tampilkan satu panel per waktu (tidak numpuk scroll). */

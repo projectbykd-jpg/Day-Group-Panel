@@ -41,6 +41,7 @@ import {
 	investTestSession,
 } from "./api/invest";
 import { investPump } from "./lib/invest-scan";
+import { lapGetConfig, lapRunMotion, lapRunMozart, lapSaveConfig } from "./api/lap";
 
 type Handler = (env: Env, body: Record<string, unknown>) => Promise<unknown>;
 const s = (v: unknown) => String(v ?? "");
@@ -121,6 +122,13 @@ const ROUTES: Record<string, Handler> = {
 	investResetScan: (env, b) => investResetScan(env, s(b.token)),
 	investGetStatus: (env, b) => investGetStatus(env, s(b.token)),
 	investGetWarnings: (env, b) => investGetWarnings(env, s(b.token)),
+
+	// laporan harian
+	lapGetConfig: (env, b) => lapGetConfig(env, s(b.token)),
+	lapSaveConfig: (env, b) => lapSaveConfig(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
+	lapRunMotion: (env, b) => lapRunMotion(env, s(b.token), s(b.startDate), s(b.endDate)),
+	lapRunMozart: (env, b) =>
+		lapRunMozart(env, s(b.token), s(b.startDate), s(b.endDate), (b.opts ?? {}) as { depo?: boolean; wd?: boolean; panelId?: number }),
 };
 
 export default {
@@ -159,17 +167,25 @@ export default {
 			const job = url.searchParams.get("job") || "all";
 
 			// Diagnosa sementara: /__cron?key=...&job=debug&user=<username>&path=<path>
+			//   atau inline: &base=<url>&cookie=<PHPSESSID=...>
 			if (job === "debug") {
-				const dbgUser = url.searchParams.get("user") || "Admin";
-				const cfgRow = await env.DB.prepare(`SELECT base_url, phpsessid, koderedis, cookie_extra FROM invest_config WHERE username = ?`)
-					.bind(dbgUser)
-					.first<Record<string, string>>();
-				if (!cfgRow) return json({ ok: false, message: "no invest_config for " + dbgUser });
-				let baseUrl = String(cfgRow.base_url || "");
+				let baseUrl = url.searchParams.get("base") || "";
+				let cookie = url.searchParams.get("cookie") || "";
+				if (!baseUrl || !cookie) {
+					const dbgUser = url.searchParams.get("user") || "Admin";
+					const cfgRow = await env.DB.prepare(
+						`SELECT base_url, phpsessid, koderedis, cookie_extra FROM invest_config WHERE username = ?`,
+					)
+						.bind(dbgUser)
+						.first<Record<string, string>>();
+					if (!cfgRow) return json({ ok: false, message: "no invest_config for " + dbgUser });
+					baseUrl = String(cfgRow.base_url || "");
+					cookie = cfgRow.cookie_extra
+						? cfgRow.cookie_extra
+						: "PHPSESSID=" + cfgRow.phpsessid + (cfgRow.koderedis ? "; koderedis=" + cfgRow.koderedis : "");
+				}
+				baseUrl = baseUrl.split("#")[0].split("?")[0];
 				if (!baseUrl.endsWith("/")) baseUrl += "/";
-				const cookie = cfgRow.cookie_extra
-					? cfgRow.cookie_extra
-					: "PHPSESSID=" + cfgRow.phpsessid + (cfgRow.koderedis ? "; koderedis=" + cfgRow.koderedis : "");
 				const paths = (url.searchParams.get("path") || "admin_invoice13.php?psr=p33190").split("|");
 				const results: unknown[] = [];
 				for (const p of paths) {
@@ -183,13 +199,26 @@ export default {
 							redirect: "manual",
 						});
 						const body = await r.text();
+						const trCount = (body.match(/<tr[\s>]/gi) || []).length;
+						const pageNums = (body.match(/[?&]page=(\d+)/g) || []).map((x) => parseInt(x.split("=")[1], 10));
+						const maxPage = pageNums.length ? Math.max(...pageNums) : 1;
 						results.push({
 							url: baseUrl + p,
 							status: r.status,
 							location: r.headers.get("location"),
 							len: body.length,
+							trCount,
+							maxPage,
+							loginPage: /entered_login|vb_login_md5password|silakan login|please login/i.test(body),
 							hasPeriode: /name=["']?periode["']?[^>]*value=["'](\d+)["']/i.test(body),
-							snippet: body.slice(0, 600),
+							snippet: (() => {
+								const find = url.searchParams.get("find");
+								if (find) {
+									const i = body.toLowerCase().indexOf(find.toLowerCase());
+									return i < 0 ? "[not found: " + find + "]" : body.slice(Math.max(0, i - 200), i + 1400);
+								}
+								return url.searchParams.get("full") ? body.slice(0, 4000) : body.slice(0, 300);
+							})(),
 						});
 					} catch (e) {
 						results.push({ url: baseUrl + p, error: e instanceof Error ? e.message : String(e) });
