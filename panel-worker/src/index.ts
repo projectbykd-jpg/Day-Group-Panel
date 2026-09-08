@@ -41,7 +41,16 @@ import {
 	investTestSession,
 } from "./api/invest";
 import { investPump } from "./lib/invest-scan";
-import { lapGetConfig, lapRunMotion, lapRunMozart, lapSaveConfig } from "./api/lap";
+import {
+	lapAdminStatus,
+	lapGetConfig,
+	lapJobResult,
+	lapJobStart,
+	lapRunAdmin,
+	lapRunMotion,
+	lapRunMozart,
+	lapSaveConfig,
+} from "./api/lap";
 
 type Handler = (env: Env, body: Record<string, unknown>) => Promise<unknown>;
 const s = (v: unknown) => String(v ?? "");
@@ -129,6 +138,19 @@ const ROUTES: Record<string, Handler> = {
 	lapRunMotion: (env, b) => lapRunMotion(env, s(b.token), s(b.startDate), s(b.endDate)),
 	lapRunMozart: (env, b) =>
 		lapRunMozart(env, s(b.token), s(b.startDate), s(b.endDate), (b.opts ?? {}) as { depo?: boolean; wd?: boolean; panelId?: number }),
+	lapRunAdmin: (env, b) => lapRunAdmin(env, s(b.token), s(b.startDate), s(b.endDate)),
+	lapAdminStatus: (env, b) => lapAdminStatus(env, s(b.token), s(b.jobId)),
+	// dipanggil GitHub Actions (auth via job key, bukan sesi)
+	lapJobStart: (env, b) => lapJobStart(env, s(b.jobId), s(b.key)),
+	lapJobResult: (env, b) =>
+		lapJobResult(
+			env,
+			s(b.jobId),
+			s(b.key),
+			!!b.ok,
+			(b.data ?? {}) as Record<string, unknown[]>,
+			(b.errors ?? {}) as Record<string, string>,
+		),
 };
 
 export default {

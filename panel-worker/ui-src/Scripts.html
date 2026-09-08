@@ -690,15 +690,99 @@
       });
     }
 
-    // ---------- ADMIN (Fase B: GitHub Actions) ----------
+    // ---------- ADMIN (via GitHub Actions) ----------
+    let lapAdminJobId = null, lapAdminPollTimer = null;
     function lapRenderAdmin(host) {
+      const reg = lapResults.register || [];
+      const ra = lapResults.reportAgent || [];
+      const cc = (lapResults.checkCoin || []).filter(r => !r.isFinalRow);
+      const idS = lapResults.idSelisih || [];
+      const wd = lapResults.withdrawPgaIdf || [];
+      const rmeta = (lapResults.registerMeta && lapResults.registerMeta[0]) || {};
+      const rsum = rmeta.summary || {};
+      const ccmeta = (lapResults.checkCoinMeta && lapResults.checkCoinMeta[0]) || {};
+      const laporan = rmeta.dateLabel
+        ? `Tanggal ${rmeta.dateLabel}\n~ DAFTAR Non Reff = ${rsum.daftarNonRef||0}\n~ DAFTAR Menggunakan Reff = ${rsum.daftarWithRef||0}\n~ NDP Non Reff = ${rsum.ndpNonRef||0}\n~ NDP Menggunakan Reff = ${rsum.ndpWithRef||0}` : '';
+      window.__lapCopyLaporan = () => { if (!laporan) { toast('Belum ada'); return; } navigator.clipboard.writeText(laporan).then(() => toast('Laporan disalin')); };
+
       host.innerHTML = lapHeaderCard('fa-table-list', 'Lap Admin', 'Register · Report Agent · Check Selisih Koin · Withdraw PGA-IDF', `
-        <div class="glass-inner rounded-2xl p-4 border border-amber-500/20 bg-amber-500/5 text-[13px] text-amber-200 leading-relaxed">
-          <b><i class="fa-solid fa-screwdriver-wrench mr-1.5"></i>Fase B — sedang dibangun.</b>
-          Modul Admin narik 300-400 halaman untuk website besar, jadi dijalankan lewat
-          <b>GitHub Actions</b> (gratis, tanpa batas). Menyusul di update berikutnya.
-          Sementara, gunakan <b>Lap Motion</b> & <b>Lap Mozart</b> yang sudah aktif.
+        ${lapDateBar('lapAdmin', lapRunAdmin)}
+        <div id="lapAdminProgress" class="text-[11px] text-cyan-300 mt-1"></div>
+        <div class="glass-inner rounded-2xl p-3 mt-3">
+          <div class="flex items-center justify-between mb-1.5"><span class="text-[10px] font-bold text-slate-400 uppercase">Laporan Register</span>
+            <button onclick="window.__lapCopyLaporan()" class="glass-inner px-3 py-1 rounded-lg text-[10px] font-bold"><i class="fa-regular fa-copy mr-1"></i>COPY</button></div>
+          <pre class="text-[11px] text-slate-300 whitespace-pre-wrap font-mono">${laporan || 'Belum ada data. Klik TARIK DATA.'}</pre>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3">
+          ${lapStatCard('Total Selisih', lapFmt(ccmeta.totalSelisih), 'text-rose-400')}
+          ${lapStatCard('ID Selisih', lapFmt(idS.length), 'text-rose-400')}
+          ${lapStatCard('WD PGA-IDF', lapFmt(wd.length) + ' (' + lapFmt(ccmeta.totalNominalWdPgaIdf) + ')', 'text-cyan-400')}
+          ${lapStatCard('Baris Riwayat Koin', lapFmt(cc.length), 'text-slate-100')}
+        </div>
+        <div>
+          ${lapTable('register', ['NO','USERNAME','DEPOSIT','WITHDRAW','WIN/LOSE','TIPE'], reg,
+            r => `<tr>${td(r.no)}${td(r.username,'font-bold text-slate-200')}${td(lapFmt(r.deposit),'text-right '+((r.deposit>0)?'text-emerald-400 font-bold':''))}${td(lapFmt(r.withdraw),'text-right')}${td(lapFmt(r.winLose),'text-right font-bold '+((r.winLose>=0)?'text-emerald-400':'text-rose-400'))}${td(r.type,'text-[10px]')}</tr>`,
+            r => [r.no,r.username,r.deposit,r.withdraw,r.winLose].join('\t'))}
+          ${lapTable('id_selisih', ['NO','USER ID','NOMINAL'], idS,
+            r => `<tr class="cursor-pointer hover:bg-cyan-950/20" onclick="lapFocusSelisih('${(r.userId||'').replace(/'/g,'')}')">${td(r.no)}${td(r.userId,'font-bold text-cyan-400')}${td(lapFmt(r.nominal),'text-right text-rose-400 font-bold')}</tr>`,
+            r => [r.no,r.userId,r.nominal].join('\t'))}
+          ${lapTable('report_agent', ['NO','TGL TERIMA','USER','ACTION','DARI BANK','TUJUAN BANK','JUMLAH','STATUS','OPERATOR'], ra,
+            (r,i) => `<tr>${td(i+1)}${td(r.tanggalTerima)}${td(r.user,'font-bold text-slate-200')}${td(r.action,'text-[10px]')}${td(r.dariBank,'text-[10px]')}${td(r.tujuanBank,'text-[10px]')}${td(r.jumlah,'text-right font-bold')}${td(r.status,'text-center text-emerald-400')}${td(r.operator,'text-indigo-400')}</tr>`,
+            (r,i) => [i+1,r.tanggalTerima,r.user,r.action,r.dariBank,r.tujuanBank,r.jumlah,r.status,r.operator].join('\t'))}
+          ${lapTable('withdraw_pga_idf', ['NO','DATE','USER (TO)','OPERATOR (BY)','NOMINAL'], wd,
+            (r,i) => `<tr>${td(i+1)}${td(r.date)}${td(r.to,'font-bold text-cyan-300')}${td(r.by,'text-indigo-300')}${td(lapFmt(r.nominal),'text-right font-bold text-cyan-400')}</tr>`,
+            r => [r.to,r.nominal].join('\t'))}
+          <div id="lapCheckCoinWrap">
+          ${lapTable('check_coin', ['NO','DATE','INFO','TO','BY','DEPOSIT','WITHDRAW','LAST COIN','SELISIH','HITUNG'],
+            (lapResults.checkCoin || []),
+            r => { const sel = r.selisih !== 0; const bg = r.isFinalRow ? 'bg-cyan-950/40 font-bold text-cyan-300' : (sel ? 'bg-rose-950/25' : '');
+              return `<tr class="${bg}">${td(r.no)}${td(r.date)}${td(r.info,'font-semibold')}${td(r.to,'font-bold')}${td(r.by)}${td(r.deposit?lapFmt(r.deposit):'','text-right text-emerald-400')}${td(r.withdraw?lapFmt(r.withdraw):'','text-right text-rose-400')}${td(lapFmt(r.lastCoin),'text-right')}${td(lapFmt(r.selisih),'text-right '+(sel?'text-rose-400 font-bold':'text-slate-600'))}${td(lapFmt(r.calcCoin),'text-right text-cyan-400')}</tr>`; },
+            r => [r.no,r.date,r.info,r.to,r.by,r.deposit,r.withdraw,r.lastCoin,r.selisih,r.calcCoin].join('\t'))}
+          </div>
         </div>`);
+      if (lapAdminJobId && !lapResults.register) lapPollAdmin();
+    }
+    function lapFocusSelisih(userId) {
+      if (!userId) return;
+      const inp = document.getElementById('check_coinSearch'); // (belum ada search) -> scroll saja
+      document.getElementById('lapCheckCoinWrap')?.scrollIntoView({ behavior: 'smooth' });
+      toast('Cek baris SELISIH merah di tabel Riwayat Koin untuk ' + userId);
+    }
+    function lapRunAdmin() {
+      lapEnsureConfig(() => {
+        if (!lapConfig || !lapConfig.linkAdmin || !lapConfig.cookiesAdmin) { toast('Isi Link & Cookie Admin di Setting dulu'); switchPage('lap-setting'); return; }
+        const sd = document.getElementById('lapAdminStart').value, ed = document.getElementById('lapAdminEnd').value;
+        if (!sd || !ed) { toast('Pilih tanggal'); return; }
+        lapBusy('lapAdmin', true, 'Memicu GitHub Actions...');
+        const prog = document.getElementById('lapAdminProgress');
+        google.script.run.withSuccessHandler(res => {
+          if (!res || !res.success) { lapBusy('lapAdmin', false, ''); toast((res && res.message) || 'Gagal'); return; }
+          lapAdminJobId = res.jobId;
+          if (prog) prog.textContent = res.message || 'Berjalan...';
+          lapPollAdmin();
+        }).withFailureHandler(e => { lapBusy('lapAdmin', false, ''); toast((e && e.message) || 'Gagal'); })
+          .lapRunAdmin(currentSessionToken, sd, ed);
+      });
+    }
+    function lapPollAdmin() {
+      clearTimeout(lapAdminPollTimer);
+      if (!lapAdminJobId) return;
+      const prog = document.getElementById('lapAdminProgress');
+      google.script.run.withSuccessHandler(res => {
+        if (!res || !res.success) { lapBusy('lapAdmin', false, ''); if (prog) prog.textContent = (res && res.message) || 'Job hilang'; return; }
+        if (prog) prog.textContent = ({pending:'⏳ Antre di GitHub Actions...', running:'⚙️ Scraping berjalan...', done:'✅ Selesai', error:'❌ '+res.message}[res.status]) || res.status;
+        if (res.status === 'done') {
+          lapBusy('lapAdmin', false, '');
+          lapResults = res.results || lapResults;
+          lapAdminJobId = null;
+          renderLapPage('lap-admin');
+          toast('Lap Admin selesai — ' + (lapResults.register||[]).length + ' akun register');
+          return;
+        }
+        if (res.status === 'error') { lapBusy('lapAdmin', false, ''); toast(res.message || 'Gagal'); lapAdminJobId = null; return; }
+        lapAdminPollTimer = setTimeout(lapPollAdmin, 5000);
+      }).withFailureHandler(() => { lapAdminPollTimer = setTimeout(lapPollAdmin, 7000); })
+        .lapAdminStatus(currentSessionToken, lapAdminJobId);
     }
 
     /* Menu admin: tampilkan satu panel per waktu (tidak numpuk scroll). */

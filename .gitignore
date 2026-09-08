@@ -1,6 +1,9 @@
 # dependencies
 node_modules/
 
+# repo scraper terpisah (punya git & remote sendiri: github.com/projectbykd-jpg/daygroup-scraper)
+/daygroup-scraper/
+
 # Claude Code / editor local state
 .claude/
 .vscode/

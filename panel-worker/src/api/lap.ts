@@ -3,6 +3,7 @@
 // di Worker). Lap Admin (scraper berat) menyusul lewat GitHub Actions.
 import { requireSession } from "./auth";
 import { logActivity } from "../lib/activity";
+import { tsNow } from "../lib/time";
 import {
 	LapCreds,
 	extractPureUsername,
@@ -389,6 +390,142 @@ export async function lapRunMozart(
 		"",
 	);
 	return { success: true, startDate, endDate, depositData, withdrawData, summary, truncated };
+}
+
+// =========================================================================
+// LAP ADMIN — via GitHub Actions (scraper berat)
+// =========================================================================
+const GH_API = "https://api.github.com";
+
+export async function lapRunAdmin(env: Env, token: string, startDate: string, endDate: string) {
+	const s = await requireSession(env, token, { ignoreMaintenance: true });
+	if (!env.GH_TOKEN || !env.GH_REPO) {
+		return { success: false, message: "GitHub Actions belum dikonfigurasi (GH_TOKEN/GH_REPO). Hubungi admin." };
+	}
+	const c = await lapLoadCreds(env, s.username);
+	if (!c.linkAdmin || !c.cookieAdmin) {
+		return { success: false, message: "Link & Cookie Admin belum diisi di menu Setting!" };
+	}
+	// job yang masih jalan untuk user ini -> jangan dobel
+	const running = await env.DB.prepare(
+		`SELECT id FROM lap_job WHERE username = ? AND kind = 'admin' AND status IN ('pending','running')
+		 AND created_at > datetime('now','+7 hours','-30 minutes') LIMIT 1`,
+	)
+		.bind(s.username)
+		.first<{ id: string }>();
+	if (running) return { success: true, jobId: running.id, message: "Scan sebelumnya masih berjalan.", reused: true };
+
+	const jobId = crypto.randomUUID().replace(/-/g, "");
+	const key = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+	const params = JSON.stringify({ startDate, endDate, key });
+	await env.DB.prepare(
+		`INSERT INTO lap_job (id, username, kind, status, params, message, created_at, updated_at)
+		 VALUES (?, ?, 'admin', 'pending', ?, 'Menunggu GitHub Actions...', ?, ?)`,
+	)
+		.bind(jobId, s.username, params, tsNow(), tsNow())
+		.run();
+
+	const callback = env.PUBLIC_URL || "https://panel-worker.projectbykd.workers.dev";
+	const resp = await fetch(`${GH_API}/repos/${env.GH_REPO}/actions/workflows/scrape.yml/dispatches`, {
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${env.GH_TOKEN}`,
+			Accept: "application/vnd.github+json",
+			"User-Agent": "daygroup-panel",
+			"X-GitHub-Api-Version": "2022-11-28",
+		},
+		body: JSON.stringify({ ref: "main", inputs: { job_id: jobId, callback, key } }),
+	});
+	if (resp.status !== 204) {
+		const body = await resp.text();
+		await env.DB.prepare(`UPDATE lap_job SET status='error', message=?, updated_at=? WHERE id=?`)
+			.bind("Gagal trigger GitHub Actions: " + resp.status + " " + body.slice(0, 200), tsNow(), jobId)
+			.run();
+		return { success: false, message: "Gagal memicu GitHub Actions (" + resp.status + ")." };
+	}
+	await logActivity(env, s.username, "LAP ADMIN", `Scan ${startDate}..${endDate} dipicu (job ${jobId.slice(0, 8)})`, "INFO", "");
+	return { success: true, jobId, message: "Scan dijalankan di GitHub Actions — ~1-3 menit." };
+}
+
+export async function lapAdminStatus(env: Env, token: string, jobId: string) {
+	const s = await requireSession(env, token, { ignoreMaintenance: true });
+	const row = await env.DB.prepare(`SELECT * FROM lap_job WHERE id = ? AND username = ?`)
+		.bind(jobId, s.username)
+		.first<Record<string, string>>();
+	if (!row) return { success: false, message: "Job tidak ditemukan." };
+	const out: Record<string, unknown> = {
+		success: true,
+		status: row.status,
+		message: row.message,
+		updatedAt: row.updated_at,
+	};
+	if (row.status === "done") out.results = await lapLoadResults(env, s.username);
+	return out;
+}
+
+/** Dipanggil oleh GitHub Actions (auth: job key, bukan sesi). */
+export async function lapJobStart(env: Env, jobId: string, key: string) {
+	const row = await env.DB.prepare(`SELECT username, status, params FROM lap_job WHERE id = ?`)
+		.bind(jobId)
+		.first<{ username: string; status: string; params: string }>();
+	if (!row) return { success: false, message: "job tidak ada" };
+	let p: { startDate?: string; endDate?: string; key?: string } = {};
+	try {
+		p = JSON.parse(row.params || "{}");
+	} catch {
+		/* ignore */
+	}
+	if (!p.key || p.key !== key) return { success: false, message: "key salah" };
+	await env.DB.prepare(`UPDATE lap_job SET status='running', message='Scraping...', updated_at=? WHERE id=?`)
+		.bind(tsNow(), jobId)
+		.run();
+	const c = await lapLoadCreds(env, row.username);
+	return {
+		success: true,
+		creds: { linkAdmin: c.linkAdmin, cookieAdmin: c.cookieAdmin },
+		params: { startDate: p.startDate, endDate: p.endDate },
+	};
+}
+
+/** Dipanggil oleh GitHub Actions setelah scrape selesai. */
+export async function lapJobResult(
+	env: Env,
+	jobId: string,
+	key: string,
+	ok: boolean,
+	data: Record<string, unknown[]>,
+	errors: Record<string, string>,
+) {
+	const row = await env.DB.prepare(`SELECT username, params FROM lap_job WHERE id = ?`)
+		.bind(jobId)
+		.first<{ username: string; params: string }>();
+	if (!row) return { success: false, message: "job tidak ada" };
+	let p: { key?: string } = {};
+	try {
+		p = JSON.parse(row.params || "{}");
+	} catch {
+		/* ignore */
+	}
+	if (!p.key || p.key !== key) return { success: false, message: "key salah" };
+
+	if (ok && data && typeof data === "object") {
+		const save: Record<string, unknown[]> = {};
+		for (const k of Object.keys(data)) if (Array.isArray(data[k])) save[k] = data[k];
+		if (Object.keys(save).length) await lapSaveResults(env, row.username, save);
+	}
+	const errMsg = errors && Object.keys(errors).length ? " | error: " + Object.values(errors).join("; ") : "";
+	await env.DB.prepare(`UPDATE lap_job SET status=?, message=?, updated_at=? WHERE id=?`)
+		.bind(ok ? "done" : "error", (ok ? "Selesai." : "Gagal.") + errMsg, tsNow(), jobId)
+		.run();
+	await logActivity(
+		env,
+		row.username,
+		"LAP ADMIN",
+		"Hasil scan diterima" + errMsg,
+		ok ? "BERHASIL" : "GAGAL",
+		"",
+	);
+	return { success: true };
 }
 
 // -------------------------------------------------------------------------

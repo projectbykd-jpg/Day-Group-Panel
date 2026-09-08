@@ -60,6 +60,8 @@ const ARG_MAP = {
 	lapSaveConfig: ["token", "data"],
 	lapRunMotion: ["token", "startDate", "endDate"],
 	lapRunMozart: ["token", "startDate", "endDate", "opts"],
+	lapRunAdmin: ["token", "startDate", "endDate"],
+	lapAdminStatus: ["token", "jobId"],
 };
 
 const shim = `<script>
