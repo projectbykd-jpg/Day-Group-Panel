@@ -1,0 +1,2949 @@
+  <script>
+    let currentUser = "";
+    let currentSessionToken = localStorage.getItem("daygroup_session") || "";
+    let globalPredictionsData = [];
+    let globalClosingPrediction = null;
+    // Data hasil 1x panggilan getBootstrapData saat panel dibuka. Dipakai sekali lalu
+    // dikosongkan, supaya navigasi berikutnya tetap mengambil data segar dari server.
+    let bootstrapPrefetch = null;
+    let selectedClosingSlot = "";
+    let resultData = {};
+    let currentProfile = null;
+    let pendingSendText = ""; let pendingPreview = null; let lastSendResult = null; let maintenanceState = false; let inactivityTimer; let adminUsersData = []; let activePredictionIndex = null; let activePredictionKind = "schedule"; let activeClosingSlot = ""; let lastPredictionPendingWebsites = [];
+    const activityViews = { activity:{page:1,pageSize:75}, admin:{page:1,pageSize:75} };
+
+    /* ===== Navigasi instan + auto-refresh "realtime" (polling adaptif) =====
+       Apps Script tak punya WebSocket/SSE, jadi panel polling 1 endpoint gabungan
+       (getLivePanelData) dengan interval yang menyesuaikan keaktifan user & tab. */
+    let currentPage = 'home';
+    let currentAdminPanel = 'dashboard';                    // tab admin yang sedang dibuka
+    const pageDataCache = { activity:null, admin:null };   // hasil render terakhir per halaman
+    const pageFetchedAt = { activity:0, admin:0, prediction:0, users:0, sesi:0 };
+    let headerSummaryLoadedOnce = false;
+    let livePollTimer = null;
+    let livePollInFlight = false;
+    let livePollStartedAt = 0;
+    let livePollFailStreak = 0;
+    let lastUserActivityAt = Date.now();
+    const NAV_FRESH_MS = 12000;   // data < 12 dtk dianggap masih segar saat pindah menu
+    const shioIcons = { "KUDA": "🐴", "ULAR": "🐍", "NAGA": "🐉", "KELINCI": "🐇", "HARIMAU": "🐅", "KERBAU": "🐃", "TIKUS": "🐀", "BABI": "🐖", "ANJING": "🐕", "AYAM": "🐓", "MONYET": "🐒", "KAMBING": "🐐" };
+    // =========================================================
+    // DYNAMIC WEBSITE THEME ENGINE V3 — FINAL 12 WEBSITE PRESETS + SIDEBAR LOGOS
+    // Theme dan logo mengikuti website yang diakses user.
+    // =========================================================
+    const SITE_THEME_PRESETS = {
+      HUGO:  {name:'HUGOTOGEL', primary:'#0FA7F4', secondary:'#1B7DD6', accent:'#25D5FF', bg:'#060E15', panel:'#0E2A5D'},
+      FOLA:  {name:'FOLATOTO', primary:'#2593CF', secondary:'#1B56B1', accent:'#0FA7F4', bg:'#07121A', panel:'#13366D'},
+      LIMA:  {name:'LIMATOGEL', primary:'#41e0ff', secondary:'#19b5ff', accent:'#ffe34f', bg:'#08131f', panel:'#102436'},
+      SOHO:  {name:'SOHOTOGEL', primary:'#8dfd27', secondary:'#39d353', accent:'#ffd447', bg:'#081108', panel:'#122112'},
+      RETRO: {name:'RETROTOGEL', primary:'#ffd84f', secondary:'#ffb100', accent:'#ff5449', bg:'#120d08', panel:'#24190f'},
+      YEL:   {name:'YELTOTO', primary:'#b054ff', secondary:'#712bff', accent:'#ffd64f', bg:'#190624', panel:'#2b0f42'},
+      DODO:  {name:'DODOTOGEL', primary:'#ff432e', secondary:'#c41212', accent:'#ffc233', bg:'#180607', panel:'#2a0d10'},
+      AXIS:  {name:'AXISTOGEL', primary:'#ff9a1f', secondary:'#ff6a00', accent:'#ffd64a', bg:'#180d07', panel:'#2b160d'},
+      REMBO: {name:'REMBOTOGEL', primary:'#ff4b33', secondary:'#ff9a1f', accent:'#ffd74e', bg:'#160607', panel:'#2a0e10'},
+      HELEN: {name:'HELEN555', primary:'#c288ff', secondary:'#8d4dff', accent:'#f7d9a4', bg:'#171022', panel:'#2a1d3d'},
+      XO:    {name:'XOTOGEL', primary:'#34d9ff', secondary:'#1eb8c9', accent:'#86efac', bg:'#07151a', panel:'#0e242b'},
+      SENJA: {name:'SENJATOGEL', primary:'#ff9f43', secondary:'#ff5ca8', accent:'#b46cff', bg:'#1b0c17', panel:'#301626'}
+    };
+
+    const SITE_THEME_ALIASES = {
+      HUGO:'HUGO', HUGOTOGEL:'HUGO',
+      FOLA:'FOLA', FOLATOTO:'FOLA',
+      LIMA:'LIMA', LIMATOGEL:'LIMA',
+      SOHO:'SOHO', SOHOTOGEL:'SOHO',
+      RETRO:'RETRO', RETROTOGEL:'RETRO',
+      YEL:'YEL', YELTOTO:'YEL',
+      DODO:'DODO', DODOTOGEL:'DODO',
+      AXIS:'AXIS', AXISTOGEL:'AXIS',
+      REMBO:'REMBO', REMBOTOGEL:'REMBO',
+      HELEN:'HELEN', HELEN555:'HELEN', HELENTOGEL:'HELEN',
+      XO:'XO', XOTOGEL:'XO',
+      SENJA:'SENJA', SENJATOGEL:'SENJA'
+    };
+
+    const SITE_LOGO_PRESETS = {
+      HUGO:{single:'https://i.ibb.co/G3RXDFD2/image.png', pair:'https://i.ibb.co/DD78Pp4f/image.png'},
+      FOLA:{single:'https://i.ibb.co/yBSPW0jy/image.png', pair:'https://i.ibb.co/21NSfyWh/image.png'},
+      REMBO:{single:'https://i.ibb.co/YThZXph1/image.png', pair:'https://i.ibb.co/5WyKTYYS/image.png'},
+      HELEN:{single:'https://i.ibb.co/xKfhcn4r/image.png', pair:'https://i.ibb.co/nNZKFR9V/image.png'},
+      DODO:{single:'https://i.ibb.co/27thwb20/image.png', pair:'https://i.ibb.co/ks5N6pzT/image.png'},
+      AXIS:{single:'https://i.ibb.co/W4nzR7ML/image.png', pair:'https://i.ibb.co/hxbwwXXV/image.png'},
+      RETRO:{single:'https://i.ibb.co/Wv5kLpw4/image.png', pair:'https://i.ibb.co/pvtLKFfB/image.png'},
+      YEL:{single:'https://i.ibb.co/23tPFPV1/image.png', pair:'https://i.ibb.co/Rp4HpxW6/image.png'},
+      LIMA:{single:'https://i.ibb.co/1Y1HpTw6/image.png', pair:'https://i.ibb.co/35YCs8yY/image.png'},
+      SOHO:{single:'https://i.ibb.co/21Ky3q5Z/image.png', pair:'https://i.ibb.co/XryDCzbg/image.png'},
+      XO:{single:'https://i.ibb.co/VWpNSM4L/image.png', pair:'https://i.ibb.co/dJVtq78c/image.png'},
+      SENJA:{single:'https://i.ibb.co/8Zyy4fv/image.png', pair:'https://i.ibb.co/ZzNsTJC4/image.png'}
+    };
+
+    function normalizeThemeWebsite(value) {
+      const raw = String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+      return SITE_THEME_ALIASES[raw] || raw;
+    }
+
+    function hexToRgbTuple(hex) {
+      const clean = String(hex || '#000000').replace('#','');
+      const full = clean.length === 3 ? clean.split('').map(x => x+x).join('') : clean.padEnd(6,'0').slice(0,6);
+      return [parseInt(full.slice(0,2),16)||0, parseInt(full.slice(2,4),16)||0, parseInt(full.slice(4,6),16)||0];
+    }
+
+    function rgbTupleToHex(rgb) {
+      return '#' + rgb.map(v => Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');
+    }
+
+    function mixThemeColor(colors, offset) {
+      if (!colors.length) return '#22d3ee';
+      const tuples = colors.map(hexToRgbTuple);
+      const shifted = tuples.map((c,i) => c.map((v,k) => Math.min(255, v * (1 + (((i+k+offset)%3)-1) * .035))));
+      return rgbTupleToHex([0,1,2].map(k => shifted.reduce((s,c)=>s+c[k],0)/shifted.length));
+    }
+
+    function setThemeCssVariable(name, hex) {
+      const root = document.documentElement;
+      root.style.setProperty(name, hex);
+      root.style.setProperty(name + '-rgb', hexToRgbTuple(hex).join(','));
+    }
+
+    function buildWebsiteTheme(websites) {
+      const keys = [...new Set((Array.isArray(websites) ? websites : String(websites || '').split(','))
+        .map(normalizeThemeWebsite).filter(Boolean))];
+      const themes = keys.map(k => SITE_THEME_PRESETS[k]).filter(Boolean);
+
+      if (!themes.length) {
+        return {keys:[], names:['DAY-GROUP'], primary:'#22d3ee', secondary:'#3b82f6', accent:'#f472b6', bg:'#020617', panel:'#0f172a', fusion:false};
+      }
+      if (themes.length === 1) {
+        const t = themes[0];
+        return {keys, names:[t.name], primary:t.primary, secondary:t.secondary, accent:t.accent, bg:t.bg, panel:t.panel, fusion:false};
+      }
+
+      // Multi-site final logic:
+      // - website pertama = theme dominan
+      // - website kedua = warna sekunder utama
+      // - website ketiga dan seterusnya = penguat accent
+      // Background/panel dirata-ratakan agar tetap elegan dan tidak berantakan.
+      const primary = themes[0].primary;
+      const secondary = themes[1].secondary || themes[1].primary || themes[0].secondary;
+      const accent = themes.length === 2 ? (themes[1].accent || themes[0].accent) : mixThemeColor(themes.map(t=>t.accent || t.primary), 1);
+      const bg = mixThemeColor(themes.map(t=>t.bg), 2);
+      const panel = mixThemeColor(themes.map(t=>t.panel), 0);
+      return {keys, names:themes.map(t=>t.name), primary, secondary, accent, bg, panel, fusion:true};
+    }
+
+
+    function renderSidebarSiteLogos(websites) {
+      const wrap = document.getElementById('sidebar-site-logos');
+      if (!wrap) return [];
+      const keys = [...new Set((Array.isArray(websites) ? websites : String(websites || '').split(','))
+        .map(normalizeThemeWebsite).filter(key => !!SITE_LOGO_PRESETS[key]))];
+
+      if (!keys.length) {
+        wrap.style.display = 'none';
+        wrap.innerHTML = '';
+        return [];
+      }
+
+      if (keys.length === 1) {
+        const key = keys[0];
+        const meta = SITE_LOGO_PRESETS[key];
+        wrap.innerHTML = `
+          <div class="site-logo-single">
+            <div class="site-logo-item" title="${escapeHtml((SITE_THEME_PRESETS[key] && SITE_THEME_PRESETS[key].name) || key)}">
+              <img src="${meta.single}" alt="${escapeHtml(key)} logo" loading="lazy" decoding="async" referrerpolicy="no-referrer">
+            </div>
+          </div>`;
+      } else {
+        const shown = keys.slice(0, 2);
+        const logoItems = shown.map(key => {
+          const meta = SITE_LOGO_PRESETS[key];
+          return `
+            <div class="site-logo-item" title="${escapeHtml((SITE_THEME_PRESETS[key] && SITE_THEME_PRESETS[key].name) || key)}">
+              <img src="${meta.pair}" alt="${escapeHtml(key)} logo" loading="lazy" decoding="async" referrerpolicy="no-referrer">
+            </div>`;
+        }).join('');
+        wrap.innerHTML = `
+          <div class="site-logo-pair">${logoItems}</div>
+          ${keys.length > 2 ? `<div class="site-logo-more"><i class="fa-solid fa-layer-group"></i>+${keys.length - 2} website</div>` : ''}`;
+      }
+      wrap.style.display = 'block';
+      return keys;
+    }
+
+    function applyWebsiteTheme(websites) {
+      const theme = buildWebsiteTheme(websites || (currentProfile && currentProfile.websites) || []);
+      document.body.classList.add('theme-dynamic');
+      document.body.classList.toggle('theme-fusion', !!theme.fusion);
+      document.body.dataset.themeSites = theme.keys.join(',');
+      setThemeCssVariable('--theme-primary', theme.primary);
+      setThemeCssVariable('--theme-secondary', theme.secondary);
+      setThemeCssVariable('--theme-accent', theme.accent);
+      setThemeCssVariable('--theme-bg', theme.bg);
+      setThemeCssVariable('--theme-panel', theme.panel);
+      document.documentElement.style.setProperty('--theme-panel-rgb', hexToRgbTuple(theme.panel).join(','));
+
+      const badge = document.getElementById('theme-sites');
+      const label = document.getElementById('theme-sites-label');
+      if (label) {
+        const max = 3;
+        const shown = theme.names.slice(0,max);
+        label.textContent = shown.join(' + ') + (theme.names.length > max ? ` +${theme.names.length-max}` : '');
+        label.title = theme.names.join(' + ');
+      }
+      if (badge) badge.style.display = currentProfile ? 'inline-flex' : 'none';
+      renderSidebarSiteLogos(theme.keys);
+      return theme;
+    }
+
+    function resetWebsiteTheme() {
+      document.body.classList.remove('theme-fusion');
+      applyWebsiteTheme([]);
+      const badge = document.getElementById('theme-sites');
+      if (badge) badge.style.display = 'none';
+      const logoWrap = document.getElementById('sidebar-site-logos');
+      if (logoWrap) { logoWrap.style.display = 'none'; logoWrap.innerHTML = ''; }
+    }
+
+
+    function clearLocalSession() {
+      localStorage.removeItem("daygroup_session");
+      localStorage.removeItem("daygroup_user");
+      localStorage.removeItem("daygroup_profile");
+      currentSessionToken = "";
+      currentUser = "";
+      currentProfile = null;
+      resetWebsiteTheme();
+    }
+
+    function openLoginScreen(message) {
+      document.getElementById('app-container').style.display = 'none';
+      document.getElementById('login-screen').style.display = 'flex';
+      document.body.classList.add('justify-center');
+      const maintModal = document.getElementById('maintenanceModal');
+      if (maintModal) maintModal.classList.remove('open');
+      document.body.classList.remove('modal-open');
+      if (message) document.getElementById('login-err').innerText = message;
+    }
+
+    function applyAuthenticatedSession(res, tokenOverride) {
+      currentSessionToken = String(tokenOverride || res.sessionToken || currentSessionToken || '');
+      currentUser = String(res.user || res.username || '');
+      currentProfile = res;
+      localStorage.setItem("daygroup_session", currentSessionToken);
+      localStorage.setItem("daygroup_user", currentUser);
+      localStorage.setItem("daygroup_profile", JSON.stringify(res));
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('app-container').style.display = 'flex';
+      document.body.classList.remove('justify-center');
+      document.getElementById('sidebar-user').innerText = currentUser.toUpperCase();
+      applyWebsiteTheme(res.websites || []);
+      // switchPage('home') sudah memanggil loadHeaderSummary() di bagian akhirnya,
+      // jadi tidak perlu dipanggil lagi di sini (dulu jadi 2x panggil server).
+      applyProfileUI(); restoreDraft(); resetSessionTimer(); switchPage('home');
+      // Kunci maintenance dievaluasi begitu panel terbuka (login / resume sesi).
+      if (res && res.maintenance) setMaintenanceLock(res.maintenance.enabled, res.maintenance.message);
+      startLivePolling();
+    }
+
+    /* ===== MODE MAINTENANCE — overlay otomatis untuk NON-ADMIN =====
+       Dipanggil dari: login, resume sesi, live-poll, dan render dashboard.
+       Muncul/hilang sendiri tanpa refresh. Admin tidak pernah melihat overlay ini. */
+    function setMaintenanceLock(enabled, message) {
+      const modal = document.getElementById('maintenanceModal');
+      if (!modal) return;
+      const isAdmin = !!(currentProfile && currentProfile.role === 'ADMIN');
+      // Untuk ADMIN, jangan sentuh maintenanceState (dikelola switch + saveMaintenance
+      // sebagai optimistic UI); admin tidak pernah melihat overlay.
+      if (isAdmin) return;
+      maintenanceState = !!enabled;
+      const wasOpen = modal.classList.contains('open');
+
+      if (enabled && currentUser) {
+        const msgEl = document.getElementById('maintenanceModalMessage');
+        if (msgEl) msgEl.textContent = String(message || 'Panel sedang dalam pemeliharaan. Mohon tunggu sebentar.');
+        if (!wasOpen) {
+          modal.classList.add('open');
+          document.body.classList.add('modal-open');
+        }
+      } else if (wasOpen) {
+        modal.classList.remove('open');
+        if (!document.querySelector('.modal-shell.open')
+            && !document.getElementById('centerNoticeModal').classList.contains('open')
+            && document.getElementById('actionPopup').style.display === 'none') {
+          document.body.classList.remove('modal-open');
+        }
+        if (!enabled && currentUser) toast('Panel kembali aktif');
+      }
+    }
+
+    function renderHeaderSummary(box, data) {
+      if (!box) return;
+      const s = (data && data.stats) || {};
+      const failed = Number(s.failed || 0);
+      box.innerHTML = `
+        <span class="header-stat"><span class="header-stat-dot ok"></span>${Number(s.success||0)} Berhasil</span>
+        <span class="header-stat"><span class="header-stat-dot ${failed > 0 ? 'bad' : 'ok'}"></span>${failed} Gagal</span>
+        <span class="header-stat"><span class="header-stat-dot info"></span>${Number(s.sends||0)} Pengiriman</span>
+        <span class="header-stat"><span class="header-stat-dot info"></span>${Number(s.today||0)} Total Aktivitas</span>
+      `;
+    }
+
+    function loadHeaderSummary() {
+      if (!currentUser) return;
+      const box = document.getElementById('headerSummary');
+
+      // Sudah punya data dari getBootstrapData? Pakai itu, jangan panggil server lagi.
+      if (bootstrapPrefetch && bootstrapPrefetch.dashboard) {
+        const cached = bootstrapPrefetch.dashboard;
+        bootstrapPrefetch.dashboard = null; // konsumsi sekali saja
+        renderHeaderSummary(box, cached);
+        headerSummaryLoadedOnce = true;
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(data => { renderHeaderSummary(box, data); headerSummaryLoadedOnce = true; })
+        .withFailureHandler(() => { if (box) box.innerHTML = '<span class="header-stat"><span class="header-stat-dot bad"></span>Gagal memuat ringkasan</span>'; })
+        .getDashboardData(currentSessionToken, { page: 1, pageSize: 1 });
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      if (!currentSessionToken) {
+        clearLocalSession();
+        openLoginScreen('');
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(res => {
+          if (res && res.success && res.profile) {
+            // Simpan ringkasan header yang ikut terkirim, lalu buka panel.
+            bootstrapPrefetch = res;
+            applyAuthenticatedSession(res.profile, currentSessionToken);
+          } else if (res && res.success) {
+            // Cadangan: server versi lama membalas profil langsung (tanpa .profile).
+            applyAuthenticatedSession(res, currentSessionToken);
+          } else {
+            clearLocalSession();
+            openLoginScreen((res && res.message) || 'Sesi telah berakhir. Silakan login kembali.');
+          }
+        })
+        .withFailureHandler(() => { clearLocalSession(); openLoginScreen('Sesi tidak valid. Silakan login kembali.'); })
+        .getBootstrapData(currentSessionToken);
+    });
+
+    document.getElementById('pass').addEventListener('keypress', function (e) { if (e.key === 'Enter') { handleLogin(); } });
+    document.getElementById('user').addEventListener('keypress', function (e) { if (e.key === 'Enter') { document.getElementById('pass').focus(); } });
+
+    function handleLogin() {
+      const u = document.getElementById('user').value.trim();
+      const p = document.getElementById('pass').value;
+      const btn = document.getElementById('btnLogin');
+      const err = document.getElementById('login-err');
+      if(!u || !p) { err.innerText = "Lengkapi data!"; return; }
+      err.innerText = '';
+      btn.innerText = "MEMVERIFIKASI...";
+      btn.disabled = true;
+      google.script.run
+        .withSuccessHandler(res => {
+          btn.innerText = "LOGIN";
+          btn.disabled = false;
+          if(res && res.success) {
+            applyAuthenticatedSession(res, res.sessionToken);
+            toast("Selamat Datang, " + res.user);
+          } else {
+            err.innerText = (res && res.message) || 'Login gagal.';
+          }
+        })
+        .withFailureHandler(error => {
+          btn.innerText = "LOGIN";
+          btn.disabled = false;
+          err.innerText = (error && error.message) || 'Tidak dapat menghubungi server.';
+        })
+        .checkLogin(u, p);
+    }
+
+    function handleLogout() {
+      const token = currentSessionToken;
+      if (token) google.script.run.withFailureHandler(() => {}).logoutSession(token);
+      const maintModal = document.getElementById('maintenanceModal');
+      if (maintModal) maintModal.classList.remove('open');
+      document.body.classList.remove('modal-open');
+      clearLocalSession();
+      stopLivePolling();
+      pageDataCache.activity = null; pageDataCache.admin = null;
+      pageFetchedAt.activity = 0; pageFetchedAt.admin = 0; pageFetchedAt.prediction = 0;
+      headerSummaryLoadedOnce = false;
+      clearTimeout(inactivityTimer);
+      document.getElementById('user').value = '';
+      document.getElementById('pass').value = '';
+      document.getElementById('btnLogin').innerText = "LOGIN";
+      document.getElementById('btnLogin').disabled = false;
+      openLoginScreen('');
+      toast("Berhasil Keluar Sesi");
+    }
+
+    function switchPage(page) {
+      const pages = {home:'main-panel', prediction:'prediction-page', activity:'activity-page', admin:'admin-page', invest:'invest-page'};
+      Object.values(pages).forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+      });
+
+      const target = document.getElementById(pages[page] || 'main-panel');
+      if (target) target.style.display = 'flex';
+
+      const marketWrapper = document.getElementById('market-wrapper');
+      if (marketWrapper) marketWrapper.style.display = page === 'home' ? 'block' : 'none';
+
+      ['home','prediction','activity','admin','invest'].forEach(key => {
+        const nav = document.getElementById('nav-' + key);
+        if (nav) nav.classList.toggle('nav-active', key === page);
+      });
+
+      if (page !== 'invest') stopInvestPolling();
+
+      // "home" adalah halaman paling sering diklik (default landing) -- skip log di sini
+      // biar tidak nambah beban lock/tulis sheet tiap kali orang balik ke Beranda.
+      if (currentUser && page !== 'home') {
+        google.script.run.withFailureHandler(() => {}).logClientActivity(
+          currentSessionToken,
+          'BUKA HALAMAN',
+          page.toUpperCase(),
+          'INFO',
+          ''
+        );
+      }
+
+      currentPage = page;
+
+      if (page === 'prediction') {
+        if (Date.now() - pageFetchedAt.prediction > NAV_FRESH_MS) loadPredictionStatus();
+      }
+
+      if (page === 'activity') {
+        // Render instan dari cache (0 ms) -> refresh diam-diam hanya bila sudah basi.
+        if (pageDataCache.activity) applyDashboardData(pageDataCache.activity, 'activity', true);
+        if (!pageDataCache.activity || Date.now() - pageFetchedAt.activity > NAV_FRESH_MS) {
+          loadDashboard(false, 'activity');
+        }
+      }
+
+      if (page === 'admin') {
+        // Buka tab admin terakhir yang dipakai; tiap panel memuat datanya sendiri.
+        let savedTab = 'dashboard';
+        try { savedTab = localStorage.getItem('daygroup_admin_tab') || 'dashboard'; } catch (e) {}
+        switchAdminPanel(savedTab, true);
+      }
+
+      if (page === 'invest') {
+        loadInvestConfig();
+      }
+
+      // Header sudah dipoll oleh live-poll; muat manual hanya kalau belum pernah terisi.
+      if (!headerSummaryLoadedOnce) loadHeaderSummary();
+
+      pumpLivePoll(true); // sinkron cepat sesuai halaman baru
+    }
+
+    /* Menu admin: tampilkan satu panel per waktu (tidak numpuk scroll). */
+    const ADMIN_PANELS = ['dashboard','users','sesi','autopost','backup','maintenance'];
+    function switchAdminPanel(key, fromNav) {
+      if (ADMIN_PANELS.indexOf(key) < 0) key = 'dashboard';
+      currentAdminPanel = key;
+      try { localStorage.setItem('daygroup_admin_tab', key); } catch (e) {}
+
+      document.querySelectorAll('#admin-page .admin-tab').forEach(t =>
+        t.classList.toggle('active', t.dataset.adminTab === key));
+      document.querySelectorAll('#admin-page .admin-panel').forEach(p =>
+        p.classList.toggle('active', p.dataset.adminPanel === key));
+      const sel = document.getElementById('adminTabSelect');
+      if (sel && sel.value !== key) sel.value = key;
+
+      // Muat data panel yang dibuka (pakai cache/freshness di masing-masing loader).
+      if (key === 'dashboard') {
+        if (pageDataCache.admin) applyDashboardData(pageDataCache.admin, 'admin', true);
+        if (!pageDataCache.admin || Date.now() - pageFetchedAt.admin > NAV_FRESH_MS) loadDashboard(false, 'admin');
+      } else if (key === 'users') {
+        if (Date.now() - pageFetchedAt.users > NAV_FRESH_MS) { loadUsers(); pageFetchedAt.users = Date.now(); }
+      } else if (key === 'sesi') {
+        if (Date.now() - pageFetchedAt.sesi > NAV_FRESH_MS) { loadActiveSessions(); pageFetchedAt.sesi = Date.now(); }
+      }
+      if (!fromNav) pumpLivePoll(true);
+    }
+
+    function getPredictionRowUi(item, buttonBaseClass) {
+      const sent = Number(item && item.sentCount || 0);
+      const total = Number(item && item.totalWebsites || 0);
+      let statusBadge = '';
+      let sendLabel = 'SEND AUTO';
+      let sendClass = buttonBaseClass || 'prediction-send-btn';
+      let disabled = false;
+
+      if (item && item.status === 'POSTED') {
+        statusBadge = '<span class="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-extrabold">SELESAI</span>';
+        sendLabel = 'SUDAH TERKIRIM';
+        sendClass += ' done';
+        disabled = false;
+      } else if (item && item.status === 'PARTIAL') {
+        statusBadge = `<span class="px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-extrabold">${sent}/${total} TERKIRIM</span>`;
+        sendLabel = 'KIRIM SISA';
+        sendClass += ' partial';
+      } else if (item && item.status === 'NO_ACCESS') {
+        statusBadge = '<span class="px-3 py-1 rounded-full bg-slate-500/15 text-slate-400 border border-slate-500/20 text-[10px] font-extrabold">TIDAK ADA AKSES</span>';
+        sendLabel = 'TERKUNCI';
+        sendClass += ' locked';
+        disabled = true;
+      } else {
+        statusBadge = '<span class="px-3 py-1 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/25 text-[10px] font-extrabold">BELUM DIKIRIM</span>';
+      }
+
+      const countText = total > 0
+        ? `<span class="prediction-count">${sent} dari ${total} website ${item && item.kind === 'closing' ? 'pada sesi aktif' : 'hari ini'}</span>`
+        : '';
+
+      return { sent, total, statusBadge, sendLabel, sendClass, disabled, countText };
+    }
+
+    function getClosingSlotState(closing, slot) {
+      const slots = Array.isArray(closing && closing.slots) ? closing.slots : [];
+      return slots.find(item => String(item.slot) === String(slot)) || {
+        slot: slot,
+        status: 'ACTIVE',
+        sentCount: 0,
+        totalWebsites: Number(closing && closing.totalWebsites || 0),
+        pendingCount: Number(closing && closing.totalWebsites || 0)
+      };
+    }
+
+    function closingSlotStatusLabel(state) {
+      if (!state || state.status === 'NO_ACCESS') return 'TIDAK ADA AKSES';
+      if (state.status === 'POSTED') return 'SELESAI · ' + state.sentCount + '/' + state.totalWebsites;
+      if (state.status === 'PARTIAL') return 'SEBAGIAN · ' + state.sentCount + '/' + state.totalWebsites;
+      return 'BELUM DIKIRIM · 0/' + Number(state.totalWebsites || 0);
+    }
+
+    function selectClosingSlot(slot) {
+      selectedClosingSlot = String(slot || '');
+      activeClosingSlot = selectedClosingSlot;
+      renderClosingPredictionCard(globalClosingPrediction);
+    }
+
+    function renderClosingPredictionCard(closing) {
+      const card = document.getElementById('closingPredictionCard');
+      if (!card) return;
+      if (!closing) {
+        card.style.display = 'block';
+        card.innerHTML = '<div class="text-xs font-bold text-rose-200">Backend belum mengirim data kata-kata penutup. Gunakan code.gs Smart Lock V4.1 dan buat deployment versi baru.</div>';
+        return;
+      }
+
+      const validSlots = Array.isArray(closing.slots) ? closing.slots.map(item => String(item.slot)) : ['06:15','16:00'];
+      if (!selectedClosingSlot || !validSlots.includes(selectedClosingSlot)) {
+        selectedClosingSlot = String(closing.activeSlot || '06:15');
+      }
+      activeClosingSlot = selectedClosingSlot;
+      const selectedState = getClosingSlotState(closing, selectedClosingSlot);
+      const selectedUi = getPredictionRowUi(Object.assign({kind:'closing'}, selectedState), 'closing-send-btn');
+      const exampleText = String(closing.exampleText || 'Prediksi Togel Gacor HUGOTOGEL 04 August 2026\n\nPrediksi di atas hanyalah sekedar prediksi angka di hari ini. Tepat atau tidaknya tergantung hoki anda bosku');
+
+      const slotButtons = ['06:15','16:00'].map(slot => {
+        const state = getClosingSlotState(closing, slot);
+        const selected = slot === selectedClosingSlot ? ' selected' : '';
+        return `<button class="closing-slot-tab${selected}" onclick="selectClosingSlot('${slot}')">
+          <span class="closing-slot-time">${slot}</span>
+          <span class="closing-slot-state">${escapeHtml(closingSlotStatusLabel(state))}</span>
+        </button>`;
+      }).join('');
+
+      card.style.display = 'block';
+      card.innerHTML = `
+        <div class="closing-card-grid">
+          <div>
+            <div class="closing-eyebrow"><i class="fa-solid fa-star"></i> LIST PALING UTAMA · SMART LOCK V4.1</div>
+            <div class="closing-title-v3">
+              <span class="closing-title-icon-v3"><i class="fa-solid fa-bullhorn"></i></span>
+              <span>${escapeHtml(closing.name || 'KATA-KATA PENUTUP PREDIKSI')}</span>
+              <span class="closing-primary-badge">Telegram</span>
+            </div>
+            <div class="closing-preview-v3">${escapeHtml(exampleText)}</div>
+          </div>
+          <div class="closing-control-v3">
+            <div class="closing-control-label">Pilih sesi pengiriman</div>
+            <div class="closing-slot-tabs">${slotButtons}</div>
+            <div class="closing-selected-status">
+              <span>Status sesi ${escapeHtml(selectedClosingSlot)}</span>
+              <span>${escapeHtml(closingSlotStatusLabel(selectedState))}</span>
+            </div>
+            <div class="closing-actions-v3">
+              <button onclick="copyClosingPredictionText('${selectedClosingSlot}')" class="closing-action-v3 closing-action-copy-v3">
+                <i class="fa-solid fa-copy"></i> COPY
+              </button>
+              <button onclick="sendClosingPredictionRow(null, '${selectedClosingSlot}')" class="closing-action-v3 closing-action-send-v3 ${selectedState.status === 'POSTED' ? 'done' : ''}" ${selectedState.status === 'NO_ACCESS' ? 'disabled' : ''}>
+                <i class="fa-solid fa-paper-plane"></i> ${selectedState.status === 'POSTED' ? 'CEK / BLOKIR DUPLIKAT' : selectedUi.sendLabel}
+              </button>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function loadPredictionStatus() {
+      if (currentUser) {
+        google.script.run.withFailureHandler(() => {}).logClientActivity(currentSessionToken, "REFRESH STATUS PREDIKSI", "Memuat ulang jadwal dan status prediksi", "INFO", "");
+      }
+
+      google.script.run
+        .withSuccessHandler(data => {
+          pageFetchedAt.prediction = Date.now();
+          globalPredictionsData = (data && data.schedules) || [];
+          globalClosingPrediction = (data && data.closing) || null;
+          const info = document.getElementById('pred-info-text');
+          if (info && data && data.infoText) info.textContent = data.infoText;
+
+          renderClosingPredictionCard(globalClosingPrediction);
+
+          const tbody = document.getElementById('prediction-table-body');
+          tbody.innerHTML = '';
+
+          tbody.innerHTML = globalPredictionsData.map((item, index) => {
+            const ui = getPredictionRowUi(item, 'prediction-send-btn');
+            return `
+              <tr class="hover:bg-white/5 transition-all">
+                <td class="p-4 font-bold text-white">${escapeHtml(item.name)}</td>
+                <td class="p-4 text-center font-mono text-cyan-400 font-bold">${escapeHtml(item.time)}</td>
+                <td class="p-4 text-center">${ui.statusBadge}${ui.countText}</td>
+                <td class="p-4 text-right">
+                  <div class="prediction-action-group">
+                    <button onclick="copyPredictionText(${index})" class="prediction-btn prediction-copy-btn" title="Salin paket prediksi unik per website; sama dengan isi SEND AUTO untuk sesi hari ini">
+                      <i class="fa-solid fa-copy"></i> Copy
+                    </button>
+                    <button onclick="sendPredictionRow(${index})" class="prediction-btn ${ui.sendClass}" ${ui.disabled ? 'disabled' : ''} title="Kirim langsung tanpa konfirmasi ke website yang belum terkirim hari ini">
+                      <i class="fa-solid fa-paper-plane"></i> ${ui.sendLabel}
+                    </button>
+                  </div>
+                </td>
+              </tr>`;
+          }).join('');
+        })
+        .withFailureHandler(err => {
+          const message = (err && err.message) || 'Gagal memuat status prediksi.';
+          toast(message);
+        })
+        .getPredictionStatusData(currentSessionToken);
+    }
+
+    function copyClosingPredictionText(slotOverride) {
+      const item = globalClosingPrediction;
+      if (!item) return;
+
+      showActionPopup(
+        "LOADING",
+        "Menyiapkan Kata-Kata Penutup...",
+        `Membuat pesan sesuai website untuk sesi ${slotOverride || selectedClosingSlot || item.activeSlot || '-'}...`,
+        "fa-bullhorn"
+      );
+
+      google.script.run
+        .withSuccessHandler(result => {
+          if (result && result.success && result.copyText) {
+            navigator.clipboard.writeText(result.copyText);
+            google.script.run.logClientActivity(
+              currentSessionToken,
+              "COPY PENUTUP PREDIKSI",
+              `${item.name} | Sesi ${result.activeSlot || item.activeSlot || '-'}`,
+              "BERHASIL",
+              result.copyText
+            );
+            showActionPopup(
+              "DONE",
+              "Kata-Kata Penutup Disalin!",
+              `Pesan untuk ${Array.isArray(result.messages) ? result.messages.length : 1} website berhasil disalin.`,
+              "fa-check"
+            );
+          } else {
+            showActionPopup(
+              "ERROR",
+              "Gagal Menyalin",
+              (result && result.message) || "Kata-kata penutup belum berhasil dibuat.",
+              "fa-triangle-exclamation"
+            );
+          }
+        })
+        .withFailureHandler(err => {
+          showActionPopup("ERROR", "Gagal Menyalin", (err && err.message) || "Terjadi kesalahan.", "fa-triangle-exclamation");
+        })
+        .generateClosingPredictionCopy(currentSessionToken, slotOverride || selectedClosingSlot || item.activeSlot);
+    }
+
+    function sendClosingPredictionRow(websites, slotOverride) {
+      const item = globalClosingPrediction;
+      if (!item) return;
+
+      activePredictionKind = 'closing';
+      activePredictionIndex = -1;
+      activeClosingSlot = slotOverride || selectedClosingSlot || item.activeSlot || '';
+      const selectedWebsites = Array.isArray(websites) && websites.length ? websites : null;
+      closePredictionSendModal();
+
+      showActionPopup(
+        'LOADING',
+        selectedWebsites ? 'Mengirim Penutup yang Tertunda' : 'SEND AUTO Kata-Kata Penutup',
+        selectedWebsites
+          ? `Mengirim ulang ${selectedWebsites.length} website yang belum berhasil pada sesi ${activeClosingSlot}...`
+          : `Sistem mengecek duplikat per website untuk sesi ${activeClosingSlot}, lalu mengirim tanpa konfirmasi...`,
+        'fa-paper-plane'
+      );
+
+      google.script.run
+        .withSuccessHandler(result => {
+          closeActionPopup();
+          if (!result) {
+            showActionPopup('ERROR', 'Tidak Ada Respons', 'Server tidak mengembalikan hasil.', 'fa-triangle-exclamation');
+            return;
+          }
+          if (result.blocked && (!result.websiteResults || !result.websiteResults.length)) {
+            showActionPopup('ERROR', 'Pengiriman Diblokir', result.message || 'Pengiriman tidak dapat diproses.', 'fa-ban');
+            return;
+          }
+          showPredictionSendResult(result);
+          loadPredictionStatus();
+        })
+        .withFailureHandler(err => {
+          showActionPopup('ERROR', 'SEND AUTO Gagal', (err && err.message) || 'Terjadi kesalahan saat mengirim kata-kata penutup.', 'fa-triangle-exclamation');
+        })
+        .sendClosingPredictionAuto(currentSessionToken, selectedWebsites, activeClosingSlot);
+    }
+
+    function copyPredictionText(index) {
+      const item = globalPredictionsData[index];
+      if (!item) return;
+
+      showActionPopup(
+        "LOADING",
+        "Menyiapkan Prediksi Unik...",
+        `Membuat isi berbeda untuk setiap website pada "${item.name}"...`,
+        "fa-wand-magic-sparkles"
+      );
+
+      google.script.run
+        .withSuccessHandler(result => {
+          const copyText = typeof result === 'string' ? result : String(result && result.copyText || '');
+          const count = result && Array.isArray(result.messages) ? result.messages.length : 1;
+
+          if (copyText) {
+            navigator.clipboard.writeText(copyText);
+            google.script.run.logClientActivity(
+              currentSessionToken,
+              "COPY PREDIKSI UNIK",
+              `${item.name} | ${count} website`,
+              "BERHASIL",
+              copyText
+            );
+            showActionPopup(
+              "DONE",
+              "Prediksi Unik Berhasil Disalin!",
+              `${count} isi website berbeda berhasil dibuat. Isi COPY dan SEND AUTO tetap konsisten untuk sesi hari ini.`,
+              "fa-check"
+            );
+          } else {
+            showActionPopup(
+              "ERROR",
+              "Gagal Memuat",
+              (result && result.message) || "Prediksi belum berhasil dibuat. Silakan coba kembali.",
+              "fa-triangle-exclamation"
+            );
+          }
+        })
+        .withFailureHandler(err => {
+          showActionPopup("ERROR", "Gagal Memuat", (err && err.message) || "Prediksi gagal dibuat.", "fa-triangle-exclamation");
+        })
+        .generatePredictionCopyBundle(index, currentSessionToken);
+    }
+
+    function sendPredictionRow(index, websites) {
+      const item = globalPredictionsData[index];
+      if (!item) return;
+
+      activePredictionKind = 'schedule';
+      activePredictionIndex = index;
+      activeClosingSlot = '';
+      const selectedWebsites = Array.isArray(websites) && websites.length ? websites : null;
+      closePredictionSendModal();
+      showActionPopup(
+        'LOADING',
+        selectedWebsites ? 'Mengirim Website Tertunda' : 'SEND AUTO Prediksi',
+        selectedWebsites
+          ? `Mengirim ulang ${selectedWebsites.length} website yang belum berhasil...`
+          : 'Sistem mengecek duplikat per website dan langsung mengirim website yang belum terkirim hari ini...',
+        'fa-paper-plane'
+      );
+
+      google.script.run
+        .withSuccessHandler(result => {
+          closeActionPopup();
+          if (!result) {
+            showActionPopup('ERROR', 'Tidak Ada Respons', 'Server tidak mengembalikan hasil.', 'fa-triangle-exclamation');
+            return;
+          }
+          if (result.blocked && (!result.websiteResults || !result.websiteResults.length)) {
+            showActionPopup('ERROR', 'Pengiriman Diblokir', result.message || 'Pengiriman tidak dapat diproses.', 'fa-ban');
+            return;
+          }
+          showPredictionSendResult(result);
+          loadPredictionStatus();
+        })
+        .withFailureHandler(err => {
+          showActionPopup('ERROR', 'SEND AUTO Gagal', (err && err.message) || 'Terjadi kesalahan saat mengirim prediksi.', 'fa-triangle-exclamation');
+        })
+        .sendPredictionAuto(index, currentSessionToken, selectedWebsites);
+    }
+
+    function showPredictionSendResult(result) {
+      activePredictionKind = result && result.kind === 'closing' ? 'closing' : 'schedule';
+      if (activePredictionKind === 'closing') {
+        activePredictionIndex = -1;
+        activeClosingSlot = String(result.activeSlot || activeClosingSlot || '');
+      } else {
+        activePredictionIndex = Number(result.predictionIndex);
+        activeClosingSlot = '';
+      }
+      lastPredictionPendingWebsites = Array.isArray(result.pendingWebsites) ? result.pendingWebsites : [];
+      const rows = Array.isArray(result.websiteResults) ? result.websiteResults : [];
+      let success = 0;
+      let already = 0;
+      let failed = 0;
+      let processing = 0;
+
+      const cards = rows.map(item => {
+        const status = String(item.status || 'GAGAL').toUpperCase();
+        let statusClass = 'fail';
+        let statusLabel = status;
+        let icon = 'fa-triangle-exclamation';
+
+        if (status === 'BERHASIL') {
+          success++;
+          statusClass = 'ok';
+          statusLabel = 'TERKIRIM';
+          icon = 'fa-circle-check';
+        } else if (status === 'SUDAH DIKIRIM') {
+          already++;
+          statusClass = 'already';
+          icon = 'fa-shield-halved';
+        } else if (status === 'SEDANG DIPROSES') {
+          processing++;
+          statusClass = 'processing';
+          icon = 'fa-spinner fa-spin';
+        } else {
+          failed++;
+        }
+
+        return `
+          <div class="prediction-site-card">
+            <div class="prediction-site-head">
+              <div class="prediction-site-name"><i class="fa-brands fa-telegram mr-2 text-cyan-400"></i>${escapeHtml(item.website || '-')}</div>
+              <span class="prediction-site-status ${statusClass}"><i class="fa-solid ${icon} mr-1"></i>${escapeHtml(statusLabel)}</span>
+            </div>
+            <div class="prediction-site-reason">${escapeHtml(item.reason || '-')}</div>
+          </div>
+        `;
+      }).join('');
+
+      document.getElementById('predictionSendList').innerHTML = cards || '<div class="text-xs text-slate-400">Tidak ada website yang diproses.</div>';
+      document.getElementById('predictionResultTitle').textContent = result.predictionName || 'Hasil pengiriman prediksi';
+      const predSummary = [];
+      if (success) predSummary.push(`<span class="summary-pill status-ok">${success} terkirim</span>`);
+      if (already) predSummary.push(`<span class="summary-pill status-skip">${already} diblokir duplikat</span>`);
+      if (failed) predSummary.push(`<span class="summary-pill status-bad">${failed} belum terkirim</span>`);
+      if (processing) predSummary.push(`<span class="summary-pill status-skip">${processing} diproses</span>`);
+      if (!predSummary.length) predSummary.push(`<span class="summary-pill status-skip">Tidak ada yang diproses</span>`);
+      if (result && result.performance) {
+        const ms = Number(result.performance.totalMs || result.durationMs || 0);
+        if (ms) predSummary.push(`<span class="summary-pill status-skip">⚡ ${(ms / 1000).toFixed(1)}s</span>`);
+      }
+      document.getElementById('predictionResultSummary').innerHTML = predSummary.join('');
+
+      const retryBtn = document.getElementById('predictionRetryPendingBtn');
+      retryBtn.style.display = lastPredictionPendingWebsites.length ? 'block' : 'none';
+      retryBtn.innerHTML = `<i class="fa-solid fa-paper-plane mr-2"></i>KIRIM ${lastPredictionPendingWebsites.length} WEBSITE BELUM TERKIRIM`;
+      document.getElementById('predictionResultActions').classList.toggle('two', lastPredictionPendingWebsites.length > 0);
+      document.getElementById('predictionSendModal').classList.add('open');
+    }
+
+    function retryPendingPrediction() {
+      if (!lastPredictionPendingWebsites.length) return;
+      if (activePredictionKind === 'closing') {
+        sendClosingPredictionRow(lastPredictionPendingWebsites.slice(), activeClosingSlot);
+        return;
+      }
+      if (activePredictionIndex === null || Number.isNaN(activePredictionIndex)) return;
+      sendPredictionRow(activePredictionIndex, lastPredictionPendingWebsites.slice());
+    }
+
+    function closePredictionSendModal() {
+      const modal = document.getElementById('predictionSendModal');
+      if (modal) modal.classList.remove('open');
+    }
+
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('live-clock').innerText = now.toTimeString().split(' ')[0];
+      document.getElementById('live-date').innerText = now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' }).toUpperCase();
+    }
+    setInterval(updateClock, 1000); updateClock();
+    // Ringkasan header di-refresh oleh live-poll adaptif (startLivePolling),
+    // yang otomatis berhenti saat tab tidak terlihat. Interval lama dihapus.
+
+    /* ================= LIVE POLL ADAPTIF =================
+       Pengganti WebSocket/SSE (tidak tersedia di Apps Script). Satu endpoint
+       gabungan (getLivePanelData) dipoll dengan interval yang menyesuaikan:
+         - tab tidak terlihat  -> berhenti total
+         - user aktif          -> 15 dtk
+         - idle 1.5-5 mnt       -> 30 dtk
+         - idle > 5 mnt         -> 60 dtk
+       Begitu tab kembali fokus / user pindah menu -> langsung sinkron 1x. */
+    function markUserActive(){ lastUserActivityAt = Date.now(); }
+    ['click','keydown','touchstart','mousemove','scroll'].forEach(ev =>
+      document.addEventListener(ev, markUserActive, { passive:true }));
+
+    function livePollDelayMs(){
+      // Overlay maintenance sedang tampil -> cek lebih sering (10 dtk) supaya panel
+      // langsung terbuka begitu admin mematikan maintenance, walau tab di belakang.
+      if (maintenanceState && document.getElementById('maintenanceModal').classList.contains('open')) {
+        return document.hidden ? 20000 : 10000;
+      }
+      // Tab tidak terlihat: TIDAK berhenti total, hanya melambat ke 2 menit supaya
+      // data tetap "hangat" tanpa boros kuota. Begitu tab dibuka lagi -> sinkron 1x instan.
+      if (document.hidden) return 120000;
+      if (livePollFailStreak >= 4) return 60000; // endpoint bermasalah -> jangan spam
+      const idle = Date.now() - lastUserActivityAt;
+      if (idle > 300000) return 60000;
+      if (idle > 90000)  return 30000;
+      return 15000;
+    }
+
+    function scheduleLivePoll(){
+      clearTimeout(livePollTimer);
+      livePollTimer = setTimeout(() => pumpLivePoll(false), livePollDelayMs());
+    }
+
+    function activityFiltersActive(mode){
+      const dirty = ['Search','UserFilter','ActionFilter','StatusFilter','DateFrom','DateTo'].some(s => {
+        const el = document.getElementById(activityId(mode, s));
+        return el && String(el.value || '').trim();
+      });
+      const src = document.getElementById(activityId(mode, 'SourceFilter'));
+      return dirty || (src && src.value && src.value !== 'ALL');
+    }
+
+    function pumpLivePoll(immediate){
+      if (!currentUser) return;
+      if (document.hidden && !immediate) { scheduleLivePoll(); return; }
+      // Watchdog: kalau permintaan sebelumnya "nyangkut" > 35 dtk, anggap gagal
+      // supaya rantai polling tidak pernah macet permanen.
+      if (livePollInFlight) {
+        if (Date.now() - livePollStartedAt < 35000) return;
+        livePollInFlight = false;
+      }
+      livePollStartedAt = Date.now();
+
+      const adminDash = currentPage === 'admin' && currentAdminPanel === 'dashboard';
+      const onLogPage = currentPage === 'activity' || adminDash;
+      const mode = currentPage === 'admin' ? 'admin' : 'activity';
+      const wantActivity = onLogPage
+        && activityViews[mode].page === 1
+        && !activityFiltersActive(mode);
+      const wantSessions = currentPage === 'admin' && currentAdminPanel === 'sesi';
+      const req = wantActivity ? getActivityRequest(mode) : null;
+
+      livePollInFlight = true;
+      google.script.run
+        .withSuccessHandler(res => {
+          livePollInFlight = false;
+          livePollFailStreak = 0;
+          // Status maintenance ikut tiap poll -> overlay member muncul/hilang otomatis.
+          if (res && res.maintenance) {
+            setMaintenanceLock(res.maintenance.enabled, res.maintenance.message);
+          } else if (res && res.success === false
+                     && /maintenance|pemeliharaan|perbaikan|maintening/i.test(res.message || '')) {
+            // Cadangan untuk server LAMA: getLivePanelData menolak non-admin saat
+            // maintenance dengan melempar pesannya -> tampilkan overlay dari pesan itu.
+            setMaintenanceLock(true, res.message);
+          }
+          if (res && res.success) {
+            if (res.summary) {
+              renderHeaderSummary(document.getElementById('headerSummary'), res.summary);
+              headerSummaryLoadedOnce = true;
+            }
+            if (res.activity && wantActivity && res.activity.stats && Array.isArray(res.activity.rows)) {
+              applyDashboardData(res.activity, mode, true);
+            }
+            if (res.sessions && wantSessions) renderActiveSessions(res.sessions);
+          }
+          scheduleLivePoll();
+        })
+        .withFailureHandler(() => {
+          livePollInFlight = false;
+          livePollFailStreak++;
+          // Endpoint gabungan mungkin belum ter-deploy -> pakai jalur lama.
+          if (livePollFailStreak >= 2) {
+            if (!headerSummaryLoadedOnce || livePollFailStreak === 2) loadHeaderSummary();
+            if (currentPage === 'admin' && currentAdminPanel === 'sesi') loadActiveSessions();
+          }
+          scheduleLivePoll();
+        })
+        .getLivePanelData(currentSessionToken, { activity: req, sessions: wantSessions });
+    }
+
+    function startLivePolling(){
+      livePollFailStreak = 0;
+      pumpLivePoll(true);
+    }
+    function stopLivePolling(){
+      clearTimeout(livePollTimer);
+      livePollTimer = null;
+      livePollInFlight = false;
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && currentUser) { markUserActive(); pumpLivePoll(true); }
+    });
+
+    let toastHideTimer = null;
+    function toast(message) {
+      const text = String(message || '').replace(/^[^\wÀ-ÿ]+/u, '').trim();
+      const lower = text.toLowerCase();
+      const type =
+        lower.includes('gagal') || lower.includes('error') || lower.includes('❌')
+          ? 'danger'
+          : lower.includes('berhasil') || lower.includes('disalin') || lower.includes('selamat')
+            ? 'success'
+            : lower.includes('peringatan') || lower.includes('diblokir')
+              ? 'warning'
+              : 'info';
+      const iconMap = { success:'fa-circle-check', danger:'fa-circle-xmark', warning:'fa-triangle-exclamation', info:'fa-circle-info' };
+
+      const box = document.getElementById('toast');
+      const icon = document.getElementById('toast-icon');
+      const msg = document.getElementById('toast-msg');
+      if (!box || !msg) return;
+
+      box.className = `floating-toast type-${type}`;
+      if (icon) icon.innerHTML = `<i class="fa-solid ${iconMap[type]}"></i>`;
+      msg.textContent = text;
+
+      // Reflow paksa supaya animasi "show" jalan lagi meski toast sebelumnya belum sempat hilang.
+      requestAnimationFrame(() => box.classList.add('show'));
+
+      clearTimeout(toastHideTimer);
+      toastHideTimer = setTimeout(() => box.classList.remove('show'), 2400);
+    }
+
+    function getShioLocal(num) {
+      const groups = ["KELINCI","KUDA","ULAR","NAGA","KELINCI","HARIMAU","KERBAU","TIKUS","BABI","ANJING","AYAM","MONYET","KAMBING"];
+      const value = Number(num);
+      if (value === 0) return 'KELINCI';
+      const normalized = ((value % 12) + 12) % 12;
+      return normalized === 0 ? 'KAMBING' : groups[normalized];
+    }
+
+    function processTextLocal(text) {
+      try {
+        if (!text || text.length < 5) return { market:'UNKNOWN', status:'SALAH', shio:'', twoDigit:'', output:'', prize1:'', prize2:'', prize3:'' };
+        const marketMatch = text.match(/Pasaran\s+(.*)/i);
+        const market = marketMatch ? marketMatch[1].trim() : 'UNKNOWN';
+        const prize1 = ((text.match(/Prize\s*1[^0-9]*(\d{4})/i) || [])[1] || '');
+        if (!prize1) return { market, status:'SALAH', shio:'', twoDigit:'', output:'', prize1:'', prize2:'', prize3:'' };
+        const prize2 = ((text.match(/Prize\s*2[^0-9]*(\d{4})/i) || [])[1] || '');
+        const prize3 = ((text.match(/Prize\s*3[^0-9]*(\d{4})/i) || [])[1] || '');
+        const twoDigit = Number(prize1.slice(-2));
+        const shio = getShioLocal(twoDigit);
+        const shioInput = ((text.match(/Shio\s*:\s*([A-Z]+)/i) || [])[1] || '').toUpperCase();
+        const status = shioInput ? (shioInput === shio ? 'BENAR' : 'SALAH') : 'BENAR';
+        let output = text.trim();
+        output = output.replace(/Prize\s*1\s*:/gi, 'Prize 1️⃣ :').replace(/Prize\s*2\s*:/gi, 'Prize 2️⃣ :').replace(/Prize\s*3\s*:/gi, 'Prize 3️⃣ :');
+        if (/Shio\s*:/i.test(output)) output = output.replace(/Shio\s*:.*$/im, 'Shio : ' + shio);
+        else output += '\n\nShio : ' + shio;
+        output = output.replace(/Selamat kepada para pemenang jackpot\s*\.?/i, 'Selamat kepada para pemenang jackpot 🙏🏻');
+        return { market, status, shio, twoDigit, output, prize1, prize2, prize3 };
+      } catch (_) {
+        return { market:'UNKNOWN', status:'SALAH', shio:'', twoDigit:'', output:'', prize1:'', prize2:'', prize3:'' };
+      }
+    }
+
+    function autoGenerate() {
+      const txt = document.getElementById('inputText').value;
+      if (!txt.trim()) { resetMonitor(); return; }
+      showResult(processTextLocal(txt));
+    }
+
+    function showResult(res) {
+      resultData = res || {};
+      const marketEl = document.getElementById('market');
+      marketEl.innerText = res.market || '-';
+      marketEl.className = (res.market && res.market !== '-' && res.market !== 'UNKNOWN') ? "text-base sm:text-lg font-extrabold text-white tracking-widest animate-market" : "text-base sm:text-lg font-extrabold text-white tracking-widest";
+      document.getElementById('twoDigit').innerText = res.twoDigit !== '' ? String(res.twoDigit).padStart(2, '0') : '-';
+      document.getElementById('shio').innerText = res.shio || '-';
+      document.getElementById('shio-icon').innerText = shioIcons[res.shio] || '';
+      const st = document.getElementById('status'); st.innerText = res.status || '-';
+      st.className = res.status === 'BENAR' ? "text-sm sm:text-base font-black tracking-wider text-emerald-400 neon-cyan" : (res.status === 'SALAH' ? "text-sm sm:text-base font-black tracking-wider text-rose-500" : "text-sm sm:text-base font-black tracking-wider text-slate-400");
+      document.getElementById('outputPreview').innerText = res.output || '';
+    }
+
+    function resetMonitor() {
+      resultData = {};
+      document.getElementById('market').innerText = '-';
+      document.getElementById('twoDigit').innerText = '-';
+      document.getElementById('shio').innerText = '-';
+      document.getElementById('shio-icon').innerText = '';
+      document.getElementById('status').innerText = '-';
+      document.getElementById('outputPreview').innerText = '';
+    }
+
+    function copyPrize1() {
+      if(resultData.prize1){
+        navigator.clipboard.writeText(resultData.prize1);
+        toast('Prize 1 Disalin!');
+        google.script.run.logClientActivity(currentSessionToken, "COPY PRIZE 1", `Pasaran: ${resultData.market || '-'}`, "BERHASIL", resultData.prize1);
+      } else { toast('Data kosong'); }
+    }
+    function copyPrize2() {
+      if(resultData.prize2){
+        navigator.clipboard.writeText(resultData.prize2);
+        toast('Prize 2 Disalin!');
+        google.script.run.logClientActivity(currentSessionToken, "COPY PRIZE 2", `Pasaran: ${resultData.market || '-'}`, "BERHASIL", resultData.prize2);
+      } else { toast('Data kosong'); }
+    }
+    function copyPrize3() {
+      if(resultData.prize3){
+        navigator.clipboard.writeText(resultData.prize3);
+        toast('Prize 3 Disalin!');
+        google.script.run.logClientActivity(currentSessionToken, "COPY PRIZE 3", `Pasaran: ${resultData.market || '-'}`, "BERHASIL", resultData.prize3);
+      } else { toast('Data kosong'); }
+    }
+    
+    function copyTelegram() { 
+      if(resultData.output){ 
+        navigator.clipboard.writeText(resultData.output); 
+        toast('🚀 Format Telegram Disalin!'); 
+        google.script.run.logClientActivity(currentSessionToken, "COPY TELEGRAM", `Pasaran: ${resultData.market || '-'}`, "BERHASIL", resultData.output); 
+      } else { toast('❌ Output Teks kosong'); } 
+    }
+
+    function copyLinktree1() { 
+      if(resultData.market){ 
+        const title = 'Hasil Pengeluaran Pasaran ' + resultData.market;
+        navigator.clipboard.writeText(title); 
+        toast('Title Linktree Disalin!'); 
+        google.script.run.logClientActivity(currentSessionToken, "COPY TITLE LINKTREE", `Pasaran: ${resultData.market || '-'}`, "BERHASIL", title); 
+      } else { toast('Data Market Kosong'); }
+    }
+
+    function copyLinktree2() { 
+      if(resultData.prize1){ 
+        let pesan = `🅿️1️⃣ : ${resultData.prize1}`;
+        if(resultData.prize2 && resultData.prize2 !== "") pesan += `  🅿️2️⃣ : ${resultData.prize2}`;
+        if(resultData.prize3 && resultData.prize3 !== "") pesan += `  🅿️3️⃣ : ${resultData.prize3}`;
+        navigator.clipboard.writeText(pesan); 
+        toast('Pesan Linktree Disalin!'); 
+        google.script.run.logClientActivity(currentSessionToken, "COPY PESAN LINKTREE", `Pasaran: ${resultData.market || '-'}`, "BERHASIL", pesan); 
+      } else { toast('❌ Data Prize kosong'); }
+    }
+
+    function copyPanelZ() {
+      if(resultData.prize1){
+        navigator.clipboard.writeText(resultData.prize1);
+        toast('Data Panel-Z Disalin!');
+        google.script.run.logClientActivity(currentSessionToken, "COPY PANEL-Z", `Pasaran: ${resultData.market || '-'}`, "BERHASIL", resultData.prize1);
+      } else { toast('Data kosong'); }
+    }
+
+    /* Tombol "Tempel": ambil isi clipboard lalu masukkan ke input.
+       - textarea: ganti seluruh isi + jalankan autoGenerate (preview langsung terisi).
+       - angka: ambil 4 digit pertama yang ketemu kalau ada, kalau tidak pakai apa adanya. */
+    async function pasteFromClipboard(targetId, isTextarea) {
+      const el = document.getElementById(targetId);
+      if (!el) return;
+      let text = '';
+      try {
+        text = await navigator.clipboard.readText();
+      } catch (e) {
+        toast('❌ Browser menolak akses clipboard. Tekan lama lalu pilih Tempel, atau Ctrl+V manual.');
+        el.focus();
+        return;
+      }
+      text = String(text || '').trim();
+      if (!text) { toast('Clipboard kosong'); return; }
+
+      if (isTextarea) {
+        el.value = text;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        autoGenerate();
+        toast('📋 Teks berhasil ditempel');
+      } else {
+        const digits = (text.match(/\d{4,}/) || [text.replace(/\D/g, '')])[0] || '';
+        el.value = digits.slice(0, 12);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        toast(el.value ? '📋 Angka ditempel: ' + el.value : 'Tidak ada angka di clipboard');
+      }
+      el.focus();
+    }
+
+    /* Buka date-picker native saat field tanggal diklik di mana saja (bukan cuma ikon). */
+    function openDatePicker(el) {
+      try { if (el && typeof el.showPicker === 'function') el.showPicker(); } catch (e) {}
+    }
+
+    // Tahap 1 (FOLD): tombol diperas jadi kapsul kecil. Tahap 2 (FLY): pesawat besar
+    // lepas landas dari titik tengah kapsul lalu terbang pergi.
+    const SEND_FOLD_MS = 260;
+    const SEND_FLY_MS = 560;
+    // Popup loading sengaja DITUNDA sampai seluruh animasi ini selesai, supaya popup
+    // (yang menutupi seluruh kartu) tidak langsung menimpa animasi tombol.
+    const SEND_PLANE_DURATION_MS = SEND_FOLD_MS + SEND_FLY_MS;
+
+    function dgPrefersReducedMotion_() {
+      try { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }
+      catch (e) { return false; }
+    }
+
+    // Dijalankan lewat Web Animations API (element.animate()), BUKAN class+CSS.
+    // Tombol ini juga punya `active:scale-95` (Tailwind) dan efek tekan universal
+    // (button:active{transform:scale(.965)}) yang rebutan properti `transform` yang
+    // sama di saat bersamaan dengan animasi lipat — itu sumber "patah-patah"
+    // sebelumnya. WAAPI selalu menang atas transisi CSS manapun untuk properti yang
+    // sama, jadi tidak ada lagi rebutan, hasilnya mulus di semua kondisi.
+    // Return value: {animated:boolean, landing:{x,y}|null}. `landing` = titik tujuan
+    // pesawat DI LAYAR (viewport) — dipakai showActionPopup supaya popup Loading
+    // terasa "terbuka" dari titik itu.
+    //
+    // Lintasannya dihitung MANUAL (kurva Bezier kuadratik di JS -> daftar titik ->
+    // dijadikan keyframe transform:translate biasa). Sebelumnya sempat memakai CSS
+    // Motion Path (offset-path), tapi ternyata perilakunya TIDAK bisa diandalkan
+    // untuk elemen position:fixed di berbagai browser (arah lintasan jadi salah,
+    // pesawat "hilang" di tempat yang tidak terduga). Pendekatan manual ini 100%
+    // dikontrol sendiri (matematika translate biasa, sudah terbukti benar).
+    function launchSendPlane(btnEl) {
+      if (!btnEl || typeof btnEl.animate !== 'function' || dgPrefersReducedMotion_()) {
+        return { animated: false, landing: null };
+      }
+
+      // Titik tengah tombol DI LAYAR. Karena scale() melipat tombol di sekitar
+      // titik tengahnya sendiri, titik ini TIDAK berpindah selama animasi lipat.
+      const btnRect = btnEl.getBoundingClientRect();
+      const startX = btnRect.left + btnRect.width / 2;
+      const startY = btnRect.top + btnRect.height / 2;
+
+      // Tujuan pesawat = TITIK TENGAH LAYAR — di situlah popup Loading akan tampil
+      // (#actionPopup ditengahkan lewat flexbox), supaya pesawat benar-benar
+      // "terbang menuju tempat popup akan berada", lalu titik itu membuka popupnya.
+      const targetX = window.innerWidth / 2;
+      const targetY = window.innerHeight / 2;
+      const landing = { x: targetX, y: targetY };
+
+      // Vektor start->target, dan titik kontrol kurva digeser TEGAK LURUS terhadap
+      // garis lurus itu supaya lintasannya sungguhan melengkung (bukan diagonal lurus).
+      const dx = targetX - startX;
+      const dy = targetY - startY;
+      const dist = Math.max(1, Math.hypot(dx, dy));
+      const perpX = -dy / dist;
+      const perpY = dx / dist;
+      const bulge = Math.min(220, dist * 0.4);
+      const controlX = dx / 2 + perpX * bulge;
+      const controlY = dy / 2 + perpY * bulge;
+
+      // Titik pada kurva Bezier kuadratik P0=(0,0) P1=control P2=(dx,dy), t di [0,1].
+      // Semua koordinat RELATIF terhadap titik start (startX,startY).
+      function bezierPoint(t) {
+        const mt = 1 - t;
+        return {
+          x: 2 * mt * t * controlX + t * t * dx,
+          y: 2 * mt * t * controlY + t * t * dy
+        };
+      }
+
+      // Sudut arah gerak SESAAT di titik t (turunan kurva, dihitung numerik via selisih
+      // titik sedikit sebelum & sesudah t) -> dipakai supaya moncong pesawat betulan
+      // menghadap ke arah dia terbang di titik manapun, bukan angka rotasi tetap yang
+      // tidak nyambung kalau tombolnya ada di posisi berbeda di layar.
+      function curveTangentDeg(t) {
+        const ahead = bezierPoint(Math.min(1, t + .03));
+        const behind = bezierPoint(Math.max(0, t - .03));
+        return Math.atan2(ahead.y - behind.y, ahead.x - behind.x) * 180 / Math.PI;
+      }
+      // Ikon fa-paper-plane menghadap timur-laut (kanan-atas, ~-45°) saat rotate(0deg)
+      // di CSS -> offset ini menyamakan "arah hadap" ikon dengan arah tangen kurva.
+      const PLANE_ICON_ANGLE_OFFSET = 45;
+
+      const startRadius = getComputedStyle(btnEl).borderRadius || '16px';
+
+      btnEl.style.willChange = 'transform';
+      const runningAnimations = [];
+
+      // Tahap 1 — lipat: tombol diperas jadi kapsul kecil.
+      runningAnimations.push(btnEl.animate([
+        { transform: 'scale(1,1) rotate(0deg)', borderRadius: startRadius },
+        { transform: 'scale(.16,.56) rotate(-3deg)', borderRadius: '999px' }
+      ], { duration: SEND_FOLD_MS, easing: 'cubic-bezier(.55,0,.85,.05)', fill: 'forwards' }));
+
+      // Teks/ikon asli fade out bersamaan dengan lipatan.
+      ['.btn-send-icon', '.btn-send-label', '.btn-send-suffix'].forEach(function (sel) {
+        const el = btnEl.querySelector(sel);
+        if (el) runningAnimations.push(el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 140, fill: 'forwards' }));
+      });
+
+      // Setelah lipatan selesai -> kembalikan tombol ke gaya CSS aslinya (cancel()
+      // menghapus efek WAAPI) dan buang elemen pesawat/jejak.
+      const restore = function () {
+        runningAnimations.forEach(function (a) { try { a.cancel(); } catch (e) {} });
+        btnEl.style.willChange = '';
+      };
+
+      // Titik sampel di sepanjang kurva + nilai opacity/scale/rotate pesawat di tiap
+      // titik itu (t=0 di tombol, t=1 di tengah layar / titik popup).
+      const PLANE_KEYS = [
+        { t: 0,    op: 0,  sc: .3 },
+        { t: .15,  op: 1,  sc: 1.3 },
+        { t: .35,  op: 1,  sc: .95 },
+        { t: .55,  op: 1,  sc: .65 },
+        { t: .78,  op: 1,  sc: .45 },
+        { t: .93,  op: .5, sc: .35 },
+        { t: 1,    op: 0,  sc: .3 }
+      ];
+      const TRAIL_KEYS = [
+        { t: 0,   op: 0,  sx: .1 },
+        { t: .12, op: .9, sx: .35 },
+        { t: .3,  op: .85, sx: .7 },
+        { t: .5,  op: .6, sx: 1 },
+        { t: .68, op: .3, sx: 1 },
+        { t: .8,  op: 0,  sx: 1 }
+      ];
+
+      const launchPlane = function () {
+        // Tahap 2 — pesawat besar lepas landas dari titik tengah kapsul. Ditaruh di
+        // document.body (position:fixed) supaya ukurannya tetap proporsional, tidak
+        // ikut kegepeng oleh transform scale non-seragam tombol.
+        const trail = document.createElement('span');
+        trail.className = 'send-launch-trail';
+        trail.style.left = startX + 'px';
+        trail.style.top = startY + 'px';
+        document.body.appendChild(trail);
+
+        const plane = document.createElement('i');
+        plane.className = 'fa-solid fa-paper-plane send-launch-plane';
+        plane.style.left = startX + 'px';
+        plane.style.top = startY + 'px';
+        document.body.appendChild(plane);
+
+        const planeFrames = PLANE_KEYS.map(function (k) {
+          const pt = bezierPoint(k.t);
+          const rot = curveTangentDeg(k.t) + PLANE_ICON_ANGLE_OFFSET;
+          return {
+            transform: 'translate(calc(-50% + ' + Math.round(pt.x) + 'px), calc(-50% + ' + Math.round(pt.y) + 'px)) scale(' + k.sc + ') rotate(' + rot.toFixed(1) + 'deg)',
+            opacity: k.op,
+            offset: k.t
+          };
+        });
+        plane.animate(planeFrames, { duration: SEND_FLY_MS, easing: 'linear', fill: 'forwards' });
+
+        // Jejak: sudutnya dihitung dari arah gerak sesaat (titik sedikit di depan
+        // pada kurva yang sama) supaya tampak seperti ekor asap mengikuti lengkungan.
+        const trailFrames = TRAIL_KEYS.map(function (k) {
+          const pt = bezierPoint(k.t);
+          const ahead = bezierPoint(Math.min(1, k.t + .04));
+          const angle = Math.atan2(ahead.y - pt.y, ahead.x - pt.x) * 180 / Math.PI;
+          return {
+            transform: 'translate(calc(-50% + ' + Math.round(pt.x) + 'px), calc(-50% + ' + Math.round(pt.y) + 'px)) rotate(' + angle.toFixed(1) + 'deg) scaleX(' + k.sx + ')',
+            opacity: k.op,
+            offset: k.t
+          };
+        });
+        trail.animate(trailFrames, { duration: SEND_FLY_MS, easing: 'linear', fill: 'forwards' });
+
+        setTimeout(function () {
+          plane.remove();
+          trail.remove();
+          restore();
+        }, SEND_FLY_MS);
+      };
+
+      runningAnimations[0].finished.then(launchPlane, launchPlane);
+      return { animated: true, landing: landing };
+    }
+
+    // Kedip hijau "✓ TERKIRIM" sesaat pada tombol saat pengiriman sukses.
+    function flashSendSuccess(btnEl) {
+      if (!btnEl) return;
+      const icon = btnEl.querySelector('.btn-send-icon');
+      const label = btnEl.querySelector('.btn-send-label');
+      if (!icon || !label) return;
+      const prevIconClass = icon.className;
+      const prevLabelText = label.textContent;
+      btnEl.classList.add('is-sent');
+      icon.className = 'fa-solid fa-check btn-send-icon';
+      label.textContent = 'TERKIRIM';
+      setTimeout(() => {
+        btnEl.classList.remove('is-sent');
+        icon.className = prevIconClass;
+        label.textContent = prevLabelText;
+      }, 1400);
+    }
+
+    // =========================================================
+    // FAST AUTO SEND
+    // Satu klik = satu panggilan server.
+    // Backend membaca Users, Sosmed, dan Sent Registry sekali,
+    // melewati duplikat, lalu langsung mengirim website yang belum.
+    // =========================================================
+    function triggerAutoSend(btnEl) {
+      const txt = document.getElementById('inputText').value.trim();
+      if (!txt) {
+        toast('❌ Input Data Kosong!');
+        return;
+      }
+
+      const btn = btnEl || document.getElementById('autoSendBtn');
+      const launch = launchSendPlane(btn);
+
+      // Popup loading (menutupi seluruh kartu) sengaja ditunda sampai animasi
+      // pesawat selesai terbang, supaya animasinya tidak langsung ketutupan.
+      // Kalau animasi di-skip (mis. prefers-reduced-motion), jangan ikut menunda.
+      if (launch.animated) setTimeout(() => dispatchAutoSend(txt, btn, launch.landing), SEND_PLANE_DURATION_MS);
+      else dispatchAutoSend(txt, btn, null);
+    }
+
+    function dispatchAutoSend(txt, btn, landingPoint) {
+      pendingSendText = txt;
+      // landingPoint (titik pesawat mendarat di layar) dipakai supaya popup Loading
+      // terasa "membuka" dari situ, bukan muncul begitu saja di tengah layar.
+      showActionPopup(
+        'LOADING',
+        'Auto Send Berjalan',
+        'Memeriksa izin, melewati duplikat, dan mengirim website yang belum...',
+        'fa-paper-plane',
+        landingPoint
+      );
+
+      google.script.run
+        .withSuccessHandler(result => {
+          closeActionPopup();
+
+          if (!result) {
+            showActionPopup(
+              'ERROR',
+              'Tidak Ada Respons',
+              'Server tidak mengembalikan hasil pengiriman.',
+              'fa-triangle-exclamation'
+            );
+            return;
+          }
+
+          if (result.blocked && (!result.websiteResults || !result.websiteResults.length)) {
+            showActionPopup(
+              'ERROR',
+              'Pengiriman Diblokir',
+              result.message || 'Pengiriman tidak dapat diproses.',
+              'fa-ban'
+            );
+            return;
+          }
+
+          // Hasil selalu ditampilkan, termasuk website duplikat,
+          // tidak diizinkan, gagal, dan berhasil.
+          if (result.success || result.partial) flashSendSuccess(btn);
+          pendingPreview = null;
+          showSendResult(result);
+        })
+        .withFailureHandler(err => {
+          showActionPopup(
+            'ERROR',
+            'Pengiriman Gagal',
+            (err && err.message) || 'Terjadi kesalahan saat menghubungi server.',
+            'fa-triangle-exclamation'
+          );
+        })
+        .smartAutoSendFast(txt, currentSessionToken);
+    }
+
+    // Modal konfirmasi lama dipertahankan agar fungsi lain tidak error,
+    // tetapi Auto Send cepat tidak memakainya.
+    function closeSendConfirm() {
+      document.getElementById('sendConfirmModal').classList.remove('open');
+    }
+
+    function confirmSendNow() {
+      closeSendConfirm();
+      triggerAutoSend();
+    }
+
+    function showSendResult(result) {
+      lastSendResult = result;
+
+      const labels = {
+        telegram: 'Telegram',
+        linktree: 'LinkTree',
+        panelz: 'Panel-Z'
+      };
+
+      const icons = {
+        telegram: 'fa-brands fa-telegram',
+        linktree: 'fa-solid fa-link',
+        panelz: 'fa-solid fa-bolt'
+      };
+
+      let success = 0;
+      let failed = 0;
+      let blocked = 0;
+      let already = 0;
+      let skipped = 0;
+
+      const websiteResults = Array.isArray(result.websiteResults)
+        ? result.websiteResults
+        : [];
+
+      const cards = websiteResults.map(siteResult => {
+        const systemKeys = Object.keys(labels);
+
+        const systemCards = systemKeys.map(key => {
+          const item = siteResult[key] || {
+            status: 'TIDAK DIPROSES',
+            reason: 'Tidak ada hasil'
+          };
+
+          const status = String(item.status || 'TIDAK DIPROSES').toUpperCase();
+          if (status === 'BERHASIL') success++;
+          else if (status === 'GAGAL') failed++;
+          else if (status === 'DIBLOKIR') blocked++;
+          else if (status === 'SUDAH DIKIRIM') already++;
+          else skipped++;
+
+          const statusClass =
+            status === 'BERHASIL'
+              ? 'status-ok'
+              : (status === 'GAGAL' || status === 'DIBLOKIR')
+                ? 'status-bad'
+                : 'status-skip';
+
+          const websiteSafe = String(siteResult.website || '')
+            .replace(/\\/g, '\\\\')
+            .replace(/'/g, "\\'");
+
+          const canRetry =
+            status === 'GAGAL' &&
+            !/tidak diizinkan/i.test(String(item.reason || ''));
+
+          const retryButton = canRetry
+            ? `<button onclick="retryOneSystem('${key}','${websiteSafe}')" class="retry-mini">
+                 <i class="fa-solid fa-rotate-right mr-1"></i>COBA ULANG
+               </button>`
+            : '';
+
+          return `
+            <div class="system-compact">
+              <div class="system-compact-top">
+                <span class="system-compact-name">
+                  <i class="${icons[key]} mr-1.5 text-slate-400"></i>${labels[key]}
+                </span>
+                <span class="system-compact-status ${statusClass}">
+                  ${escapeHtml(status)}
+                </span>
+              </div>
+              <div class="system-compact-reason">
+                ${escapeHtml(item.reason || '-')}
+              </div>
+              ${retryButton}
+            </div>
+          `;
+        }).join('');
+
+        const statuses = systemKeys.map(key =>
+          String((siteResult[key] || {}).status || '').toUpperCase()
+        );
+
+        const allDuplicate = statuses.every(status =>
+          status === 'SUDAH DIKIRIM' ||
+          status === 'DIBLOKIR' ||
+          status === 'SKIP'
+        );
+
+        const hasSuccess = statuses.includes('BERHASIL');
+        const hasFailure = statuses.includes('GAGAL');
+
+        let websiteBadge = 'HASIL PROSES';
+        let websiteBadgeClass = 'text-slate-400';
+
+        if (allDuplicate) {
+          websiteBadge = 'DUPLIKAT DIBLOKIR';
+          websiteBadgeClass = 'text-rose-300';
+        } else if (hasSuccess && hasFailure) {
+          websiteBadge = 'SEBAGIAN BERHASIL';
+          websiteBadgeClass = 'text-amber-300';
+        } else if (hasSuccess) {
+          websiteBadge = 'BERHASIL DIKIRIM';
+          websiteBadgeClass = 'text-emerald-300';
+        } else if (hasFailure) {
+          websiteBadge = 'GAGAL';
+          websiteBadgeClass = 'text-rose-300';
+        }
+
+        const duplicateDetails = systemKeys
+          .map(key => siteResult[key])
+          .filter(item =>
+            item &&
+            String(item.status || '').toUpperCase() === 'SUDAH DIKIRIM'
+          );
+
+        const blockedNote = allDuplicate
+          ? `<div class="blocked-note">
+               <b>Pengiriman ulang diblokir.</b>
+               Data yang sama sudah pernah berhasil dikirim ke website ini.
+               ${duplicateDetails.length
+                 ? 'Detail waktu dan user tercantum pada setiap sistem.'
+                 : ''}
+             </div>`
+          : '';
+
+        return `
+          <div class="website-result-card">
+            <div class="website-result-head">
+              <b class="text-sm text-cyan-300">
+                ${escapeHtml(siteResult.website || '-')}
+              </b>
+              <span class="text-[9px] ${websiteBadgeClass}">
+                ${websiteBadge}
+              </span>
+            </div>
+            <div class="system-compact-grid">
+              ${systemCards}
+            </div>
+            ${blockedNote}
+          </div>
+        `;
+      }).join('');
+
+      document.getElementById('systemResultList').innerHTML =
+        cards || '<div class="text-xs text-slate-400">Tidak ada website yang diproses.</div>';
+
+      // Ringkasan: hanya angka yang > 0, 3 warna semantik saja (hijau/merah/abu),
+      // tanpa rincian waktu per-kanal yang bikin penuh.
+      const summaryParts = [];
+      if (success) summaryParts.push(`<span class="summary-pill status-ok">${success} berhasil</span>`);
+      if (failed) summaryParts.push(`<span class="summary-pill status-bad">${failed} gagal</span>`);
+      if (blocked) summaryParts.push(`<span class="summary-pill status-bad">${blocked} tidak diizinkan</span>`);
+      if (already) summaryParts.push(`<span class="summary-pill status-skip">${already} sudah dikirim</span>`);
+      if (skipped) summaryParts.push(`<span class="summary-pill status-skip">${skipped} dilewati</span>`);
+      if (!summaryParts.length) summaryParts.push(`<span class="summary-pill status-skip">Tidak ada yang diproses</span>`);
+      if (result && result.performance) {
+        const ms = Number(result.performance.totalMs || result.durationMs || 0);
+        if (ms) summaryParts.push(`<span class="summary-pill status-skip">⚡ ${(ms / 1000).toFixed(1)}s</span>`);
+      }
+
+      document.getElementById('resultSummary').innerHTML = summaryParts.join('');
+
+      const titleEl = document.querySelector('#sendResultModal h3');
+      if (titleEl) {
+        titleEl.textContent =
+          already > 0 && success > 0
+            ? 'Website baru dikirim, duplikat dilewati'
+            : already > 0 && success === 0
+              ? 'Semua website sudah pernah dikirim'
+              : 'Status setiap website & sistem';
+      }
+
+      document.getElementById('sendResultModal').classList.add('open');
+    }
+
+    function retryOneSystem(systemName, website) {
+      document.getElementById('sendResultModal').classList.remove('open');
+
+      showActionPopup(
+        'LOADING',
+        'Mencoba Ulang',
+        `Mengirim ulang ${systemName} hanya ke ${website}...`,
+        'fa-rotate'
+      );
+
+      google.script.run
+        .withSuccessHandler(result => {
+          closeActionPopup();
+          showSendResult(result);
+        })
+        .withFailureHandler(err => {
+          showActionPopup(
+            'ERROR',
+            'Retry Gagal',
+            (err && err.message) || 'Gagal mencoba ulang.',
+            'fa-triangle-exclamation'
+          );
+        })
+        .retryFailedSystem(pendingSendText, currentSessionToken, systemName, website);
+    }
+
+    function sendToPanelZ(){
+      const market = document.getElementById('marketSelect').value;
+      const angka  = document.getElementById('angkaInput').value;
+      if(!market || !angka){ toast("❌ Pilih pasaran dan isi angka!"); return; }
+      
+      showActionPopup("LOADING", "Sedang Mengirim ke Panel-Z...", `Mengirim pasaran ${market}...`, "fa-bolt");
+
+      google.script.run
+        .withSuccessHandler(res => {
+          showActionPopup("DONE", "Berhasil Terkirim!", `Data pasaran ${market} masuk ke Panel-Z.`, "fa-check");
+          document.getElementById("modalResult").innerHTML = `
+            <div style="display:flex;flex-direction:column;gap:12px;font-size:12px;">
+                <div class="flex items-center justify-between glass-inner p-3 rounded-2xl border border-white/5"><span>⚙️ Panel-Z</span> <b class="text-indigo-400">${escapeHtml(res.message || "Berhasil")}</b></div>
+                <div class="flex items-center justify-between glass-inner p-3 rounded-2xl border border-white/5"><span>📍 Pasaran</span> <b class="text-white">${escapeHtml(market)}</b></div>
+                <div class="flex items-center justify-between glass-inner p-3 rounded-2xl border border-white/5"><span>🎯 Angka</span> <b class="text-amber-400">${escapeHtml(angka)}</b></div>
+            </div>
+          `;
+        })
+        .withFailureHandler(err => { 
+          showActionPopup("ERROR", "Pengiriman Gagal", err.message || "Terjadi kesalahan saat menghubungi sistem.", "fa-triangle-exclamation"); 
+        })
+        .sendToPanelZOnly(market, angka, currentSessionToken);
+    }
+
+    function closeModal(){ document.getElementById("resultModal").style.display = "none"; }
+
+    function sendToPanelZCustom() {
+      const market = document.getElementById('marketSelect').value;
+      const angka  = document.getElementById('angkaInput').value;
+      
+      if (!market || !angka) {
+        toast("❌ Pilih pasaran dan isi angka terlebih dahulu!");
+        return;
+      }
+      
+      showActionPopup("LOADING", "Mengirim ke Panel-Z...", `Proses pengiriman angka ${angka}...`, "fa-bolt");
+
+      google.script.run
+        .withSuccessHandler(res => {
+          showActionPopup("DONE", "Berhasil Terkirim!", `Panel-Z berhasil diperbarui.`, "fa-check");
+          document.getElementById("modalResult").innerHTML = `
+            <div style="display:flex;flex-direction:column;gap:12px;font-size:12px;">
+                <div class="flex items-center justify-between glass-inner p-3 rounded-2xl border border-white/5"><span>⚙️ Panel-Z</span> <b class="text-indigo-400">${escapeHtml(res.message || "Berhasil")}</b></div>
+                <div class="flex items-center justify-between glass-inner p-3 rounded-2xl border border-white/5"><span>📍 Pasaran</span> <b class="text-white">${escapeHtml(market)}</b></div>
+                <div class="flex items-center justify-between glass-inner p-3 rounded-2xl border border-white/5"><span>🎯 Angka</span> <b class="text-amber-400">${escapeHtml(angka)}</b></div>
+            </div>
+          `;
+        })
+        .withFailureHandler(err => { 
+          showActionPopup("ERROR", "Pengiriman Gagal", err.message || "Terjadi kesalahan saat menghubungi sistem.", "fa-triangle-exclamation"); 
+        })
+        .sendToPanelZOnly(market, angka, currentSessionToken);
+    }
+
+    // Popup loading yang lebih rapi, responsif, dan mendukung status error.
+    // originPoint {x,y} (opsional, koordinat viewport) — kalau diisi DAN mode
+    // 'LOADING', kartu popup "terbuka" dari titik itu (dipakai Auto Send: titik
+    // pesawat mendarat) alih-alih animasi bawaan (popupIn) yang selalu dari tengah.
+    let popupStepTimer;
+    function showActionPopup(mode, title, desc, iconClass, originPoint) {
+      const popup = document.getElementById('actionPopup');
+      const card = popup.querySelector('.popup-card');
+      const spinner = document.getElementById('popupSpinner');
+      const checkIcon = document.getElementById('popupCheckIcon');
+      const mainIcon = document.getElementById('popupMainIcon');
+      const popupTitle = document.getElementById('popupTitle');
+      const popupDesc = document.getElementById('popupDesc');
+      const eyebrow = document.getElementById('popupEyebrow');
+      const closeBtn = document.getElementById('popupCloseBtn');
+      const iconBox = document.getElementById('popupIconBox');
+      const glow = document.getElementById('popupGlow');
+      const progressWrap = document.getElementById('popupProgressWrap');
+      const progressBar = document.getElementById('popupProgressBar');
+      const steps = [...document.querySelectorAll('#popupSteps .popup-step')];
+
+      clearTimeout(popupStepTimer);
+
+      // Bersihkan dulu sisa animasi "buka dari titik X" dari panggilan SEBELUMNYA
+      // (kartu popup ini dipakai bersama oleh SEMUA aksi di panel, bukan cuma Auto
+      // Send) -> supaya panggilan lain yang tidak mengirim originPoint tetap dapat
+      // animasi bawaan (popupIn) seperti biasa, bukan ikut ketiban override lama.
+      if (card) {
+        try { card.getAnimations().forEach(a => a.cancel()); } catch (e) {}
+        card.style.animation = '';
+        card.style.clipPath = '';
+        card.style.webkitClipPath = '';
+      }
+
+      popup.classList.add('is-open');
+      popup.style.display = 'flex';
+      document.body.classList.add('modal-open');
+      popupTitle.textContent = title;
+      popupDesc.textContent = desc;
+
+      if (mode === 'LOADING' && originPoint && card && typeof card.animate === 'function') {
+        // Kartu sudah ke-layout (display:flex barusan) -> getBoundingClientRect aman dibaca.
+        const cardRect = card.getBoundingClientRect();
+        const originX = originPoint.x - cardRect.left;
+        const originY = originPoint.y - cardRect.top;
+
+        // Efek "buka dari titik X" dipakai lewat clip-path (lingkaran membesar),
+        // BUKAN transform:scale() seperti sebelumnya. Alasannya: kartu ini punya
+        // #popupGlow di dalamnya dengan filter:blur(72px) — karena elemen itu ANAK
+        // dari kartu, dia ikut ter-skala tiap kali kartu di-scale(), dan blur
+        // sebesar itu dihitung ulang tiap frame -> itulah sumber "kedip-kedip"
+        // sebenarnya (bukan cuma backdrop-filter seperti dugaan sebelumnya).
+        // clip-path TIDAK mengubah ukuran kotak elemen sama sekali — cuma area
+        // yang TERLIHAT yang membesar — jadi tidak ada blur yang perlu dihitung
+        // ulang sama sekali, kedipannya hilang total di akarnya.
+        const corners = [
+          [0, 0], [cardRect.width, 0], [0, cardRect.height], [cardRect.width, cardRect.height]
+        ];
+        const maxRadius = Math.ceil(Math.max.apply(null, corners.map(function (c) {
+          return Math.hypot(c[0] - originX, c[1] - originY);
+        })));
+
+        card.style.animation = 'none'; // matikan animasi CSS popupIn bawaan untuk kartu ini
+        const openAnim = card.animate([
+          { clipPath: 'circle(0px at ' + originX + 'px ' + originY + 'px)', opacity: .55 },
+          { clipPath: 'circle(' + maxRadius + 'px at ' + originX + 'px ' + originY + 'px)', opacity: 1 }
+        ], { duration: 420, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'forwards' });
+        openAnim.finished.then(() => {
+          try { openAnim.cancel(); } catch (e) {}
+          card.style.animation = '';
+          card.style.clipPath = '';
+          card.style.webkitClipPath = '';
+        }, () => {});
+      }
+
+      if (mode === 'LOADING') {
+        eyebrow.textContent = 'SYSTEM PROCESS';
+        eyebrow.className = 'text-[9px] font-extrabold tracking-[.25em] text-cyan-400 uppercase';
+        spinner.style.display = 'block';
+        checkIcon.style.display = 'none';
+        mainIcon.style.display = 'block';
+        mainIcon.className = `fas ${iconClass || 'fa-paper-plane'} text-xl text-cyan-200`;
+        closeBtn.style.display = 'none';
+        progressWrap.style.display = 'flex';
+        progressBar.className = 'progress-bar is-loading';
+        iconBox.className = 'w-20 h-20 rounded-[1.6rem] bg-cyan-500/10 border border-cyan-400/30 flex items-center justify-center shadow-[0_0_35px_rgba(34,211,238,.16)] relative';
+        glow.className = 'absolute -top-20 left-1/2 -translate-x-1/2 w-56 h-56 bg-cyan-500/20 blur-[72px] rounded-full pointer-events-none';
+        steps.forEach((el, i) => {
+          el.className = 'popup-step' + (i === 0 ? ' active' : '');
+          el.lastElementChild.outerHTML = i === 0 ? '<i class="fa-solid fa-spinner fa-spin"></i>' : '<span>Menunggu</span>';
+        });
+        popupStepTimer = setTimeout(() => {
+          if (!popup.classList.contains('is-open')) return;
+          steps[0].className = 'popup-step done'; steps[0].lastElementChild.outerHTML = '<i class="fa-solid fa-check"></i>';
+          steps[1].className = 'popup-step active'; steps[1].lastElementChild.outerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+        }, 700);
+      } else {
+        const isError = mode === 'ERROR';
+        eyebrow.textContent = isError ? 'PROCESS FAILED' : 'PROCESS COMPLETED';
+        eyebrow.className = `text-[9px] font-extrabold tracking-[.25em] uppercase ${isError ? 'text-rose-400' : 'text-emerald-400'}`;
+        spinner.style.display = 'none';
+        mainIcon.style.display = 'none';
+        checkIcon.style.display = 'block';
+        checkIcon.className = `fas ${isError ? 'fa-xmark text-rose-300' : 'fa-check text-emerald-300'} text-2xl`;
+        closeBtn.style.display = 'block';
+        closeBtn.innerHTML = isError ? '<i class="fa-solid fa-rotate-right mr-2"></i>TUTUP & COBA LAGI' : '<i class="fa-solid fa-check mr-2"></i>OK, TUTUP';
+        closeBtn.className = `action-btn w-full ${isError ? 'bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow-rose-500/15' : 'bg-gradient-to-r from-emerald-400 to-teal-500 text-slate-950 shadow-emerald-500/15'} hover:brightness-110 font-extrabold text-xs py-3.5 rounded-2xl shadow-lg cursor-pointer`;
+        progressWrap.style.display = 'flex';
+        progressBar.className = `progress-bar ${isError ? 'is-error' : 'is-done'}`;
+        iconBox.className = `w-20 h-20 rounded-[1.6rem] ${isError ? 'bg-rose-500/12 border-rose-400/35 shadow-[0_0_35px_rgba(251,113,133,.18)]' : 'bg-emerald-500/12 border-emerald-400/35 shadow-[0_0_35px_rgba(52,211,153,.18)]'} border flex items-center justify-center relative`;
+        glow.className = `absolute -top-20 left-1/2 -translate-x-1/2 w-56 h-56 ${isError ? 'bg-rose-500/18' : 'bg-emerald-500/18'} blur-[72px] rounded-full pointer-events-none`;
+        steps.forEach(el => {
+          el.className = `popup-step ${isError ? 'error' : 'done'}`;
+          el.lastElementChild.outerHTML = `<i class="fa-solid ${isError ? 'fa-xmark' : 'fa-check'}"></i>`;
+        });
+      }
+    }
+
+    function closeActionPopup() {
+      clearTimeout(popupStepTimer);
+      const popup = document.getElementById('actionPopup');
+      popup.classList.remove('is-open');
+      popup.style.display = 'none';
+      document.body.classList.remove('modal-open');
+    }
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && document.getElementById("popupCloseBtn").style.display !== "none") closeActionPopup(); });
+
+    function applyProfileUI() {
+      const isAdmin = !!(currentProfile && currentProfile.role === 'ADMIN');
+      document.querySelectorAll('.nav-extra').forEach(el => el.style.display = 'flex');
+      document.querySelectorAll('.admin-only').forEach(el => el.style.display = isAdmin ? 'flex' : 'none');
+      document.querySelectorAll('.activity-admin-only').forEach(el => el.style.display = isAdmin ? '' : 'none');
+
+      const filterGrid = document.getElementById('activityFilterGrid');
+      if (filterGrid) filterGrid.classList.toggle('activity-admin-grid', isAdmin);
+
+      const scope = document.getElementById('activityScopeText');
+      if (scope) {
+        scope.textContent = isAdmin
+          ? 'Admin melihat gabungan Activity Log hari ini dan BackUp Activity Log.'
+          : 'Setiap user hanya melihat riwayat akunnya sendiri pada hari ini.';
+      }
+    }
+
+    function escapeHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
+    function restoreDraft(){const d=JSON.parse(localStorage.getItem('daygroup_draft')||'null');if(!d)return;document.getElementById('inputText').value=d.text||'';document.getElementById('marketSelect').value=d.market||'';document.getElementById('angkaInput').value=d.angka||'';if(d.text)autoGenerate();}
+    function saveDraft(){localStorage.setItem('daygroup_draft',JSON.stringify({text:document.getElementById('inputText').value,market:document.getElementById('marketSelect').value,angka:document.getElementById('angkaInput').value}));}
+    ['inputText','marketSelect','angkaInput'].forEach(id=>document.getElementById(id).addEventListener('input',saveDraft));
+    // Session Timeout DIHAPUS TOTAL untuk SEMUA akun (termasuk admin) — tidak ada
+    // lagi logout otomatis karena tidak aktif. Fungsi ini dibiarkan ada (bukan
+    // dihapus) supaya pemanggil lama (mis. applyAuthenticatedSession) tidak error;
+    // isinya sengaja jadi no-op.
+    function resetSessionTimer(){
+      clearTimeout(inactivityTimer);
+    }
+    function statCards(s) {
+      const arr = [
+        ['Aktivitas Hari Ini', s.today],
+        ['Login', s.login],
+        ['Pengiriman', s.sends],
+        ['Berhasil', s.success],
+        ['Gagal', s.failed]
+      ];
+      if (s.topUser) arr.push(['User Teraktif', s.topUser]);
+      if (Number(s.backupTotal || 0) > 0) arr.push(['Arsip Backup', s.backupTotal]);
+      return arr.map(item => `<div class="mini-card"><div class="text-[10px] text-slate-300 font-semibold">${item[0]}</div><div class="text-xl font-black mt-1 text-slate-50">${item[1]}</div></div>`).join('');
+    }
+
+    function compactLogPreview(value, maxLength) {
+      const text = String(value || '').replace(/\s+/g, ' ').trim();
+      if (!text) return '-';
+      const limit = Number(maxLength) || 90;
+      return text.length > limit ? text.slice(0, limit).trim() + '…' : text;
+    }
+
+    function activityStatusBadge(status) {
+      const value = String(status || 'INFO').toUpperCase();
+      let cls = 'log-status-info';
+      let icon = 'fa-circle-info';
+
+      if (value === 'BERHASIL' || value === 'TERKIRIM') {
+        cls = 'log-status-success';
+        icon = 'fa-circle-check';
+      } else if (value === 'GAGAL' || value === 'ERROR') {
+        cls = 'log-status-error';
+        icon = 'fa-circle-xmark';
+      } else if (value === 'DIBLOKIR' || value === 'SEBAGIAN') {
+        cls = 'log-status-warning';
+        icon = value === 'DIBLOKIR' ? 'fa-ban' : 'fa-triangle-exclamation';
+      }
+
+      return `<span class="log-status-badge ${cls}">
+        <i class="fa-solid ${icon}"></i>${escapeHtml(value)}
+      </span>`;
+    }
+
+    function activityActionBadge(action) {
+      const value = String(action || 'AKTIVITAS').toUpperCase();
+      let icon = 'fa-bolt';
+
+      if (value.includes('LOGIN')) icon = 'fa-right-to-bracket';
+      else if (value.includes('LOGOUT')) icon = 'fa-right-from-bracket';
+      else if (value.includes('SEND') || value.includes('KIRIM')) icon = 'fa-paper-plane';
+      else if (value.includes('COPY')) icon = 'fa-copy';
+      else if (value.includes('HALAMAN')) icon = 'fa-window-maximize';
+      else if (value.includes('DUPLIKAT')) icon = 'fa-shield-halved';
+
+      return `<span class="log-action-badge">
+        <i class="fa-solid ${icon}"></i>${escapeHtml(value)}
+      </span>`;
+    }
+
+    function expandableLogText(value, emptyText) {
+      const full = String(value || '').trim();
+      if (!full) return `<span class="text-slate-600">${escapeHtml(emptyText || '-')}</span>`;
+
+      const preview = compactLogPreview(full, 105);
+      const needsExpand = full.replace(/\s+/g, ' ').trim().length > 105 || full.includes('\n');
+
+      if (!needsExpand) {
+        return `<div class="log-plain-text">${escapeHtml(full)}</div>`;
+      }
+
+      return `<details class="log-details">
+        <summary>
+          <span>${escapeHtml(preview)}</span>
+          <span class="log-details-label">Lihat detail</span>
+        </summary>
+        <div class="log-details-full">${escapeHtml(full)}</div>
+      </details>`;
+    }
+
+    function renderLogs(rows, target) {
+      const body = document.getElementById(target);
+      if (!body) return;
+
+      if (!Array.isArray(rows) || !rows.length) {
+        body.innerHTML = '<tr><td colspan="7" class="text-center text-slate-500 py-8">Belum ada aktivitas yang cocok dengan filter.</td></tr>';
+        return;
+      }
+
+      body.innerHTML = rows.map(row => {
+        const dateParts = String(row[0] || '').split(' ');
+        const date = dateParts[0] || '-';
+        const time = dateParts.slice(1).join(' ') || '';
+        const source = String(row[6] || 'HARI INI').toUpperCase();
+        const sourceClass = source === 'BACKUP' ? 'activity-source-backup' : 'activity-source-current';
+        const sourceLabel = source === 'BACKUP' ? 'BACKUP' : 'HARI INI';
+
+        return `<tr class="activity-log-row">
+          <td class="log-time-cell">
+            <b>${escapeHtml(date)}</b>
+            <span>${escapeHtml(time)}</span>
+          </td>
+          <td><span class="log-user-chip"><i class="fa-solid fa-user"></i>${escapeHtml(row[1] || '-')}</span></td>
+          <td>${activityActionBadge(row[2])}</td>
+          <td>${activityStatusBadge(row[3])}</td>
+          <td>${expandableLogText(row[4], 'Tidak ada keterangan')}</td>
+          <td>${expandableLogText(row[5], 'Tidak ada data')}</td>
+          <td><span class="activity-source-chip ${sourceClass}"><i class="fa-solid ${source === 'BACKUP' ? 'fa-box-archive' : 'fa-bolt'}"></i>${sourceLabel}</span></td>
+        </tr>`;
+      }).join('');
+    }
+
+    function activityId(mode, suffix) {
+      return mode === 'admin' ? 'adminActivity' + suffix : 'activity' + suffix;
+    }
+
+    function renderSkeletonRows(target, count) {
+      const body = document.getElementById(target);
+      if (!body) return;
+      const cols = 7;
+      const row = `<tr class="activity-log-row">${Array.from({length: cols}).map(() => `<td><span class="skeleton-bar" style="width:${60 + Math.round(Math.random()*30)}%"></span></td>`).join('')}</tr>`;
+      body.innerHTML = row.repeat(count || 6);
+    }
+
+    function getActivityRequest(mode) {
+      const state = activityViews[mode] || activityViews.activity;
+      const value = suffix => {
+        const el = document.getElementById(activityId(mode, suffix));
+        return el ? String(el.value || '').trim() : '';
+      };
+
+      return {
+        page: state.page,
+        pageSize: state.pageSize,
+        query: value('Search'),
+        username: value('UserFilter'),
+        action: value('ActionFilter'),
+        status: value('StatusFilter'),
+        source: value('SourceFilter') || 'ALL',
+        dateFrom: value('DateFrom'),
+        dateTo: value('DateTo')
+      };
+    }
+
+    function fillActivitySelect(id, placeholder, values) {
+      const select = document.getElementById(id);
+      if (!select) return;
+      const current = select.value;
+      const options = [`<option value="">${escapeHtml(placeholder)}</option>`]
+        .concat((values || []).map(value => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`));
+      select.innerHTML = options.join('');
+      if ([...select.options].some(option => option.value === current)) select.value = current;
+    }
+
+    function updateActivityMeta(mode, data) {
+      const pagination = data.pagination || {page:1,totalPages:1,total:0,hasPrev:false,hasNext:false};
+      const sourceInfo = data.sourceInfo || {};
+      const prefix = mode === 'admin' ? 'adminActivity' : 'activity';
+
+      const meta = document.getElementById(prefix + 'Meta');
+      if (meta) {
+        const scanNote = sourceInfo.scanLimited
+          ? ` • backup file utama dibatasi ${sourceInfo.backupScanned} baris terbaru`
+          : '';
+        const archiveNote = Number(sourceInfo.archiveScanned || 0) > 0
+          ? ` • +${sourceInfo.archiveScanned} baris dari file arsip terpisah`
+          : '';
+        meta.textContent = `${pagination.total} data ditemukan • ${sourceInfo.currentTotal || 0} hari ini • ${sourceInfo.backupTotal || 0} backup${scanNote}${archiveNote}`;
+      }
+
+      const label = document.getElementById(prefix + 'PageLabel');
+      if (label) label.textContent = `Halaman ${pagination.page} / ${pagination.totalPages}`;
+
+      const prev = document.getElementById(prefix + 'PrevBtn');
+      const next = document.getElementById(prefix + 'NextBtn');
+      if (prev) prev.disabled = !pagination.hasPrev;
+      if (next) next.disabled = !pagination.hasNext;
+
+      activityViews[mode].page = pagination.page || 1;
+    }
+
+    function applyActivityFilters(mode) {
+      activityViews[mode].page = 1;
+      loadDashboard(true, mode);
+    }
+
+    function resetActivityFilters(mode) {
+      ['Search','UserFilter','ActionFilter','StatusFilter','DateFrom','DateTo'].forEach(suffix => {
+        const el = document.getElementById(activityId(mode, suffix));
+        if (el) el.value = '';
+      });
+      const source = document.getElementById(activityId(mode, 'SourceFilter'));
+      if (source) source.value = 'ALL';
+      activityViews[mode].page = 1;
+      loadDashboard(true, mode);
+    }
+
+    function changeActivityPage(mode, direction) {
+      activityViews[mode].page = Math.max(1, activityViews[mode].page + Number(direction || 0));
+      loadDashboard(false, mode);
+    }
+
+    const lastLogSignature = { activity:'', admin:'' };
+
+    // Render data dashboard ke DOM. Dipakai loadDashboard (fetch manual) DAN live-poll.
+    function applyDashboardData(data, mode, silent) {
+      mode = mode === 'admin' ? 'admin' : 'activity';
+      const isAdminMode = mode === 'admin';
+      const bodyTarget = isAdminMode ? 'adminActivityBody' : 'activityBody';
+      const userStats = document.getElementById('userStats');
+      const adminStats = document.getElementById('adminStats');
+      const adminStatus = document.getElementById('adminLoadStatus');
+      if (!data.pagination) data.pagination = { page:1, pageSize:75, total:(data.rows||[]).length, totalPages:1, hasPrev:false, hasNext:false };
+
+      if (userStats) userStats.innerHTML = statCards(data.stats);
+      if (isAdminMode && adminStats) adminStats.innerHTML = statCards(data.stats);
+
+      // Hanya render ulang tabel bila isinya benar-benar berubah -> tidak mengganggu
+      // baris log yang sedang dibuka user saat auto-refresh.
+      const sig = (data.rows.length ? String(data.rows[0][0]) + '|' + String(data.rows[0][4] || '') : 'empty')
+        + '#' + ((data.pagination && data.pagination.total) || 0)
+        + '@' + ((data.pagination && data.pagination.page) || 1);
+      if (lastLogSignature[mode] !== sig) {
+        renderLogs(data.rows, bodyTarget);
+        lastLogSignature[mode] = sig;
+      }
+      updateActivityMeta(mode, data);
+
+      const options = data.filterOptions || {};
+      fillActivitySelect(activityId(mode, 'UserFilter'), 'Semua User', options.usernames);
+      fillActivitySelect(activityId(mode, 'ActionFilter'), 'Semua Aksi', options.actions);
+      fillActivitySelect(activityId(mode, 'StatusFilter'), 'Semua Status', options.statuses);
+
+      if (data.role === 'ADMIN') {
+        const maintenance = data.maintenance || {enabled:false,message:''};
+        maintenanceState = !!maintenance.enabled;
+        const switchEl = document.getElementById('maintenanceSwitch');
+        const messageEl = document.getElementById('maintenanceMessage');
+        if (switchEl) switchEl.classList.toggle('on', maintenanceState);
+        if (messageEl && document.activeElement !== messageEl) messageEl.value = maintenance.message || '';
+      } else if (data.maintenance) {
+        setMaintenanceLock(data.maintenance.enabled, data.maintenance.message);
+      }
+
+      if (!silent && isAdminMode && adminStatus) {
+        adminStatus.className = 'text-xs text-emerald-300 rounded-2xl border border-emerald-500/25 bg-emerald-500/5 px-4 py-3';
+        adminStatus.textContent = `Data berhasil dimuat • ${data.pagination.total} aktivitas ditemukan`;
+        setTimeout(() => adminStatus.style.display = 'none', 2200);
+      }
+
+      pageDataCache[mode] = data;
+      pageFetchedAt[mode] = Date.now();
+    }
+
+    function loadDashboard(forceRefresh, mode) {
+      mode = mode === 'admin' ? 'admin' : 'activity';
+      const isAdminMode = mode === 'admin';
+      const adminStatus = document.getElementById('adminLoadStatus');
+      const userStats = document.getElementById('userStats');
+      const adminStats = document.getElementById('adminStats');
+      const bodyTarget = isAdminMode ? 'adminActivityBody' : 'activityBody';
+
+      if (isAdminMode && adminStatus) {
+        adminStatus.style.display = 'block';
+        adminStatus.className = 'text-xs text-cyan-300 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3';
+        adminStatus.textContent = 'Memuat statistik, Activity Log, dan BackUp Activity Log...';
+      }
+
+      if (!currentUser) {
+        if (adminStatus) {
+          adminStatus.className = 'text-xs text-rose-300 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3';
+          adminStatus.textContent = 'Sesi user tidak ditemukan. Silakan logout lalu login kembali.';
+        }
+        return;
+      }
+
+      // Skeleton hanya kalau belum ada data yang bisa ditampilkan (hindari "kedip"
+      // saat refresh diam-diam / polling).
+      if (!pageDataCache[mode]) renderSkeletonRows(bodyTarget, 6);
+      const slowNoticeTimer = setTimeout(() => {
+        if (isAdminMode && adminStatus) adminStatus.textContent = 'Masih memuat, data cukup banyak... mohon tunggu sebentar.';
+      }, 5000);
+
+      google.script.run
+        .withSuccessHandler(data => {
+          clearTimeout(slowNoticeTimer);
+          try {
+            if (!data || !data.stats || !Array.isArray(data.rows)) {
+              throw new Error('Format data dashboard tidak lengkap. Pastikan code.gs Smart V5 sudah dipasang.');
+            }
+            applyDashboardData(data, mode);
+          } catch (err) {
+            renderLogs([], bodyTarget);
+            if (adminStatus) {
+              adminStatus.className = 'text-xs text-rose-300 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3';
+              adminStatus.textContent = err.message;
+            }
+          }
+        })
+        .withFailureHandler(error => {
+          clearTimeout(slowNoticeTimer);
+          const message = (error && error.message) || 'Gagal menghubungi server dashboard.';
+          renderLogs([], bodyTarget);
+          if (adminStatus) {
+            adminStatus.className = 'text-xs text-rose-300 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3';
+            adminStatus.textContent = message + ' Pastikan code.gs terbaru sudah dideploy.';
+          }
+          toast(message);
+        })
+        .getDashboardData(currentSessionToken, getActivityRequest(mode));
+    }
+
+    function runActivityBackupNow() {
+      const status = document.getElementById('backupActivityStatus');
+      if (status) status.textContent = 'Menjalankan backup...';
+      google.script.run
+        .withSuccessHandler(result => {
+          if (status) status.textContent = result.message || 'Backup selesai.';
+          toast(result.message || 'Backup selesai.');
+          loadDashboard(true, 'admin');
+        })
+        .withFailureHandler(error => {
+          const message = (error && error.message) || 'Backup gagal.';
+          if (status) status.textContent = message;
+          toast(message);
+        })
+        .adminRunActivityBackup(currentSessionToken);
+    }
+
+    function installAutoPostTrigger() {
+      const status = document.getElementById('autoPostStatus');
+      if (status) status.textContent = 'Mengaktifkan trigger auto posting prediksi...';
+      google.script.run
+        .withSuccessHandler(result => {
+          const message = (result && result.message) || 'Auto Posting Prediksi aktif.';
+          if (status) status.textContent = message;
+          toast(message);
+        })
+        .withFailureHandler(error => {
+          const message = (error && error.message) || 'Gagal mengaktifkan Auto Posting.';
+          if (status) status.textContent = message;
+          toast(message);
+        })
+        .setupAutoPostTriggers(currentSessionToken);
+    }
+
+    function showAutoPostWebhook() {
+      const box = document.getElementById('autoPostWebhookBox');
+      if (box) { box.style.display = 'block'; box.textContent = 'Mengambil URL webhook...'; }
+      google.script.run
+        .withSuccessHandler(r => {
+          if (!r || !r.url || !box) { toast('Gagal mengambil URL webhook'); return; }
+          const times = (r.slots || []).join(', ');
+          box.innerHTML =
+            'URL webhook untuk cron eksternal (mis. <b>cron-job.org</b>) — method <b>GET</b>, tiap hari:'
+            + '<input readonly onclick="this.select()" value="' + r.url.replace(/"/g, '&quot;') + '" style="width:100%;margin-top:5px;padding:7px 9px;border-radius:9px;background:rgba(2,6,23,.55);border:1px solid rgba(34,211,238,.25);color:#a5f3fc;font-size:9px;font-family:monospace">'
+            + '<div style="margin-top:6px">Jadwal cron (waktu <b>' + escapeHtml(r.timezone || 'WIB') + '</b>): <b class="text-cyan-300">' + escapeHtml(times) + '</b></div>'
+            + '<div style="margin-top:4px;color:#64748b">Trigger 5-menit tetap jalan sebagai cadangan bila cron mati.</div>';
+          try { navigator.clipboard.writeText(r.url); toast('URL webhook disalin'); } catch (e) {}
+        })
+        .withFailureHandler(e => {
+          if (box) box.textContent = 'Gagal: ' + ((e && e.message) || e);
+        })
+        .adminGetAutoPostWebhook(currentSessionToken);
+    }
+
+    function runAutoPostNow() {
+      const status = document.getElementById('autoPostStatus');
+      if (status) status.textContent = 'Menjalankan router auto posting sekarang...';
+      google.script.run
+        .withSuccessHandler(result => {
+          const message = (result && result.message) || 'Router auto posting dijalankan.';
+          if (status) status.textContent = message;
+          toast(message);
+          loadActiveSessions();
+        })
+        .withFailureHandler(error => {
+          const message = (error && error.message) || 'Gagal menjalankan router auto posting.';
+          if (status) status.textContent = message;
+          toast(message);
+        })
+        .adminRunAutoPostNow(currentSessionToken);
+    }
+
+    function installActivityBackupTrigger() {
+      const status = document.getElementById('backupActivityStatus');
+      if (status) status.textContent = 'Mengaktifkan trigger backup harian...';
+      google.script.run
+        .withSuccessHandler(result => {
+          if (status) status.textContent = result.message || 'Auto Backup aktif.';
+          toast(result.message || 'Auto Backup aktif.');
+        })
+        .withFailureHandler(error => {
+          const message = (error && error.message) || 'Gagal mengaktifkan Auto Backup.';
+          if (status) status.textContent = message;
+          toast(message);
+        })
+        .setupActivityBackupTrigger(currentSessionToken);
+    }
+
+    let lastSessionsSignature = '';
+    function renderActiveSessions(data) {
+      const meta = document.getElementById('activeSessionsMeta');
+      const body = document.getElementById('activeSessionsBody');
+      if (!body) return;
+      const rows = (data && Array.isArray(data.sessions)) ? data.sessions : [];
+      if (meta) {
+        const apState = data && data.autoPostEnabled ? 'AKTIF' : 'NONAKTIF (Auto Post Prediksi = FALSE)';
+        meta.textContent = `${data ? data.totalUsers : 0} user online • ${data ? data.totalSessions : 0} sesi • Auto Posting: ${apState} • per ${data ? data.generatedAt : '-'}`;
+      }
+      const sig = JSON.stringify(rows.map(s => [s.username, s.sessions, s.expiresAt, s.autoPostEligible]));
+      if (sig === lastSessionsSignature) return; // tak ada perubahan -> jangan render ulang
+      lastSessionsSignature = sig;
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="7" class="p-3 text-center text-slate-500 py-6">Tidak ada user yang sedang login.</td></tr>';
+        return;
+      }
+      body.innerHTML = rows.map(s => `
+            <tr class="activity-log-row">
+              <td class="p-3 font-extrabold text-white">${escapeHtml(s.username)}<div class="text-[9px] text-slate-500 font-normal">${escapeHtml(s.displayName || '')}</div></td>
+              <td class="p-3"><span class="px-2 py-1 rounded-full bg-amber-500/10 text-amber-300 text-[9px] font-bold">${escapeHtml(s.role || '-')}</span></td>
+              <td class="p-3 text-slate-300">${escapeHtml(s.websites || '-')}</td>
+              <td class="p-3 text-center font-mono text-cyan-300">${Number(s.sessions || 0)}</td>
+              <td class="p-3 text-slate-400 font-mono text-[10px]">${escapeHtml(s.loginAt || '-')}</td>
+              <td class="p-3 text-slate-400 font-mono text-[10px]">${escapeHtml(s.expiresAt || '-')}</td>
+              <td class="p-3 text-center">${s.autoPostEligible
+                ? '<span class="px-2 py-1 rounded-full bg-emerald-500/15 text-emerald-300 text-[9px] font-bold">✓ IKUT</span>'
+                : '<span class="px-2 py-1 rounded-full bg-slate-500/15 text-slate-400 text-[9px] font-bold">— tidak</span>'}</td>
+            </tr>`).join('');
+    }
+
+    function loadActiveSessions() {
+      const meta = document.getElementById('activeSessionsMeta');
+      const body = document.getElementById('activeSessionsBody');
+      if (!body) return;
+      if (meta) meta.textContent = 'Memuat sesi aktif...';
+      if (!lastSessionsSignature) body.innerHTML = '<tr><td colspan="7" class="p-3 text-slate-500">Memuat...</td></tr>';
+
+      google.script.run
+        .withSuccessHandler(data => renderActiveSessions(data))
+        .withFailureHandler(err => {
+          if (meta) meta.textContent = 'Gagal memuat sesi aktif: ' + ((err && err.message) || err);
+          body.innerHTML = '<tr><td colspan="7" class="p-3 text-center text-rose-300 py-6">Gagal memuat. Pastikan code.gs terbaru sudah dideploy.</td></tr>';
+        })
+        .adminListActiveSessions(currentSessionToken);
+    }
+
+    function boolBadge(v,label){return `<span class="px-2 py-1 rounded-full text-[9px] font-bold ${v?'bg-emerald-500/15 text-emerald-300':'bg-rose-500/10 text-rose-300'}">${v?'✓':'✕'} ${label}</span>`;}
+    function loadUsers(force){
+      const status=document.getElementById('userManageStatus'); if(!status)return;
+      status.textContent='Memuat daftar user dari Sheet Users...';
+      google.script.run.withSuccessHandler(data=>{adminUsersData=Array.isArray(data)?data:[];renderUserRows(adminUsersData);status.textContent=`${adminUsersData.length} akun berhasil dimuat dari Sheet Users.`;}).withFailureHandler(e=>{status.textContent='Gagal memuat users: '+((e&&e.message)||e);toast('Gagal memuat daftar user');}).adminListUsers(currentSessionToken);
+    }
+    function renderUserRows(rows){
+      const body=document.getElementById('userTableBody');
+      if(!body)return;
+
+      const formatLogin = value => {
+        const text=String(value||'').trim();
+        if(!text||text==='-') return '<span class="text-slate-600">Belum pernah</span>';
+        const parts=text.split(' ');
+        const date=parts.shift()||'-';
+        const time=parts.join(' ');
+        return `<span class="admin-last-login"><b>${escapeHtml(date)}</b><small>${escapeHtml(time||'')}</small></span>`;
+      };
+
+      body.innerHTML=(rows||[]).map((u,i)=>`
+        <tr data-search="${escapeHtml([u.username,u.displayName,u.websites,u.role,u.status].join(' ').toLowerCase())}"
+            data-role="${escapeHtml(u.role)}"
+            data-status="${escapeHtml(u.status)}">
+          <td class="font-extrabold text-white" title="${escapeHtml(u.username)}">${escapeHtml(u.username)}</td>
+          <td title="${escapeHtml(u.displayName||'-')}">${escapeHtml(u.displayName||'-')}</td>
+          <td title="${escapeHtml(u.websites||'-')}">${escapeHtml(u.websites||'-')}</td>
+          <td><span class="px-2 py-1 rounded-full bg-amber-500/10 text-amber-300 text-[9px] font-bold">${escapeHtml(u.role)}</span></td>
+          <td><span class="px-2 py-1 rounded-full ${u.status==='AKTIF'?'bg-emerald-500/10 text-emerald-300':'bg-rose-500/10 text-rose-300'} text-[9px] font-bold">${escapeHtml(u.status)}</span></td>
+          <td>${boolBadge(u.telegram,'')}</td>
+          <td>${boolBadge(u.linktree,'')}</td>
+          <td>${boolBadge(u.panelz,'')}</td>
+          <td>${formatLogin(u.lastLogin)}</td>
+          <td>
+            <div class="admin-action-group">
+              <button onclick="openUserModal(${i})" class="admin-icon-btn admin-icon-edit" title="Edit user">
+                <i class="fa-solid fa-pen"></i>
+              </button>
+              <button onclick="resetUserLock('${encodeURIComponent(u.username)}')" class="admin-icon-btn admin-icon-unlock" title="Reset login gagal dan buka kunci">
+                <i class="fa-solid fa-unlock-keyhole"></i>
+              </button>
+              <button onclick="deleteManagedUser('${encodeURIComponent(u.username)}')" class="admin-icon-btn admin-icon-delete" title="Hapus user">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
+          </td>
+        </tr>`).join('')||'<tr><td colspan="10" class="text-center text-slate-500 py-8">Belum ada user</td></tr>';
+    }
+    function filterUserRows(){const q=(document.getElementById('userSearch').value||'').toLowerCase();const role=document.getElementById('userRoleFilter').value;const status=document.getElementById('userStatusFilter').value;document.querySelectorAll('#userTableBody tr[data-search]').forEach(tr=>{tr.style.display=(!q||tr.dataset.search.includes(q))&&(!role||tr.dataset.role===role)&&(!status||tr.dataset.status===status)?'':'none';});}
+    function openUserModal(index){
+      const u=Number.isInteger(index)?adminUsersData[index]:null;
+      document.getElementById('userModalTitle').textContent=u?'Edit User':'Tambah User';
+      document.getElementById('userOriginalUsername').value=u?u.username:'';
+      document.getElementById('editUsername').value=u?u.username:'';
+      document.getElementById('editPassword').value='';
+      document.getElementById('editPassword').placeholder=u?'Kosongkan jika password tidak diubah':'Masukkan password';
+      document.getElementById('editWebsite').value=u?u.websites:'';
+      document.getElementById('editDisplayName').value=u?u.displayName:'';
+      document.getElementById('editRole').value=u?u.role:'OPERATOR';
+      document.getElementById('editStatus').value=u?u.status:'AKTIF';
+      document.getElementById('editTimeout').value=u?u.timeout:60;
+      document.getElementById('editNote').value=u?u.note:'';
+      document.getElementById('editTelegram').checked=u?u.telegram:true;
+      document.getElementById('editLinktree').checked=u?u.linktree:true;
+      document.getElementById('editPanelz').checked=u?u.panelz:true;
+      document.getElementById('userModalError').classList.add('hidden');
+      document.getElementById('userEditModal').style.display='flex';document.body.classList.add('modal-open');
+    }
+    function closeUserModal(){document.getElementById('userEditModal').style.display='none';document.body.classList.remove('modal-open');}
+    function saveUserFromModal(){
+      const btn=document.getElementById('saveUserBtn'),err=document.getElementById('userModalError');err.classList.add('hidden');
+      const payload={originalUsername:document.getElementById('userOriginalUsername').value,username:document.getElementById('editUsername').value.trim(),password:document.getElementById('editPassword').value,websites:document.getElementById('editWebsite').value.trim(),displayName:document.getElementById('editDisplayName').value.trim(),role:document.getElementById('editRole').value,status:document.getElementById('editStatus').value,timeout:Number(document.getElementById('editTimeout').value||60),note:document.getElementById('editNote').value.trim(),telegram:document.getElementById('editTelegram').checked,linktree:document.getElementById('editLinktree').checked,panelz:document.getElementById('editPanelz').checked};
+      if(!payload.username||(!payload.originalUsername&&!payload.password)){err.textContent='Username dan password wajib diisi untuk akun baru.';err.classList.remove('hidden');return;}
+      btn.disabled=true;btn.innerHTML='<i class="fa-solid fa-spinner fa-spin mr-2"></i>MENYIMPAN...';
+      google.script.run.withSuccessHandler(res=>{btn.disabled=false;btn.innerHTML='<i class="fa-solid fa-floppy-disk mr-2"></i>SIMPAN KE SHEET USERS';closeUserModal();toast(res.message||'User berhasil disimpan');loadUsers(true);loadDashboard(true,'admin');}).withFailureHandler(e=>{btn.disabled=false;btn.innerHTML='<i class="fa-solid fa-floppy-disk mr-2"></i>SIMPAN KE SHEET USERS';err.textContent=(e&&e.message)||'Gagal menyimpan user';err.classList.remove('hidden');}).adminSaveUser(currentSessionToken,payload);
+    }
+
+    let centerNoticeResolver = null;
+    let centerNoticeTimer = null;
+
+    function openCenterNotice(options) {
+      const config = options || {};
+      const modal = document.getElementById('centerNoticeModal');
+      const iconBox = document.getElementById('centerNoticeIcon');
+      const icon = iconBox.querySelector('i');
+      const title = document.getElementById('centerNoticeTitle');
+      const message = document.getElementById('centerNoticeMessage');
+      const actions = document.getElementById('centerNoticeActions');
+      const cancelBtn = document.getElementById('centerNoticeCancel');
+      const confirmBtn = document.getElementById('centerNoticeConfirm');
+
+      clearTimeout(centerNoticeTimer);
+
+      const type = config.type || 'info';
+      const iconMap = {
+        info: 'fa-circle-info',
+        success: 'fa-circle-check',
+        warning: 'fa-triangle-exclamation',
+        danger: 'fa-trash-can'
+      };
+
+      iconBox.className = `center-notice-icon ${type}`;
+      icon.className = `fa-solid ${iconMap[type] || iconMap.info}`;
+      title.textContent = config.title || 'Informasi';
+      message.textContent = config.message || '';
+
+      confirmBtn.textContent = config.confirmText || 'OK';
+      confirmBtn.className = `center-notice-btn ${type === 'danger' ? 'danger' : type === 'warning' ? 'warning' : 'primary'}`;
+
+      const showCancel = !!config.showCancel;
+      cancelBtn.style.display = showCancel ? 'block' : 'none';
+      cancelBtn.textContent = config.cancelText || 'BATAL';
+      actions.classList.toggle('two', showCancel);
+
+      modal.classList.add('open');
+      document.body.classList.add('modal-open');
+
+      return new Promise(resolve => {
+        centerNoticeResolver = resolve;
+
+        const finish = answer => {
+          modal.classList.remove('open');
+          document.body.classList.remove('modal-open');
+          const resolver = centerNoticeResolver;
+          centerNoticeResolver = null;
+          if (resolver) resolver(answer);
+        };
+
+        confirmBtn.onclick = () => finish(true);
+        cancelBtn.onclick = () => finish(false);
+
+        if (config.autoCloseMs && !showCancel) {
+          centerNoticeTimer = setTimeout(() => finish(true), config.autoCloseMs);
+        }
+      });
+    }
+
+    function notifyCenter(message, type, title) {
+      return openCenterNotice({
+        title: title || (type === 'success' ? 'Berhasil' : type === 'danger' ? 'Terjadi Kesalahan' : type === 'warning' ? 'Perhatian' : 'Informasi'),
+        message: String(message || ''),
+        type: type || 'info',
+        confirmText: 'TUTUP',
+        autoCloseMs: type === 'success' ? 1800 : 0
+      });
+    }
+
+    function confirmCenter(options) {
+      return openCenterNotice(Object.assign({
+        showCancel: true,
+        confirmText: 'YA, LANJUTKAN',
+        cancelText: 'BATAL'
+      }, options || {}));
+    }
+
+    async function deleteManagedUser(encoded) {
+      const username = decodeURIComponent(encoded);
+      const approved = await confirmCenter({
+        type: 'danger',
+        title: 'Hapus Akun User?',
+        message: `Akun "${username}" akan dihapus langsung dari Sheet Users.
+
+Tindakan ini tidak dapat dibatalkan.`,
+        confirmText: 'YA, HAPUS AKUN'
+      });
+      if (!approved) return;
+
+      showActionPopup('LOADING','Menghapus User',`Sedang menghapus akun ${username} dari Sheet Users...`,'fa-user-minus');
+
+      google.script.run
+        .withSuccessHandler(result => {
+          closeActionPopup();
+          notifyCenter(result.message || 'User berhasil dihapus.', 'success', 'User Dihapus');
+          loadUsers(true);
+          loadDashboard(true,'admin');
+        })
+        .withFailureHandler(error => {
+          closeActionPopup();
+          notifyCenter((error && error.message) || 'Gagal menghapus user.', 'danger', 'Gagal Menghapus');
+        })
+        .adminDeleteUser(currentSessionToken, username);
+    }
+
+    async function resetUserLock(encoded) {
+      const username = decodeURIComponent(encoded);
+      const approved = await confirmCenter({
+        type: 'warning',
+        title: 'Reset & Buka Kunci Akun?',
+        message: `Jumlah login gagal akun "${username}" akan direset ke 0 dan status terkunci akan dibuka.`,
+        confirmText: 'YA, RESET AKUN'
+      });
+      if (!approved) return;
+
+      showActionPopup('LOADING','Mereset Akun',`Membuka kunci akun ${username}...`,'fa-unlock-keyhole');
+
+      google.script.run
+        .withSuccessHandler(result => {
+          closeActionPopup();
+          notifyCenter(result.message || 'Akun berhasil direset.', 'success', 'Akun Dibuka');
+          loadUsers(true);
+        })
+        .withFailureHandler(error => {
+          closeActionPopup();
+          notifyCenter((error && error.message) || 'Gagal mereset akun.', 'danger', 'Reset Gagal');
+        })
+        .adminResetUserLock(currentSessionToken, username);
+    }
+
+    /* ===== A11y modal: tutup dengan Escape + klik area gelap di luar kartu =====
+       Sebelumnya hanya centerNotice & actionPopup yang bisa ditutup pakai Escape;
+       modal lain menjebak pengguna keyboard. */
+    function closeTopModal() {
+      const openShell = [...document.querySelectorAll('.modal-shell.open')].pop();
+      if (openShell) {
+        openShell.classList.remove('open');
+        if (!document.querySelector('.modal-shell.open')) document.body.classList.remove('modal-open');
+        return true;
+      }
+      const edit = document.getElementById('userEditModal');
+      if (edit && edit.style.display !== 'none' && edit.classList.contains('modal-shell')) { closeUserModal(); return true; }
+      const result = document.getElementById('resultModal');
+      if (result && result.style.display !== 'none') { closeModal(); return true; }
+      return false;
+    }
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Escape') return;
+      // actionPopup & centerNotice punya penanganan sendiri; jangan ganggu saat aktif.
+      if (document.getElementById('actionPopup').style.display !== 'none') return;
+      if (document.getElementById('centerNoticeModal').classList.contains('open')) return;
+      closeTopModal();
+    });
+    ['sendConfirmModal','sendResultModal','predictionSendModal','userEditModal','resultModal'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('mousedown', e => { if (e.target === el) closeTopModal(); });
+    });
+
+    function toggleMaintenance(){maintenanceState=!maintenanceState;document.getElementById('maintenanceSwitch').classList.toggle('on',maintenanceState);}
+    function saveMaintenance(){google.script.run.withSuccessHandler(x=>{maintenanceState=x.enabled;document.getElementById('maintenanceSwitch').classList.toggle('on',maintenanceState);toast('Pengaturan maintenance disimpan');}).withFailureHandler(e=>toast(e.message)).setMaintenance(currentSessionToken,maintenanceState,document.getElementById('maintenanceMessage').value);}
+
+    /* =========================================================
+       MENU INVEST — AutoCheck batas line invest per user.
+       Setting (BASE_URL, PHPSESSID, dst) disimpan di server (Script Properties),
+       scan berat jalan di latar belakang + polling status.
+       ========================================================= */
+    let investStatusTimer = null;
+    // Hanya field yang tampil di form. Sisanya (timezone, periode lookback, page
+    // size, dst) tetap di default server dan tidak diutak-atik dari panel.
+    const INVEST_NUM_FIELDS = ['LIMIT_2D','LIMIT_3D','LIMIT_4D'];
+
+    function investVal(id){ const el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; }
+    function investSetVal(id, v){ const el = document.getElementById(id); if (el) el.value = (v == null ? '' : v); }
+
+    function loadInvestConfig() {
+      const box = document.getElementById('investConfigStatus');
+      if (box) box.textContent = 'Memuat setting tersimpan...';
+      google.script.run
+        .withSuccessHandler(res => {
+          if (!res || !res.success) { if (box) box.textContent = (res && res.message) || 'Gagal memuat setting.'; return; }
+          const c = res.config || {};
+          investSetVal('investBaseUrl', c.BASE_URL);
+          investSetVal('investPhpsessid', c.PHPSESSID);
+          investSetVal('investKoderedis', c.KODEREDIS);
+          investSetVal('investCookieExtra', c.COOKIE_EXTRA);
+          INVEST_NUM_FIELDS.forEach(k => investSetVal('invest_' + k, c[k]));
+          if (box) box.textContent = 'Setting terakhir tersimpan di server — tidak perlu diisi ulang selama PHPSESSID belum berubah.';
+          // Belum ada sesi tersimpan -> buka form; kalau sudah ada -> sembunyikan.
+          const dbox = document.getElementById('investSettingBox');
+          if (dbox) dbox.open = !(c.PHPSESSID || c.COOKIE_EXTRA);
+          renderInvestState(res.state, res.warningCount);
+          // Buka menu saat scan MASIH jalan (mis. dipicu user lain) -> ikut pantau.
+          const ss = res.state && res.state.state;
+          if (ss === 'running' || ss === 'paused') startInvestPolling();
+        })
+        .withFailureHandler(e => { if (box) box.textContent = 'Gagal: ' + ((e && e.message) || e); })
+        .investGetConfig(currentSessionToken);
+      loadInvestWarnings();
+    }
+
+    function saveInvestConfig() {
+      const btn = document.getElementById('investSaveBtn');
+      const payload = {
+        BASE_URL: investVal('investBaseUrl'),
+        PHPSESSID: investVal('investPhpsessid'),
+        KODEREDIS: investVal('investKoderedis'),
+        COOKIE_EXTRA: investVal('investCookieExtra')
+      };
+      INVEST_NUM_FIELDS.forEach(k => payload[k] = investVal('invest_' + k));
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>MENYIMPAN...'; }
+      google.script.run
+        .withSuccessHandler(res => {
+          if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-2"></i>SIMPAN SETTING'; }
+          if (res && res.success) {
+            toast('Setting INVEST tersimpan');
+            const c = res.config || {};
+            investSetVal('investPhpsessid', c.PHPSESSID);
+            investSetVal('investKoderedis', c.KODEREDIS);
+            investSetVal('investCookieExtra', c.COOKIE_EXTRA);
+            INVEST_NUM_FIELDS.forEach(k => investSetVal('invest_' + k, c[k]));
+            const dbox = document.getElementById('investSettingBox');
+            if (dbox) dbox.open = false;
+          } else {
+            toast((res && res.message) || 'Gagal menyimpan setting');
+          }
+        })
+        .withFailureHandler(e => {
+          if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-2"></i>SIMPAN SETTING'; }
+          toast('Gagal: ' + ((e && e.message) || e));
+        })
+        .investSaveConfig(currentSessionToken, payload);
+    }
+
+    function testInvestSession() {
+      const box = document.getElementById('investConnStatus');
+      if (box) { box.textContent = 'Mengecek session ke panel agen...'; box.className = 'text-[11px] text-cyan-300 mt-2'; }
+      google.script.run
+        .withSuccessHandler(res => {
+          if (box) {
+            box.textContent = (res && res.message) || 'Selesai.';
+            box.className = 'text-[11px] mt-2 ' + (res && res.success ? 'text-emerald-300' : 'text-rose-300');
+          }
+          if (res && res.success) toast('Session INVEST valid');
+        })
+        .withFailureHandler(e => { if (box) { box.textContent = 'Gagal: ' + ((e && e.message) || e); box.className = 'text-[11px] text-rose-300 mt-2'; } })
+        .investTestSession(currentSessionToken);
+    }
+
+    function investRequireOwnConfig() {
+      // Config INVEST per-user: tiap staff HARUS isi sesinya sendiri dulu.
+      if (investVal('investPhpsessid') || investVal('investCookieExtra')) return true;
+      toast('Isi PHPSESSID kamu dulu di SETTING, lalu SIMPAN.');
+      const dbox = document.getElementById('investSettingBox');
+      if (dbox) { dbox.open = true; }
+      const el = document.getElementById('investPhpsessid');
+      if (el) { try { el.scrollIntoView({ block: 'center' }); el.focus(); } catch (e) {} }
+      return false;
+    }
+
+    function startInvestScan() {
+      if (!investRequireOwnConfig()) return;
+      confirmCenter({
+        type: 'warning',
+        title: 'Mulai Scan INVEST?',
+        message: 'Scan menimpa hasil sebelumnya dan berjalan di latar belakang (beberapa menit, lanjut otomatis). Pastikan PHPSESSID kamu sudah disimpan dan masih valid.',
+        confirmText: 'YA, MULAI SCAN'
+      }).then(ok => {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(res => {
+            if (!res || res.success === false) {
+              toast((res && res.message) || 'Scan tidak bisa dimulai.');
+              if (res && /phpsessid/i.test(res.message || '')) {
+                const dbox = document.getElementById('investSettingBox');
+                if (dbox) dbox.open = true;
+              }
+              renderInvestState((res && res.state) || {});
+              return;
+            }
+            toast(res.message || 'Scan dimulai');
+            investBeginScanUI(res.state || { state: 'running', cursor: 0, total: 63 });
+            startInvestPolling();
+          })
+          .withFailureHandler(e => toast('Gagal memulai scan: ' + ((e && e.message) || e)))
+          .investStartScan(currentSessionToken);
+      });
+    }
+
+    function continueInvestScan() {
+      if (!investRequireOwnConfig()) return;
+      google.script.run
+        .withSuccessHandler(res => {
+          if (!res || res.success === false) { toast((res && res.message) || 'Tidak bisa dilanjutkan.'); return; }
+          toast(res.message || 'Scan dilanjutkan');
+          if (res.state) renderInvestState(res.state, 0);
+          startInvestPolling();
+        })
+        .withFailureHandler(e => toast('Gagal: ' + ((e && e.message) || e)))
+        .investContinueScan(currentSessionToken);
+    }
+
+    function resetInvestScan() {
+      confirmCenter({
+        type: 'danger',
+        title: 'Reset Scan INVEST?',
+        message: 'Menghentikan scan yang tertunda dan menghapus penanda progres. Tabel hasil WARNING TIDAK dihapus (baru ditimpa saat scan berikutnya).',
+        confirmText: 'YA, RESET'
+      }).then(ok => {
+        if (!ok) return;
+        google.script.run
+          .withSuccessHandler(res => { toast((res && res.message) || 'Direset'); stopInvestPolling(); loadInvestConfig(); })
+          .withFailureHandler(e => toast('Gagal: ' + ((e && e.message) || e)))
+          .investResetScan(currentSessionToken);
+      });
+    }
+
+    function renderInvestState(state, warnCount) {
+      const badge = document.getElementById('investStateBadge');
+      const meta = document.getElementById('investStateMeta');
+      const contBtn = document.getElementById('investContinueBtn');
+      if (!badge) return;
+      const s = (state && state.state) || 'idle';
+      const map = {
+        idle:            ['SIAP',                     'bg-slate-500/15 text-slate-300'],
+        running:         ['SCAN BERJALAN',            'bg-cyan-500/15 text-cyan-300'],
+        paused:          ['JEDA · LANJUT OTOMATIS',   'bg-amber-500/15 text-amber-300'],
+        session_expired: ['SESSION EXPIRED',          'bg-rose-500/15 text-rose-300'],
+        done:            ['SELESAI',                  'bg-emerald-500/15 text-emerald-300'],
+        error:           ['ERROR',                    'bg-rose-500/15 text-rose-300']
+      };
+      const m = map[s] || map.idle;
+      const spin = (s === 'running' || s === 'paused') ? '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>' : '';
+      badge.innerHTML = spin + m[0];
+      badge.className = 'px-3 py-1 rounded-full text-[10px] font-extrabold whitespace-nowrap ' + m[1];
+
+      const total = Number(state && state.total) || 0;
+      const cur   = Number(state && state.cursor) || 0;
+
+      const parts = [];
+      if (total) parts.push('pasaran ' + cur + '/' + total + (s === 'running' || s === 'paused' ? ' — sedang scan' : ''));
+      const wc = (typeof warnCount === 'number') ? warnCount : (state && state.warningCount);
+      if (typeof wc === 'number') parts.push(wc + ' user lewat batas');
+      if (state && state.message) parts.push(state.message);
+      if (meta) meta.textContent = parts.join('  •  ') || 'Belum ada scan.';
+
+      // Progress bar (14/63 -> visual + stripe berjalan biar jelas hidup)
+      const wrap = document.getElementById('investProgressWrap');
+      const bar  = document.getElementById('investProgressBar');
+      if (wrap && bar) {
+        const show = ['running', 'paused', 'session_expired', 'done', 'error'].indexOf(s) >= 0;
+        wrap.style.display = show ? 'block' : 'none';
+        const pct = total ? Math.min(100, Math.round(cur / total * 100)) : 0;
+        bar.style.background = (s === 'done')
+          ? 'linear-gradient(90deg,#34d399,#14b8a6)'
+          : (s === 'session_expired' || s === 'error')
+            ? 'linear-gradient(90deg,#fb7185,#e11d48)'
+            : 'linear-gradient(90deg,#34d399,#22d3ee)';
+        if ((s === 'running' || s === 'paused') && (!total || cur === 0)) {
+          // Belum ada angka nyata -> bar indeterminate (sapuan) biar tetap "hidup".
+          bar.className = 'progress-bar is-loading';
+          bar.style.width = '';
+        } else {
+          bar.className = 'progress-bar' + (s === 'running' ? ' invest-running' : '');
+          bar.style.width = (s === 'done' ? 100 : Math.max(pct, s === 'running' ? 4 : 0)) + '%';
+        }
+      }
+
+      // Tombol MULAI SCAN dikunci + spinner selama scan jalan.
+      const startBtn = document.getElementById('investStartBtn');
+      if (startBtn) {
+        const busy = (s === 'running' || s === 'paused');
+        startBtn.disabled = busy;
+        startBtn.innerHTML = busy
+          ? '<i class="fa-solid fa-circle-notch fa-spin"></i>SEDANG SCAN...'
+          : '<i class="fa-solid fa-play"></i>MULAI SCAN';
+      }
+
+      if (contBtn) contBtn.style.display = (s === 'session_expired') ? 'inline-flex' : 'none';
+
+      // Session mati -> buka form setting supaya PHPSESSID baru gampang ditempel.
+      if (s === 'session_expired') {
+        const dbox = document.getElementById('investSettingBox');
+        if (dbox) dbox.open = true;
+      }
+
+      // Scan sedang jalan -> hasil di kotak PASTI kosong (server sudah/akan
+      // dikosongkan). Jadi kalau masih ada kartu sisa scan lama, hapus dulu
+      // supaya yang tampil animasi Loading, bukan history lama.
+      const list = document.getElementById('investWarningList');
+      if (list && (s === 'running' || s === 'paused') && list.dataset.has === '1') {
+        list.dataset.has = '0';
+        list.innerHTML = '';
+      }
+      // Selama belum ada hasil, refresh placeholder (angka pasaran X/Y ikut update).
+      if (!investHasRows()) investRenderWarnPlaceholder(state);
+    }
+
+    // Dipanggil saat MULAI / LANJUTKAN scan: langsung bersihkan tampilan lama &
+    // tampilkan Loading + bar 0%, jangan tunggu poll pertama (5 dtk).
+    function investBeginScanUI(state) {
+      const list = document.getElementById('investWarningList');
+      if (list) { list.dataset.has = '0'; list.innerHTML = ''; }
+      const meta = document.getElementById('investWarningMeta');
+      if (meta) meta.textContent = 'Scan berjalan…';
+      renderInvestState(state || { state: 'running', cursor: 0, total: 63 }, 0);
+    }
+
+    function startInvestPolling() {
+      stopInvestPolling();
+      pollInvestStatus();
+      // Beberapa poll pertama lebih rapat biar progres kelihatan cepat naik,
+      // lalu melambat ke 4 dtk.
+      let fast = 4;
+      investStatusTimer = setInterval(() => {
+        pollInvestStatus();
+        if (--fast === 0) {
+          clearInterval(investStatusTimer);
+          investStatusTimer = setInterval(pollInvestStatus, 4000);
+        }
+      }, 1800);
+    }
+    function stopInvestPolling() {
+      if (investStatusTimer) { clearInterval(investStatusTimer); investStatusTimer = null; }
+    }
+    function pollInvestStatus() {
+      if (currentPage !== 'invest' || !currentUser) { stopInvestPolling(); return; }
+      google.script.run
+        .withSuccessHandler(st => {
+          renderInvestState(st, st && st.warningCount);
+          if (st && ['done','idle','session_expired','error'].indexOf(st.state) >= 0) {
+            stopInvestPolling();
+            if (st.state === 'done') loadInvestWarnings();
+          }
+        })
+        .withFailureHandler(() => {})
+        .investGetStatus(currentSessionToken);
+    }
+
+    // "yyyy-MM-dd" -> "07 Sep". Juga menangani sisa data lama bentuk Date string.
+    function investFmtDate(v) {
+      const s = String(v || '').trim();
+      let m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+      let d;
+      if (m) d = new Date(+m[1], +m[2] - 1, +m[3]);
+      else { d = new Date(s); if (isNaN(d.getTime())) return s; }
+      const b = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+      return d.getDate() + ' ' + b[d.getMonth()];
+    }
+
+    function investHasRows() {
+      const list = document.getElementById('investWarningList');
+      return !!(list && list.dataset.has === '1');
+    }
+
+    // Placeholder kotak hasil — animasi "sedang scan" biar kalau pindah menu &
+    // balik lagi tetap kelihatan Loading, bukan "kosong".
+    function investRenderWarnPlaceholder(state) {
+      const list = document.getElementById('investWarningList');
+      if (!list || list.dataset.has === '1') return;
+      const s = (state && state.state) || 'idle';
+      const cur = Number(state && state.cursor) || 0;
+      const total = Number(state && state.total) || 0;
+      if (s === 'running' || s === 'paused') {
+        list.innerHTML = `<div class="invest-warn-card" style="border-color:rgba(52,211,153,.2)">
+          <div class="invest-scanning">
+            <span class="invest-scan-orbit"></span>
+            <div>
+              <div class="invest-scan-title">Sedang scan pasaran ${cur}/${total || '?'}…</div>
+              <div class="invest-scan-sub">Hasil user lewat batas muncul otomatis saat scan selesai. Aman ditinggal / pindah menu.</div>
+              <div class="invest-scan-dots"><span></span><span></span><span></span></div>
+            </div>
+          </div>
+        </div>`;
+      } else if (s === 'session_expired') {
+        list.innerHTML = '<div class="text-center text-rose-300 py-8 text-[11px]">Scan berhenti — session agen expired. Tempel PHPSESSID baru, SIMPAN, lalu LANJUTKAN SCAN.</div>';
+      } else {
+        list.innerHTML = '<div class="text-center text-slate-500 py-8 text-[11px]">Belum ada hasil scan. Isi setting lalu klik MULAI SCAN.</div>';
+      }
+    }
+
+    function investDateKey(d) {
+      const m = String(d || '').match(/(\d{4})-(\d{2})-(\d{2})/);
+      if (m) return m[1] + m[2] + m[3];
+      const t = new Date(String(d || ''));
+      return isNaN(t.getTime()) ? String(d || '') : ('' + t.getFullYear() + String(t.getMonth() + 1).padStart(2, '0') + String(t.getDate()).padStart(2, '0'));
+    }
+
+    function investUserCard(u) {
+      const hits = u.hits || [];
+      // Kelompokkan per tanggal, urut kronologis (6 Sep dulu, baru 7 Sep).
+      const byDate = {};
+      hits.forEach(h => { const k = h.tanggal || '?'; (byDate[k] = byDate[k] || []).push(h); });
+      const dkeys = Object.keys(byDate).sort((a, b) => investDateKey(a) < investDateKey(b) ? -1 : 1);
+
+      const sections = dkeys.map(dk => {
+        const arr = byDate[dk];
+        const nPasar = new Set(arr.map(h => h.pasaran)).size;
+        const rows = arr.map(h => {
+          if (h.error) return `<li class="invest-hit is-err">${escapeHtml(h.pasaran || '-')} — ${escapeHtml(h.error)}</li>`;
+          return `<li class="invest-hit">
+            <b>${escapeHtml(h.pasaran || '-')}</b> · Periode ${escapeHtml(String(h.periode))} · <span class="ihg">${escapeHtml(String(h.game))}</span>
+            <span class="invest-hit-info">( ${escapeHtml(String(h.line))} Line — Lewat Batas, limit ${escapeHtml(String(h.limit))}, +${escapeHtml(String(h.over))} )</span>
+          </li>`;
+        }).join('');
+        return `<div class="invest-date-group">
+          <div class="invest-date-head">${escapeHtml(investFmtDate(dk))}<span> · ${nPasar} pasaran</span></div>
+          <ul class="invest-hit-list">${rows}</ul>
+        </div>`;
+      }).join('');
+
+      const badge = Number(u.excess || 0) > 0 ? `+${u.excess} line lewat batas` : `${hits.length} catatan`;
+      return `<div class="invest-warn-card">
+        <div class="invest-warn-head">
+          <span class="invest-warn-user">${escapeHtml(u.user || '-')}</span>
+          <span class="invest-warn-badge">${escapeHtml(badge)}</span>
+        </div>
+        ${sections || '<div class="invest-hit is-err">' + escapeHtml(u.raw || 'tidak ada rincian') + '</div>'}
+      </div>`;
+    }
+
+    function loadInvestWarnings() {
+      const list = document.getElementById('investWarningList');
+      const meta = document.getElementById('investWarningMeta');
+      if (!list) return;
+      google.script.run
+        .withSuccessHandler(res => {
+          const users = (res && res.users) || [];
+          if (meta) meta.textContent = users.length ? (users.length + ' user melebihi batas invest') : 'Belum ada hasil scan.';
+          if (!users.length) {
+            list.dataset.has = '0';
+            investRenderWarnPlaceholder(res && res.state);
+          } else {
+            list.dataset.has = '1';
+            list.innerHTML = users.map(investUserCard).join('');
+          }
+          renderInvestState(res && res.state, res && res.warningCount);
+        })
+        .withFailureHandler(() => {})
+        .investGetWarnings(currentSessionToken);
+    }
+  </script>

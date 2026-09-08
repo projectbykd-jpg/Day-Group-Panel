@@ -1,0 +1,21 @@
+{
+  "name": "panel-worker",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build:ui": "node scripts/build-ui.mjs",
+    "predeploy": "node scripts/build-ui.mjs",
+    "deploy": "wrangler deploy",
+    "dev": "node scripts/build-ui.mjs && wrangler dev",
+    "start": "node scripts/build-ui.mjs && wrangler dev",
+    "test": "vitest",
+    "cf-typegen": "wrangler types"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.0.0",
+    "@types/node": "^26.5.0",
+    "typescript": "^5.5.2",
+    "vitest": "~4.1.0",
+    "wrangler": "^4.129.1"
+  }
+}
