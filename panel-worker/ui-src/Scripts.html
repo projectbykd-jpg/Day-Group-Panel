@@ -503,10 +503,12 @@
       const host = document.getElementById('lap-page');
       if (!host) return;
       lapEnsureConfig(() => {
+        Object.keys(lapTblState).forEach(k => delete lapTblState[k]);
         if (page === 'lap-setting') lapRenderSetting(host);
         else if (page === 'lap-motion') lapRenderMotion(host);
         else if (page === 'lap-mozart') lapRenderMozart(host);
         else lapRenderAdmin(host);
+        lapTblMountAll();
       });
     }
 
@@ -518,41 +520,114 @@
         </div>${inner}</div>`;
     }
 
+    const lapFp = {}; // instance flatpickr per prefix
     function lapDateBar(prefix, onRun) {
       window['__lapRun_' + prefix] = onRun;
-      return `<div class="flex flex-wrap items-end gap-2.5">
-        <div><label class="block text-[10px] font-bold text-slate-400 mb-1">TANGGAL MULAI</label>
-          <input type="date" id="${prefix}Start" value="${lapToday()}" class="glass-inner rounded-xl px-3 py-2 text-xs text-slate-100"></div>
-        <div><label class="block text-[10px] font-bold text-slate-400 mb-1">TANGGAL SELESAI</label>
-          <input type="date" id="${prefix}End" value="${lapToday()}" class="glass-inner rounded-xl px-3 py-2 text-xs text-slate-100"></div>
-        <button id="${prefix}Btn" onclick="window['__lapRun_${prefix}']()" class="bg-gradient-to-r from-cyan-400 to-blue-600 text-slate-950 font-extrabold px-5 py-2.5 rounded-xl text-xs"><i class="fa-solid fa-play mr-2"></i>TARIK DATA</button>
+      // init flatpickr sesudah HTML dipasang
+      setTimeout(() => {
+        try {
+          if (window.flatpickr) {
+            ['Start','End'].forEach(k => {
+              const el = document.getElementById(prefix + k);
+              if (el && !el._flatpickr) {
+                lapFp[prefix+k] = flatpickr(el, { dateFormat:'Y-m-d', altInput:true, altFormat:'d-m-Y', defaultDate: lapToday(), allowInput:false, disableMobile:true });
+              }
+            });
+          }
+        } catch(e) {}
+      }, 30);
+      return `<div class="lap-datebar flex flex-wrap items-end gap-3">
+        <div class="flex flex-col gap-1"><label class="text-[10px] font-bold text-slate-400 tracking-wide">TANGGAL MULAI</label>
+          <div class="lap-date-field"><i class="fa-regular fa-calendar"></i><input id="${prefix}Start" value="${lapToday()}" readonly placeholder="dd-mm-yyyy"></div></div>
+        <div class="flex flex-col gap-1"><label class="text-[10px] font-bold text-slate-400 tracking-wide">TANGGAL SELESAI</label>
+          <div class="lap-date-field"><i class="fa-regular fa-calendar"></i><input id="${prefix}End" value="${lapToday()}" readonly placeholder="dd-mm-yyyy"></div></div>
+        <div class="flex gap-1.5">
+          <button onclick="lapSetRange('${prefix}',0)" class="lap-quick">Hari ini</button>
+          <button onclick="lapSetRange('${prefix}',1)" class="lap-quick">Kemarin</button>
+          <button onclick="lapSetRange('${prefix}',7)" class="lap-quick">7 hari</button>
+        </div>
+        <button id="${prefix}Btn" onclick="window['__lapRun_${prefix}']()" class="bg-gradient-to-r from-cyan-400 to-blue-600 text-slate-950 font-extrabold px-5 py-2.5 rounded-xl text-xs shrink-0"><i class="fa-solid fa-cloud-arrow-down mr-2"></i>TARIK DATA</button>
         <span id="${prefix}Status" class="text-[11px] text-slate-400"></span>
       </div>`;
     }
+    function lapSetRange(prefix, daysBack) {
+      const d = new Date(Date.now() + 7*3600*1000 - daysBack*864e5).toISOString().slice(0,10);
+      const end = daysBack === 7 ? new Date(Date.now() + 7*3600*1000).toISOString().slice(0,10) : d;
+      const setV = (id, v) => { const el = document.getElementById(id); if (el && el._flatpickr) el._flatpickr.setDate(v, true); else if (el) el.value = v; };
+      setV(prefix+'Start', d); setV(prefix+'End', end);
+    }
+    function lapDateVal(id) {
+      const el = document.getElementById(id);
+      if (el && el._flatpickr && el._flatpickr.selectedDates[0]) return el._flatpickr.formatDate(el._flatpickr.selectedDates[0], 'Y-m-d');
+      return el ? el.value : '';
+    }
     function lapBusy(prefix, on, msg) {
       const b = document.getElementById(prefix + 'Btn'), s = document.getElementById(prefix + 'Status');
-      if (b) { b.disabled = on; b.innerHTML = on ? '<i class="fa-solid fa-spinner fa-spin mr-2"></i>MENARIK...' : '<i class="fa-solid fa-play mr-2"></i>TARIK DATA'; }
+      if (b) { b.disabled = on; b.innerHTML = on ? '<i class="fa-solid fa-spinner fa-spin mr-2"></i>MENARIK...' : '<i class="fa-solid fa-cloud-arrow-down mr-2"></i>TARIK DATA'; }
       if (s) s.textContent = msg || '';
     }
     function lapStatCard(label, val, color) {
       return `<div class="glass-inner rounded-2xl p-3.5"><div class="text-[10px] font-bold text-slate-400 uppercase">${label}</div><div class="text-lg font-black mt-1 ${color||'text-slate-50'}">${val}</div></div>`;
     }
-    function lapTable(id, headers, rows, rowFn, copyRows) {
-      window['__lapCopy_' + id] = () => {
-        if (!rows || !rows.length) { toast('Data kosong'); return; }
-        navigator.clipboard.writeText(rows.map(copyRows).join('\n')).then(() => toast(rows.length + ' baris disalin'));
+
+    // Tabel collapsible + search bawaan. rows = array; rowFn(r,i)->'<tr>...'; copyFn(r,i)->string;
+    // searchKeys = array field yang dicari; opts.open = buka default.
+    const lapTblState = {};
+    function lapTable(id, headers, rows, rowFn, copyFn, searchKeys, opts) {
+      opts = opts || {};
+      rows = rows || [];
+      lapTblState[id] = { rows, rowFn, headers, searchKeys: searchKeys || [], copyFn };
+      if (lapTblState[id].open === undefined) lapTblState[id].open = !!opts.open;
+      const st = lapTblState[id];
+      window['__lapCopy_' + id] = (ev) => {
+        ev && ev.stopPropagation();
+        const list = lapTblFiltered(id);
+        if (!list.length) { toast('Data kosong'); return; }
+        navigator.clipboard.writeText(list.map((r,i) => copyFn(r,i)).join('\n')).then(() => toast(list.length + ' baris disalin'));
       };
-      const head = headers.map(h => `<th class="px-3 py-2 text-left">${h}</th>`).join('');
-      const body = (rows && rows.length)
-        ? rows.map((r, i) => rowFn(r, i)).join('')
-        : `<tr><td colspan="${headers.length}" class="px-3 py-6 text-center text-slate-500 italic text-[11px]">Belum ada data.</td></tr>`;
-      return `<div class="flex items-center justify-between mt-4 mb-1.5">
-          <div class="text-xs font-bold text-slate-200">${id.replace(/_/g,' ').toUpperCase()} <span class="text-slate-500">(${rows ? rows.length : 0})</span></div>
-          <button onclick="window['__lapCopy_${id}']()" class="glass-inner px-3 py-1.5 rounded-lg text-[10px] font-bold"><i class="fa-regular fa-copy mr-1.5"></i>COPY</button>
+      window['__lapToggle_' + id] = () => { st.open = !st.open; lapTblRepaint(id); };
+      window['__lapSearch_' + id] = (v) => { st.q = (v||'').toLowerCase(); lapTblRepaint(id, true); };
+      const title = (opts.title || id.replace(/_/g,' ')).toUpperCase();
+      return `<div class="lap-tbl" id="lapTbl_${id}">
+        <div class="lap-tbl-head" onclick="window['__lapToggle_${id}']()">
+          <span class="flex items-center gap-2"><i class="fa-solid fa-chevron-right lap-tbl-chev"></i>${title}
+            <span class="lap-tbl-count" id="lapTblCount_${id}">${rows.length}</span></span>
+          <button onclick="window['__lapCopy_${id}'](event)" class="lap-tbl-copy"><i class="fa-regular fa-copy mr-1"></i>COPY</button>
         </div>
-        <div class="overflow-x-auto rounded-xl border border-white/5"><table class="w-full text-[11px] text-slate-300 font-mono min-w-[560px]">
-          <thead class="bg-slate-900/60 text-slate-400 text-[9px] uppercase"><tr>${head}</tr></thead>
-          <tbody>${body}</tbody></table></div>`;
+        <div class="lap-tbl-body" id="lapTblBody_${id}"></div>
+      </div>`;
+    }
+    function lapTblFiltered(id) {
+      const st = lapTblState[id]; if (!st) return [];
+      let list = st.prefilter ? st.prefilter(st.rows) : st.rows;
+      if (st.q && st.searchKeys.length) list = list.filter(r => st.searchKeys.some(k => String(r[k]==null?'':r[k]).toLowerCase().includes(st.q)));
+      return list;
+    }
+    function lapSetPrefilter(id, fn) { if (lapTblState[id]) { lapTblState[id].prefilter = fn; lapTblState[id].open = true; lapTblRepaint(id); } }
+    function lapTblRepaint(id, keepFocus) {
+      const st = lapTblState[id]; if (!st) return;
+      const wrap = document.getElementById('lapTbl_' + id);
+      const body = document.getElementById('lapTblBody_' + id);
+      if (!wrap || !body) return;
+      wrap.classList.toggle('open', st.open);
+      const cnt = document.getElementById('lapTblCount_' + id);
+      if (!st.open) { body.innerHTML = ''; return; }
+      const list = lapTblFiltered(id);
+      if (cnt) cnt.textContent = list.length + (st.q ? '/' + st.rows.length : '');
+      const head = st.headers.map(h => `<th class="px-3 py-2 text-left">${h}</th>`).join('');
+      const rowsHtml = list.length
+        ? list.map((r,i) => st.rowFn(r,i)).join('')
+        : `<tr><td colspan="${st.headers.length}" class="px-3 py-6 text-center text-slate-500 italic text-[11px]">Tidak ada data.</td></tr>`;
+      body.innerHTML = `
+        ${st.searchKeys.length ? `<div class="p-2"><input id="lapSearch_${id}" value="${st.q||''}" oninput="window['__lapSearch_${id}'](this.value)" placeholder="Cari di ${id.replace(/_/g,' ')}..." class="w-full glass-inner rounded-lg px-3 py-1.5 text-xs text-slate-100"></div>` : ''}
+        <div class="overflow-x-auto"><table class="w-full text-[11px] text-slate-300 font-mono min-w-[560px]">
+          <thead class="bg-slate-900/60 text-slate-400 text-[9px] uppercase sticky top-0"><tr>${head}</tr></thead>
+          <tbody>${rowsHtml}</tbody></table></div>`;
+      if (keepFocus) { const si = document.getElementById('lapSearch_' + id); if (si) { si.focus(); si.setSelectionRange(si.value.length, si.value.length); } }
+    }
+    // dipanggil sesudah host.innerHTML dipasang: render body tiap tabel
+    function lapTblMountAll() {
+      Object.keys(lapTblState).forEach(id => { if (document.getElementById('lapTbl_' + id)) lapTblRepaint(id); });
     }
     const td = (v, cls) => `<td class="px-3 py-1.5 ${cls||''}">${v==null?'':v}</td>`;
 
@@ -620,19 +695,19 @@
         <div id="lapMotionTables">
           ${lapTable('motion_dp_pga', ['CREATED','PAID','USER','REF','WEBSITE','VENDOR','NOMINAL','FEE','STATUS'], dp,
             r => `<tr>${td(r.createdAt)}${td(r.paidAt,'text-emerald-400')}${td(r.user,'font-bold text-cyan-300')}${td(r.refNo,'text-[10px]')}${td(r.game)}${td(r.vendor,'text-[10px]')}${td(lapFmt(r.amount),'text-right')}${td(lapFmt(r.fee),'text-right text-amber-400')}${td(r.status,'text-center text-emerald-400')}</tr>`,
-            r => [r.createdAt,r.paidAt,r.user,r.refNo,r.game,r.vendor,r.amount,r.fee,r.status].join('\t'))}
+            r => [r.createdAt,r.paidAt,r.user,r.refNo,r.game,r.vendor,r.amount,r.fee,r.status].join('\t'), ['user','refNo','game','vendor'], {title:'Motion DP PGA', open:true})}
           ${lapTable('pga_pending_error', ['CREATED','PAID','USER','REF','WEBSITE','VENDOR','NOMINAL','KETERANGAN'], pe,
             r => `<tr class="bg-rose-950/10">${td(r.createdAt)}${td(r.paidAt)}${td(r.user,'font-bold text-rose-300')}${td(r.refNo,'text-[10px]')}${td(r.game)}${td(r.vendor,'text-[10px]')}${td(lapFmt(r.amount),'text-right')}${td(r.status,'text-center text-rose-300')}</tr>`,
-            r => [r.createdAt,r.paidAt,r.user,r.refNo,r.game,r.vendor,r.amount,r.status].join('\t'))}
+            r => [r.createdAt,r.paidAt,r.user,r.refNo,r.game,r.vendor,r.amount,r.status].join('\t'), ['user','refNo','game','status'], {title:'PGA Pending / Error'})}
           ${lapTable('pga_withdraw', ['PAYOUT','CREATED','USER','BANK','REKENING','REF','NOMINAL','STATUS','ADMIN'], wd,
             r => `<tr>${td(r.payoutAt,'text-purple-300')}${td(r.createdAt)}${td(r.user,'font-bold text-cyan-300')}${td(r.bank,'text-[10px]')}${td(r.accountNumber,'text-[10px]')}${td(r.refNo,'text-[9px]')}${td(lapFmt(r.amount),'text-right text-purple-300')}${td(r.status,'text-center')}${td(r.adminName,'text-[10px]')}</tr>`,
-            r => [r.user,r.amount].join('\t'))}
+            r => [r.user,r.amount].join('\t'), ['user','bank','accountNumber','refNo'], {title:'PGA Withdraw'})}
         </div>`);
     }
     function lapRunMotion() {
       lapEnsureConfig(() => {
         if (!lapConfig || !lapConfig.tokenMotion) { toast('Isi Token Motion di menu Setting dulu'); switchPage('lap-setting'); return; }
-        const sd = document.getElementById('lapMotionStart').value, ed = document.getElementById('lapMotionEnd').value;
+        const sd = lapDateVal('lapMotionStart'), ed = lapDateVal('lapMotionEnd');
         if (!sd || !ed) { toast('Pilih tanggal'); return; }
         lapBusy('lapMotion', true, 'Menghubungi API Motion...');
         google.script.run.withSuccessHandler(res => {
@@ -667,17 +742,17 @@
         <div>
           ${lapTable('mozart_deposit', ['DATE','USER','NAMA PENGIRIM','BANK','REKENING','NOMINAL','STATUS'], dp,
             r => `<tr>${td(r.date)}${td(r.username,'font-bold text-cyan-300')}${td(r.name)}${td(r.bank,'uppercase text-[10px]')}${td(r.accountNumber,'text-[10px]')}${td(lapFmt(r.amount),'text-right text-emerald-400')}${td(r.status,'text-center uppercase text-[10px]')}</tr>`,
-            r => [r.username, r.amount].join('\t'))}
+            r => [r.username, r.amount].join('\t'), ['username','name','bank','accountNumber'], {title:'Mozart Deposit', open:true})}
           ${lapTable('mozart_withdraw', ['DATE','USER','NAMA REKENING','BANK','REKENING','NOMINAL','STATUS'], wd,
             r => `<tr>${td(r.date)}${td(r.username,'font-bold text-rose-300')}${td(r.name)}${td(r.bank,'uppercase text-[10px]')}${td(r.accountNumber,'text-[10px]')}${td(lapFmt(r.amount),'text-right text-rose-400')}${td(r.status,'text-center uppercase text-[10px]')}</tr>`,
-            r => [r.username, r.amount].join('\t'))}
+            r => [r.username, r.amount].join('\t'), ['username','name','bank','accountNumber'], {title:'Mozart Withdraw'})}
         </div>`);
     }
     let lapMozartJobId = null, lapMozartPollTimer = null;
     function lapRunMozart() {
       lapEnsureConfig(() => {
         if (!lapConfig || !lapConfig.tokenMozart) { toast('Isi Cookie Mozart di menu Setting dulu'); switchPage('lap-setting'); return; }
-        const sd = document.getElementById('lapMozartStart').value, ed = document.getElementById('lapMozartEnd').value;
+        const sd = lapDateVal('lapMozartStart'), ed = lapDateVal('lapMozartEnd');
         if (!sd || !ed) { toast('Pilih tanggal'); return; }
         lapBusy('lapMozart', true, 'Memicu GitHub Actions...');
         const prog = document.getElementById('lapMozartProgress');
@@ -741,38 +816,135 @@
           ${lapStatCard('Baris Riwayat Koin', lapFmt(cc.length), 'text-slate-100')}
         </div>
         <div>
-          ${lapTable('register', ['NO','USERNAME','DEPOSIT','WITHDRAW','WIN/LOSE','TIPE'], reg,
-            r => `<tr>${td(r.no)}${td(r.username,'font-bold text-slate-200')}${td(lapFmt(r.deposit),'text-right '+((r.deposit>0)?'text-emerald-400 font-bold':''))}${td(lapFmt(r.withdraw),'text-right')}${td(lapFmt(r.winLose),'text-right font-bold '+((r.winLose>=0)?'text-emerald-400':'text-rose-400'))}${td(r.type,'text-[10px]')}</tr>`,
-            r => [r.no,r.username,r.deposit,r.withdraw,r.winLose].join('\t'))}
+          <!-- REGISTER -->
+          <div class="lap-tbl open">
+            <div class="lap-tbl-head" onclick="this.parentElement.classList.toggle('open')">
+              <span class="flex items-center gap-2"><i class="fa-solid fa-chevron-right lap-tbl-chev"></i>REGISTER <span class="lap-tbl-count">${reg.length}</span></span>
+            </div>
+            <div class="lap-tbl-body" style="display:block">
+              <div class="p-2 flex flex-wrap gap-1.5 items-center">
+                <span class="lap-chip on" data-rf="all" onclick="lapRegFilter('all',this)">Semua</span>
+                <span class="lap-chip" data-rf="non" onclick="lapRegFilter('Non Referral',this)">Non Referral</span>
+                <span class="lap-chip" data-rf="with" onclick="lapRegFilter('With Referral',this)">With Referral</span>
+                <input id="regSearch" oninput="lapTblState.register.q=this.value.toLowerCase();lapTblRepaint('register',true)" placeholder="Cari username..." class="flex-1 min-w-[140px] glass-inner rounded-lg px-3 py-1.5 text-xs text-slate-100">
+              </div>
+              <div id="lapTblBody_register_inner"></div>
+            </div>
+          </div>
           ${lapTable('id_selisih', ['NO','USER ID','NOMINAL'], idS,
             r => `<tr class="cursor-pointer hover:bg-cyan-950/20" onclick="lapFocusSelisih('${(r.userId||'').replace(/'/g,'')}')">${td(r.no)}${td(r.userId,'font-bold text-cyan-400')}${td(lapFmt(r.nominal),'text-right text-rose-400 font-bold')}</tr>`,
-            r => [r.no,r.userId,r.nominal].join('\t'))}
-          ${lapTable('report_agent', ['NO','TGL TERIMA','USER','ACTION','DARI BANK','TUJUAN BANK','JUMLAH','STATUS','OPERATOR'], ra,
-            (r,i) => `<tr>${td(i+1)}${td(r.tanggalTerima)}${td(r.user,'font-bold text-slate-200')}${td(r.action,'text-[10px]')}${td(r.dariBank,'text-[10px]')}${td(r.tujuanBank,'text-[10px]')}${td(r.jumlah,'text-right font-bold')}${td(r.status,'text-center text-emerald-400')}${td(r.operator,'text-indigo-400')}</tr>`,
-            (r,i) => [i+1,r.tanggalTerima,r.user,r.action,r.dariBank,r.tujuanBank,r.jumlah,r.status,r.operator].join('\t'))}
+            r => [r.no,r.userId,r.nominal].join('\t'), ['userId'], {title:'ID Selisih', open:true})}
+          <!-- REPORT AGENT -->
+          <div class="lap-tbl">
+            <div class="lap-tbl-head" onclick="this.parentElement.classList.toggle('open')">
+              <span class="flex items-center gap-2"><i class="fa-solid fa-chevron-right lap-tbl-chev"></i>REPORT AGENT <span class="lap-tbl-count" id="raCount">${ra.length}</span></span>
+              <button onclick="event.stopPropagation();lapCopyReportAgent()" class="lap-tbl-copy"><i class="fa-regular fa-copy mr-1"></i>COPY</button>
+            </div>
+            <div class="lap-tbl-body">
+              <div class="p-2 flex flex-col gap-2">
+                <div class="flex flex-wrap gap-1.5 items-center"><span class="text-[9px] font-bold text-slate-500 mr-1">ACTION:</span><span id="raActionChips"></span></div>
+                <div class="flex flex-wrap gap-1.5 items-center"><span class="text-[9px] font-bold text-slate-500 mr-1">OPERATOR:</span><span id="raAgentChips"></span></div>
+                <input id="raSearch" oninput="lapAdminF.raq=this.value.toLowerCase();lapPaintReportAgent()" placeholder="Cari user / bank / operator..." class="glass-inner rounded-lg px-3 py-1.5 text-xs text-slate-100">
+              </div>
+              <div id="raBody" class="overflow-x-auto"></div>
+            </div>
+          </div>
           ${lapTable('withdraw_pga_idf', ['NO','DATE','USER (TO)','OPERATOR (BY)','NOMINAL'], wd,
             (r,i) => `<tr>${td(i+1)}${td(r.date)}${td(r.to,'font-bold text-cyan-300')}${td(r.by,'text-indigo-300')}${td(lapFmt(r.nominal),'text-right font-bold text-cyan-400')}</tr>`,
-            r => [r.to,r.nominal].join('\t'))}
-          <div id="lapCheckCoinWrap">
+            r => [r.to,r.nominal].join('\t'), ['to','by'], {title:'Withdraw PGA-IDF'})}
           ${lapTable('check_coin', ['NO','DATE','INFO','TO','BY','DEPOSIT','WITHDRAW','LAST COIN','SELISIH','HITUNG'],
             (lapResults.checkCoin || []),
             r => { const sel = r.selisih !== 0; const bg = r.isFinalRow ? 'bg-cyan-950/40 font-bold text-cyan-300' : (sel ? 'bg-rose-950/25' : '');
               return `<tr class="${bg}">${td(r.no)}${td(r.date)}${td(r.info,'font-semibold')}${td(r.to,'font-bold')}${td(r.by)}${td(r.deposit?lapFmt(r.deposit):'','text-right text-emerald-400')}${td(r.withdraw?lapFmt(r.withdraw):'','text-right text-rose-400')}${td(lapFmt(r.lastCoin),'text-right')}${td(lapFmt(r.selisih),'text-right '+(sel?'text-rose-400 font-bold':'text-slate-600'))}${td(lapFmt(r.calcCoin),'text-right text-cyan-400')}</tr>`; },
-            r => [r.no,r.date,r.info,r.to,r.by,r.deposit,r.withdraw,r.lastCoin,r.selisih,r.calcCoin].join('\t'))}
-          </div>
+            r => [r.no,r.date,r.info,r.to,r.by,r.deposit,r.withdraw,r.lastCoin,r.selisih,r.calcCoin].join('\t'), ['to','by','info'], {title:'Riwayat Koin (Check Selisih)'})}
         </div>`);
+      // register: pakai lapTblState tapi render ke inner div
+      lapTblState.register = { rows: reg, headers:['NO','USERNAME','DEPOSIT','WITHDRAW','WIN/LOSE','TIPE'], q:'', refType:'all',
+        rowFn: r => `<tr>${td(r.no)}${td(r.username,'font-bold text-slate-200')}${td(lapFmt(r.deposit),'text-right '+((r.deposit>0)?'text-emerald-400 font-bold':''))}${td(lapFmt(r.withdraw),'text-right')}${td(lapFmt(r.winLose),'text-right font-bold '+((r.winLose>=0)?'text-emerald-400':'text-rose-400'))}${td(r.type,'text-[10px]')}</tr>`,
+        searchKeys:['username'] };
+      window.__lapCopy_register = (ev) => { ev&&ev.stopPropagation(); const l=lapRegRows(); if(!l.length){toast('kosong');return;} navigator.clipboard.writeText(l.map((r,i)=>[i+1,r.username,r.deposit,r.withdraw,r.winLose].join('\t')).join('\n')).then(()=>toast(l.length+' baris disalin')); };
+      lapPaintRegister();
+      lapAdminF = { actions:null, agents:null, raq:'' };
+      lapInitReportAgentFilters(ra);
+      lapPaintReportAgent();
       if (lapAdminJobId && !lapResults.register) lapPollAdmin();
+    }
+    // -- Register filter --
+    function lapRegRows() {
+      const st = lapTblState.register; if (!st) return [];
+      let l = st.rows;
+      if (st.refType && st.refType !== 'all') l = l.filter(r => r.type === st.refType);
+      if (st.q) l = l.filter(r => String(r.username||'').toLowerCase().includes(st.q));
+      return l;
+    }
+    function lapPaintRegister() {
+      const st = lapTblState.register; if (!st) return;
+      const host = document.getElementById('lapTblBody_register_inner'); if (!host) return;
+      const l = lapRegRows();
+      host.innerHTML = `<div class="overflow-x-auto"><table class="w-full text-[11px] text-slate-300 font-mono min-w-[560px]">
+        <thead class="bg-slate-900/60 text-slate-400 text-[9px] uppercase"><tr>${st.headers.map(h=>`<th class="px-3 py-2 text-left">${h}</th>`).join('')}</tr></thead>
+        <tbody>${l.length?l.map((r,i)=>st.rowFn(r,i)).join(''):`<tr><td colspan="6" class="px-3 py-6 text-center text-slate-500 italic">Tidak ada data.</td></tr>`}</tbody></table></div>`;
+    }
+    function lapRegFilter(type, el) {
+      if (lapTblState.register) lapTblState.register.refType = type;
+      document.querySelectorAll('#lap-page .lap-chip[data-rf]').forEach(c => c.classList.toggle('on', c === el));
+      lapPaintRegister();
+    }
+    // -- Report Agent filter --
+    let lapAdminF = { actions:null, agents:null, raq:'' };
+    function lapInitReportAgentFilters(ra) {
+      const acts = [...new Set(ra.map(r => (r.action||'').trim()).filter(Boolean))];
+      const ops = [...new Set(ra.map(r => (r.operator||'').trim()).filter(Boolean))].sort();
+      lapAdminF.actions = new Set(acts);
+      lapAdminF.agents = new Set(ops);
+      const chip = (label, on, fn) => `<span class="lap-chip ${on?'on':''}" onclick="${fn}">${label}</span>`;
+      const ac = document.getElementById('raActionChips');
+      if (ac) ac.innerHTML = acts.map(a => chip(a, true, `lapToggleRA('actions','${a.replace(/'/g,"")}',this)`)).join('');
+      const gc = document.getElementById('raAgentChips');
+      if (gc) gc.innerHTML = ops.map(o => chip(o, true, `lapToggleRA('agents','${o.replace(/'/g,"")}',this)`)).join('');
+    }
+    function lapToggleRA(kind, val, el) {
+      const set = lapAdminF[kind]; if (!set) return;
+      if (set.has(val)) set.delete(val); else set.add(val);
+      el.classList.toggle('on', set.has(val));
+      lapPaintReportAgent();
+    }
+    function lapReportAgentRows() {
+      const ra = lapResults.reportAgent || [];
+      return ra.filter(r => {
+        if (lapAdminF.actions && !lapAdminF.actions.has((r.action||'').trim())) return false;
+        if (lapAdminF.agents && !lapAdminF.agents.has((r.operator||'').trim())) return false;
+        if (lapAdminF.raq) {
+          const q = lapAdminF.raq;
+          if (![r.user,r.dariBank,r.tujuanBank,r.operator].some(x => String(x||'').toLowerCase().includes(q))) return false;
+        }
+        return true;
+      });
+    }
+    function lapPaintReportAgent() {
+      const body = document.getElementById('raBody'); if (!body) return;
+      const l = lapReportAgentRows();
+      const cnt = document.getElementById('raCount'); if (cnt) cnt.textContent = l.length + '/' + (lapResults.reportAgent||[]).length;
+      body.innerHTML = `<table class="w-full text-[11px] text-slate-300 font-mono min-w-[720px]">
+        <thead class="bg-slate-900/60 text-slate-400 text-[9px] uppercase sticky top-0"><tr>${['NO','TGL TERIMA','USER','ACTION','DARI BANK','TUJUAN BANK','JUMLAH','STATUS','OPERATOR'].map(h=>`<th class="px-3 py-2 text-left">${h}</th>`).join('')}</tr></thead>
+        <tbody>${l.length?l.map((r,i)=>`<tr>${td(i+1)}${td(r.tanggalTerima)}${td(r.user,'font-bold text-slate-200')}${td(r.action,'text-[10px]')}${td(r.dariBank,'text-[10px]')}${td(r.tujuanBank,'text-[10px]')}${td(r.jumlah,'text-right font-bold')}${td(r.status,'text-center text-emerald-400')}${td(r.operator,'text-indigo-400')}</tr>`).join(''):`<tr><td colspan="9" class="px-3 py-6 text-center text-slate-500 italic">Tidak ada data sesuai filter.</td></tr>`}</tbody></table>`;
+    }
+    function lapCopyReportAgent() {
+      const l = lapReportAgentRows();
+      if (!l.length) { toast('Data kosong'); return; }
+      navigator.clipboard.writeText(l.map((r,i) => [i+1,r.tanggalTerima,r.user,r.action,r.dariBank,r.tujuanBank,r.jumlah,r.status,r.operator].join('\t')).join('\n')).then(() => toast(l.length + ' baris disalin'));
     }
     function lapFocusSelisih(userId) {
       if (!userId) return;
-      const inp = document.getElementById('check_coinSearch'); // (belum ada search) -> scroll saja
-      document.getElementById('lapCheckCoinWrap')?.scrollIntoView({ behavior: 'smooth' });
-      toast('Cek baris SELISIH merah di tabel Riwayat Koin untuk ' + userId);
+      const st = lapTblState.check_coin;
+      if (st) { st.q = String(userId).toLowerCase(); st.open = true; lapTblRepaint('check_coin', true); }
+      document.getElementById('lapTbl_check_coin')?.scrollIntoView({ behavior: 'smooth', block:'start' });
+      toast('Difokuskan ke riwayat koin: ' + userId);
     }
     function lapRunAdmin() {
       lapEnsureConfig(() => {
         if (!lapConfig || !lapConfig.linkAdmin || !lapConfig.cookiesAdmin) { toast('Isi Link & Cookie Admin di Setting dulu'); switchPage('lap-setting'); return; }
-        const sd = document.getElementById('lapAdminStart').value, ed = document.getElementById('lapAdminEnd').value;
+        const sd = lapDateVal('lapAdminStart'), ed = lapDateVal('lapAdminEnd');
         if (!sd || !ed) { toast('Pilih tanggal'); return; }
         lapBusy('lapAdmin', true, 'Memicu GitHub Actions...');
         const prog = document.getElementById('lapAdminProgress');
