@@ -381,9 +381,45 @@
       toast("Berhasil Keluar Sesi");
     }
 
+    const LAP_PAGES = ['lap-admin','lap-motion','lap-mozart','lap-setting'];
+    const NAV_KEYS = ['home','prediction','activity','admin','invest'].concat(LAP_PAGES);
+    const HEADER_KICKER = {
+      home: 'DAY-GROUP PANEL · RESULT HARI INI',
+      prediction: 'DAY-GROUP PANEL · PREDIKSI & KATA PENUTUP',
+      invest: 'DAY-GROUP PANEL · AUTOCHECK INVEST',
+      activity: 'DAY-GROUP PANEL · RIWAYAT AKTIVITAS',
+      admin: 'DAY-GROUP PANEL · ADMIN CONTROL CENTER',
+      'lap-admin': 'LAPORAN HARIAN · LAP ADMIN',
+      'lap-motion': 'LAPORAN HARIAN · LAP MOTION',
+      'lap-mozart': 'LAPORAN HARIAN · LAP MOZART',
+      'lap-setting': 'LAPORAN HARIAN · KREDENSIAL & SETTING'
+    };
+
+    function toggleNavGroup(name) {
+      const grp = document.querySelector('.nav-group[data-group="' + name + '"]');
+      if (!grp) return;
+      grp.classList.toggle('collapsed');
+      try {
+        const st = JSON.parse(localStorage.getItem('daygroup_nav_groups') || '{}');
+        st[name] = grp.classList.contains('collapsed');
+        localStorage.setItem('daygroup_nav_groups', JSON.stringify(st));
+      } catch (e) {}
+    }
+    function restoreNavGroups() {
+      let st = {};
+      try { st = JSON.parse(localStorage.getItem('daygroup_nav_groups') || '{}'); } catch (e) {}
+      document.querySelectorAll('.nav-group').forEach(g => {
+        if (st[g.dataset.group]) g.classList.add('collapsed');
+      });
+    }
+
     function switchPage(page) {
-      const pages = {home:'main-panel', prediction:'prediction-page', activity:'activity-page', admin:'admin-page', invest:'invest-page'};
-      Object.values(pages).forEach(id => {
+      const pages = {
+        home:'main-panel', prediction:'prediction-page', activity:'activity-page',
+        admin:'admin-page', invest:'invest-page',
+        'lap-admin':'lap-page', 'lap-motion':'lap-page', 'lap-mozart':'lap-page', 'lap-setting':'lap-page'
+      };
+      ['main-panel','prediction-page','activity-page','admin-page','invest-page','lap-page'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
       });
@@ -394,10 +430,15 @@
       const marketWrapper = document.getElementById('market-wrapper');
       if (marketWrapper) marketWrapper.style.display = page === 'home' ? 'block' : 'none';
 
-      ['home','prediction','activity','admin','invest'].forEach(key => {
+      NAV_KEYS.forEach(key => {
         const nav = document.getElementById('nav-' + key);
         if (nav) nav.classList.toggle('nav-active', key === page);
       });
+
+      const kicker = document.getElementById('headerKicker');
+      if (kicker) kicker.textContent = HEADER_KICKER[page] || 'DAY-GROUP PANEL';
+
+      if (LAP_PAGES.includes(page)) renderLapPlaceholder(page);
 
       if (page !== 'invest') stopInvestPolling();
 
@@ -442,6 +483,36 @@
       if (!headerSummaryLoadedOnce) loadHeaderSummary();
 
       pumpLivePoll(true); // sinkron cepat sesuai halaman baru
+    }
+
+    // Placeholder Laporan Harian (Lap Admin / Motion / Mozart / Setting).
+    // Modul scraper penuh sedang dipindahkan dari Apps Script.
+    function renderLapPlaceholder(page) {
+      const host = document.getElementById('lap-page');
+      if (!host) return;
+      const titles = {
+        'lap-admin': ['Lap Admin', 'fa-table-list', 'Register, Report Agent, Check Selisih Koin, Withdraw PGA-IDF'],
+        'lap-motion': ['Lap Motion', 'fa-bolt-lightning', 'Motion DP PGA, PGA Pending/Error, PGA Withdraw'],
+        'lap-mozart': ['Lap Mozart', 'fa-cubes-stacked', 'Deposit & Withdraw Mozart (m-banking)'],
+        'lap-setting': ['Setting Laporan Harian', 'fa-sliders', 'Link & Cookie Admin, Token Motion, Cookie Mozart']
+      };
+      const t = titles[page] || ['Laporan Harian', 'fa-file-invoice-dollar', ''];
+      host.innerHTML = `
+        <div class="glass-card rounded-3xl p-6 sm:p-8 flex flex-col gap-4">
+          <div class="flex items-center gap-3">
+            <div class="w-11 h-11 rounded-2xl bg-sky-500/12 border border-sky-500/25 flex items-center justify-center text-sky-300 text-lg"><i class="fa-solid ${t[1]}"></i></div>
+            <div>
+              <h2 class="text-lg font-black text-white">${t[0]}</h2>
+              <p class="text-xs text-slate-400">${t[2]}</p>
+            </div>
+          </div>
+          <div class="glass-inner rounded-2xl p-4 border border-amber-500/20 bg-amber-500/5 text-[13px] text-amber-200 leading-relaxed">
+            <b><i class="fa-solid fa-screwdriver-wrench mr-1.5"></i>Sedang dipindahkan.</b>
+            Modul <b>Laporan Harian</b> (scraper Admin / Motion / Mozart dari PANEL AUTO Apps Script)
+            sedang di-port ke Worker ini. Struktur menu sudah disiapkan; fungsi tarik data menyusul
+            di update berikutnya.
+          </div>
+        </div>`;
     }
 
     /* Menu admin: tampilkan satu panel per waktu (tidak numpuk scroll). */
@@ -1782,6 +1853,7 @@
       const isAdmin = !!(currentProfile && currentProfile.role === 'ADMIN');
       document.querySelectorAll('.nav-extra').forEach(el => el.style.display = 'flex');
       document.querySelectorAll('.admin-only').forEach(el => el.style.display = isAdmin ? 'flex' : 'none');
+      restoreNavGroups();
       document.querySelectorAll('.activity-admin-only').forEach(el => el.style.display = isAdmin ? '' : 'none');
 
       const filterGrid = document.getElementById('activityFilterGrid');

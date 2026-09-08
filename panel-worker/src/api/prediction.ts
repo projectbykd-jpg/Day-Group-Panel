@@ -2,6 +2,7 @@
 // generateClosingPredictionCopy / sendPredictionAuto / sendClosingPredictionAuto) + router auto-post.
 import { requireSession } from "./auth";
 import { getUserProfile } from "../lib/db";
+import { getSiteAccount } from "../lib/site";
 import { logActivity } from "../lib/activity";
 import {
 	JADWAL_PREDIKSI_CONFIG,
@@ -85,7 +86,7 @@ export async function sendClosingPredictionAuto(env: Env, token: string, onlyWeb
 // ---------------------------------------------------------------------------
 // Auto-post router (dipakai Cron Trigger + tombol admin "JALANKAN SEKARANG")
 // ---------------------------------------------------------------------------
-const CATCHUP_MINUTES = 90;
+const CATCHUP_MINUTES = 25; // susulan maksimal 25 menit dari jam sesi
 const GUARD_TTL = 21600; // 6 jam
 
 async function isAutoPostEnabled(env: Env): Promise<boolean> {
@@ -120,7 +121,15 @@ async function autoPostWebsites(env: Env, usernames: string[]): Promise<string[]
 			if (site) set[site] = true;
 		}
 	}
-	return Object.keys(set);
+	// PENTING: hanya sertakan website yang PUNYA Telegram Prediksi (tg_pred_*).
+	// Website tanpa config (mis. HELEN) kalau ikut -> selalu GAGAL -> guard slot
+	// tidak pernah terkunci -> router retry tiap menit sepanjang window (boros).
+	const eligible: string[] = [];
+	for (const site of Object.keys(set)) {
+		const acc = await getSiteAccount(env, site);
+		if (acc && acc.telegramPred.token && acc.telegramPred.chatId) eligible.push(site);
+	}
+	return eligible;
 }
 
 function slotDue(nowMinutes: number, slotMinutes: number, windowMinutes?: number): boolean {
@@ -167,7 +176,20 @@ export async function runAutoPostRouter(env: Env, opts: { force?: boolean; windo
 		summary.already += Number(res?.counters?.already || 0);
 		summary.failed += Number(res?.counters?.failed || 0);
 		const hadFailure = !res || !res.counters || (res.pendingWebsites || []).length > 0;
-		if (!hadFailure) await env.SESS.put(guardKey, "1", { expirationTtl: GUARD_TTL });
+		if (!hadFailure) {
+			await env.SESS.put(guardKey, "1", { expirationTtl: GUARD_TTL });
+			return;
+		}
+		// Masih ada yang gagal: coba lagi tick berikutnya, TAPI batasi 3x supaya tidak
+		// spam kirim/log tiap menit sepanjang window catch-up.
+		const attKey = guardKey + ":att";
+		const att = Number((await env.SESS.get(attKey)) || 0) + 1;
+		if (att >= 3) {
+			await env.SESS.put(guardKey, "1", { expirationTtl: GUARD_TTL });
+			await env.SESS.delete(attKey);
+		} else {
+			await env.SESS.put(attKey, String(att), { expirationTtl: GUARD_TTL });
+		}
 	};
 
 	for (let index = 0; index < JADWAL_PREDIKSI_CONFIG.length; index++) {

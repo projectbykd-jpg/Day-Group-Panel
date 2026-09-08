@@ -65,7 +65,7 @@
   <div id="app-container" class="w-full max-w-[1680px] flex flex-col lg:flex-row gap-5 items-start" style="display: none;">
     
     <!-- LEFT SIDEBAR -->
-    <div class="w-full lg:w-64 glass-card rounded-3xl p-4 sm:p-5 flex flex-row lg:flex-col justify-between shrink-0 lg:min-h-[88vh] sticky top-5 z-20">
+    <div class="w-full lg:w-64 glass-card rounded-3xl p-4 sm:p-5 flex flex-row lg:flex-col justify-between shrink-0 z-30 lg:sticky lg:top-3 lg:self-start lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto sidebar-frozen">
       <div class="flex flex-row lg:flex-col items-center lg:items-stretch gap-4 w-full">
         <div class="flex items-center gap-3.5 px-2 py-2 border-b border-white/5 w-full">
           <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-500/20 to-blue-500/20 p-1 border border-cyan-500/40 flex items-center justify-center shrink-0 shadow-lg shadow-cyan-500/20">
@@ -73,23 +73,60 @@
           </div>
           <div class="hidden lg:block overflow-hidden">
             <h3 class="text-xs font-extrabold text-white tracking-wider truncate">DAY-GROUP</h3>
-            <p class="text-[9px] text-cyan-400 font-bold tracking-[0.2em] mt-0.5">PANEL SYSTEM</p>
+            <p class="text-[9px] text-cyan-400 font-bold tracking-[0.2em] mt-0.5">PANEL</p>
           </div>
         </div>
 
-        <div class="flex flex-row lg:flex-col gap-2 w-full justify-end lg:justify-start">
-          <button onclick="switchPage('home')" id="nav-home" class="sidebar-nav nav-active w-full flex items-center justify-center lg:justify-start gap-3.5 px-4 py-3.5 rounded-2xl font-bold text-xs cursor-pointer">
-            <i class="fa-solid fa-house text-sm shrink-0"></i>
-            <span class="hidden lg:inline tracking-wider">Beranda</span>
+        <div class="flex flex-col gap-1.5 w-full nav-groups">
+          <!-- GRUP 1: UTAMA -->
+          <div class="nav-group" data-group="utama">
+            <button type="button" class="nav-group-head" onclick="toggleNavGroup('utama')">
+              <span><i class="fa-solid fa-layer-group mr-2 text-cyan-400"></i>Utama</span>
+              <i class="fa-solid fa-chevron-down nav-chev"></i>
+            </button>
+            <div class="nav-group-body">
+              <button onclick="switchPage('home')" id="nav-home" class="sidebar-nav nav-active w-full flex items-center justify-start gap-3 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer">
+                <i class="fa-solid fa-trophy text-amber-400 text-sm shrink-0"></i><span class="tracking-wider">Result</span>
+              </button>
+              <button onclick="switchPage('prediction')" id="nav-prediction" class="sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer">
+                <i class="fa-solid fa-wand-magic-sparkles text-pink-400 text-sm shrink-0"></i><span class="tracking-wider">Prediksi</span>
+              </button>
+              <button onclick="switchPage('invest')" id="nav-invest" class="nav-extra sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer">
+                <i class="fa-solid fa-magnifying-glass-dollar text-emerald-400 text-sm shrink-0"></i><span class="tracking-wider">Invest</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- GRUP 2: LAPORAN HARIAN -->
+          <div class="nav-group" data-group="lapor">
+            <button type="button" class="nav-group-head" onclick="toggleNavGroup('lapor')">
+              <span><i class="fa-solid fa-file-invoice-dollar mr-2 text-sky-400"></i>Laporan Harian</span>
+              <i class="fa-solid fa-chevron-down nav-chev"></i>
+            </button>
+            <div class="nav-group-body">
+              <button onclick="switchPage('lap-admin')" id="nav-lap-admin" class="nav-extra sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer">
+                <i class="fa-solid fa-table-list text-cyan-400 text-sm shrink-0"></i><span class="tracking-wider">Lap Admin</span>
+              </button>
+              <button onclick="switchPage('lap-motion')" id="nav-lap-motion" class="nav-extra sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer">
+                <i class="fa-solid fa-bolt-lightning text-indigo-400 text-sm shrink-0"></i><span class="tracking-wider">Lap Motion</span>
+              </button>
+              <button onclick="switchPage('lap-mozart')" id="nav-lap-mozart" class="nav-extra sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer">
+                <i class="fa-solid fa-cubes-stacked text-emerald-400 text-sm shrink-0"></i><span class="tracking-wider">Lap Mozart</span>
+              </button>
+              <button onclick="switchPage('lap-setting')" id="nav-lap-setting" class="nav-extra sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer">
+                <i class="fa-solid fa-sliders text-slate-300 text-sm shrink-0"></i><span class="tracking-wider">Setting</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 3. AKTIVITAS -->
+          <button onclick="switchPage('activity')" id="nav-activity" class="nav-extra sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-3 rounded-xl font-bold text-xs cursor-pointer nav-solo">
+            <i class="fa-solid fa-clock-rotate-left text-cyan-400 text-sm shrink-0"></i><span class="tracking-wider">Aktivitas</span>
           </button>
-          
-          <button onclick="switchPage('prediction')" id="nav-prediction" class="sidebar-nav w-full flex items-center justify-center lg:justify-start gap-3.5 px-4 py-3.5 rounded-2xl font-bold text-xs cursor-pointer">
-            <i class="fa-solid fa-wand-magic-sparkles text-pink-400 text-sm shrink-0"></i>
-            <span class="hidden lg:inline tracking-wider">PREDIKSI</span>
+          <!-- 4. ADMIN -->
+          <button onclick="switchPage('admin')" id="nav-admin" class="nav-extra admin-only sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-3 rounded-xl font-bold text-xs cursor-pointer nav-solo">
+            <i class="fa-solid fa-shield-halved text-amber-400 text-sm shrink-0"></i><span class="tracking-wider">Admin</span>
           </button>
-          <button onclick="switchPage('activity')" id="nav-activity" class="nav-extra sidebar-nav w-full flex items-center justify-center lg:justify-start gap-3.5 px-4 py-3.5 rounded-2xl font-bold text-xs cursor-pointer"><i class="fa-solid fa-clock-rotate-left text-cyan-400"></i><span class="hidden lg:inline tracking-wider">AKTIVITAS</span></button>
-          <button onclick="switchPage('invest')" id="nav-invest" class="nav-extra sidebar-nav w-full flex items-center justify-center lg:justify-start gap-3.5 px-4 py-3.5 rounded-2xl font-bold text-xs cursor-pointer"><i class="fa-solid fa-magnifying-glass-dollar text-emerald-400"></i><span class="hidden lg:inline tracking-wider">INVEST</span></button>
-          <button onclick="switchPage('admin')" id="nav-admin" class="nav-extra admin-only sidebar-nav w-full flex items-center justify-center lg:justify-start gap-3.5 px-4 py-3.5 rounded-2xl font-bold text-xs cursor-pointer"><i class="fa-solid fa-shield-halved text-amber-400"></i><span class="hidden lg:inline tracking-wider">ADMIN</span></button>
         </div>
       </div>
 
@@ -103,7 +140,7 @@
     </div>
 
     <!-- RIGHT CONTENT AREA -->
-    <div class="flex-1 flex flex-col gap-5 overflow-hidden w-full">
+    <div class="flex-1 flex flex-col gap-5 min-w-0 w-full">
       
       <!-- FLOATING TOAST: notifikasi ringan yang melayang, TIDAK memblokir aktivitas lain
            (tanpa backdrop, tanpa tombol, auto-hilang sendiri). Beda dengan modal konfirmasi
@@ -114,13 +151,13 @@
         <span id="toast-msg" class="floating-toast-msg"></span>
       </div>
 
-      <!-- HEADER CONTAINER -->
-      <div class="w-full glass-card rounded-3xl p-5 sm:p-6 flex flex-col xl:flex-row justify-between items-center gap-5 relative overflow-hidden">
+      <!-- HEADER CONTAINER (dibekukan saat scroll) -->
+      <div class="w-full glass-card rounded-3xl p-4 sm:p-5 flex flex-col xl:flex-row justify-between items-center gap-4 relative overflow-hidden sticky top-2 z-40 header-frozen">
         <div class="absolute -top-16 -left-16 w-48 h-48 bg-cyan-500/10 blur-[60px] rounded-full pointer-events-none"></div>
         
         <div class="flex items-center gap-4 z-10 w-full xl:w-auto">
           <div class="w-full">
-            <p class="text-[11px] text-cyan-400/80 font-bold tracking-widest mb-2">DAY-GROUP PANEL · RINGKASAN HARI INI</p>
+            <p id="headerKicker" class="text-[11px] text-cyan-400/80 font-bold tracking-widest mb-2">DAY-GROUP PANEL · RESULT HARI INI</p>
             <div id="headerSummary" class="header-stat-strip">
               <span class="header-stat"><span class="skeleton-bar" style="width:74px"></span></span>
               <span class="header-stat"><span class="skeleton-bar" style="width:62px"></span></span>
@@ -625,6 +662,9 @@
 
         </div>
       </div>
+
+      <!-- VIEW: LAPORAN HARIAN (placeholder — modul di-port dari PANEL AUTO) -->
+      <div id="lap-page" style="display:none" class="flex flex-col gap-5 fade-in"></div>
     </div>
   </div>
 
