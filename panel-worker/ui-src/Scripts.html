@@ -680,7 +680,11 @@
           </div>
           <div class="grid sm:grid-cols-2 gap-3">
             <input id="lapLinkMozart" placeholder="Link Mozart (opsional)" value="${(c.linkMozart||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
-            <input id="lapTokenMozart" placeholder="Cookie Mozart — TIDAK dipakai lagi (pakai bookmarklet di menu Lap Mozart)" value="${(c.tokenMozart||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
+            <input id="lapTokenMozart" placeholder="Cookie Mozart — TIDAK dipakai lagi (pakai skrip di menu Lap Mozart)" value="${(c.tokenMozart||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
+          </div>
+          <div>
+            <label class="text-[10px] font-bold text-slate-400 uppercase">Nama Rekening Mozart <span class="text-slate-500 normal-case">— untuk tabel Bank Deposit / Bank Withdraw. 1 baris = <code>nomor/id = Nama Pemilik</code></span></label>
+            <textarea id="lapMozartAccounts" rows="4" placeholder="6822057825 = BCA PENI PEBRIANI&#10;384901047325533 = BRI AJIS ABDUL M TOPIK&#10;2059553011 = BRI AJIS ABDUL M TOPIK" class="w-full mt-1 glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100 font-mono leading-relaxed">${(c.mozartAccounts||'').replace(/</g,'&lt;')}</textarea>
           </div>
           <button id="lapSaveBtn" onclick="lapSaveSetting()" class="bg-gradient-to-r from-emerald-400 to-teal-500 text-slate-950 font-extrabold py-2.5 rounded-xl text-xs mt-1"><i class="fa-solid fa-floppy-disk mr-2"></i>SIMPAN KONFIGURASI</button>
           <span id="lapSaveStatus" class="text-[11px] text-slate-400"></span>
@@ -693,7 +697,8 @@
         linkMotion: document.getElementById('lapLinkMotion').value.trim(),
         tokenMotion: document.getElementById('lapTokenMotion').value.trim(),
         linkMozart: document.getElementById('lapLinkMozart').value.trim(),
-        tokenMozart: document.getElementById('lapTokenMozart').value.trim()
+        tokenMozart: document.getElementById('lapTokenMozart').value.trim(),
+        mozartAccounts: (document.getElementById('lapMozartAccounts') && document.getElementById('lapMozartAccounts').value.trim()) || ''
       };
       const btn = document.getElementById('lapSaveBtn'), st = document.getElementById('lapSaveStatus');
       if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>MENYIMPAN...'; }
@@ -774,9 +779,11 @@
         + "  const dep=await pull('/api/transactions/fetchTransaction',{panel_id:0,start_date:sd,end_date:ed,not_done_filter:false,filter_by:null});\n"
         + "  console.log('%cMozart: menarik withdraw...','color:#0ff');\n"
         + "  const wd=await pull('/api/wd/fetchWithdrawal',{panel_id:0,start_date:sd,end_date:ed,filter_by:{minimum_amount:0}});\n"
-        + "  const tryEP=async(m,path,body)=>{try{const o={method:m,credentials:'include',headers:{'content-type':'application/json'}};if(m==='POST')o.body=JSON.stringify(body||{});const r=await fetch(O+path,o);if(!r.ok)return null;return {path,data:await r.json()};}catch(e){return null;}};\n"
-        + "  const accCand=[['POST','/api/bank/fetchBank'],['POST','/api/bank-account/fetchBankAccount'],['POST','/api/account/fetchAccount'],['POST','/api/mbanking/fetchMbanking'],['GET','/api/bank/fetchBank'],['GET','/api/bank'],['GET','/api/account'],['POST','/api/bank/fetch'],['POST','/api/panel/fetchPanel']];\n"
-        + "  const accountsRaw=[]; for(const [m,p] of accCand){const g=await tryEP(m,p,{}); if(g&&g.data){accountsRaw.push(g); console.log('  akun ok:',p);}}\n"
+        + "  const tryEP=async(m,path,body)=>{try{const o={method:m,credentials:'include',headers:{'content-type':'application/json'}};if(m==='POST')o.body=JSON.stringify(body||{});const r=await fetch(O+path,o);if(!r.ok)return null;const j=await r.json();return {path,data:j};}catch(e){return null;}};\n"
+        + "  const seen=performance.getEntriesByType('resource').map(e=>e.name).filter(u=>u.indexOf(O)===0&&/bank|account|rekening|mbank|panel/i.test(u)).map(u=>u.slice(O.length).split('?')[0]);\n"
+        + "  const accCand=['/api/bank/fetchBank','/api/bank-account/fetchBankAccount','/api/account/fetchAccount','/api/mbanking/fetchMbanking','/api/bank/fetch','/api/panel/fetchPanel','/api/bank','/api/account'];\n"
+        + "  const paths=[...new Set([...seen,...accCand])];\n"
+        + "  const accountsRaw=[]; for(const p of paths){const g=await tryEP('POST',p,{})||await tryEP('GET',p); if(g&&g.data){accountsRaw.push(g); console.log('  akun ok:',p);}}\n"
         + "  const x=await fetch(PANEL+'/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'lapMozartImport',token:TOKEN,startDate:sd,endDate:ed,depositRows:dep,withdrawRows:wd,accountsRaw:accountsRaw})});\n"
         + "  const jr=await x.json(); console.log(jr);\n"
         + "  alert(jr.success?('Mozart terkirim ke panel OK\\nDP '+jr.deposit+' / WD '+jr.withdraw+'\\n\\nBuka panel -> Lap Mozart -> Muat Ulang.'):('Gagal: '+(jr.message||'?')));\n"
@@ -851,11 +858,12 @@
         <span class="text-slate-300">${label} <span class="text-slate-500">(${count} Transaksi)</span></span>
         <span class="text-emerald-300 font-mono">Rp ${lapFmt(sum)}</span></div>`;
     }
-    // Ringkasan per rekening bank: 1 baris = 1 rekening, jumlah trx + total nominal.
+    // Ringkasan per rekening bank: 1 baris = 1 rekening.
+    // Kolom: REKENING BANK | KETERANGAN ("<prefix> <tgl> (N Transactions)") | NOMINAL
     function lapMozGroupTable(id, title, rows, prefix, meta) {
       const g = {};
       rows.forEach(r => {
-        const k = r.accName || (r.bank + ' ' + (r.accountNumber||'')).trim() || '(tanpa rekening)';
+        const k = (r.accName && String(r.accName).trim()) || (r.bank + ' ' + (r.accountNumber||'')).trim() || '(tanpa rekening)';
         (g[k] = g[k] || { name: k, count: 0, sum: 0 }).count++;
         g[k].sum += Number(r.amount || 0);
       });
@@ -863,9 +871,10 @@
       const grand = list.reduce((n,x) => n + x.sum, 0);
       const gc = list.reduce((n,x) => n + x.count, 0);
       const dl = lapMozRangeLabel(meta);
-      return lapTable(id, ['REKENING BANK', 'TRX', prefix + ' ' + dl], list,
-        r => `<tr>${td(r.name,'font-bold text-slate-200')}${td(r.count,'text-center')}${td('Rp ' + lapFmt(r.sum),'text-right text-emerald-300')}</tr>`,
-        r => `${r.name} - ${prefix} ${dl} (${r.count} Transactions) - ${lapFmt(r.sum)}`,
+      const ket = c => `${prefix} ${dl} (${c} Transactions)`;
+      return lapTable(id, ['REKENING BANK', 'KETERANGAN', 'NOMINAL'], list,
+        r => `<tr>${td(r.name,'font-bold text-slate-200')}${td(ket(r.count),'text-slate-400 text-[10px]')}${td('Rp ' + lapFmt(r.sum),'text-right text-emerald-300 font-bold')}</tr>`,
+        r => `${r.name} - ${ket(r.count)} - ${lapFmt(r.sum)}`,
         ['name'],
         { title, open: true, footer: lapMozFooter(prefix + ' ' + dl + ' — SEMUA REKENING', gc, grand) });
     }

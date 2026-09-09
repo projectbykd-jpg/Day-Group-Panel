@@ -9,6 +9,7 @@ export interface LapCreds {
 	tokenMotion: string;
 	linkMozart: string;
 	cookieMozart: string;
+	mozartAccounts: string;
 }
 
 const EMPTY: LapCreds = {
@@ -18,6 +19,7 @@ const EMPTY: LapCreds = {
 	tokenMotion: "",
 	linkMozart: "",
 	cookieMozart: "",
+	mozartAccounts: "",
 };
 
 export async function lapLoadCreds(env: Env, username: string): Promise<LapCreds> {
@@ -32,6 +34,7 @@ export async function lapLoadCreds(env: Env, username: string): Promise<LapCreds
 		tokenMotion: String(r.token_motion || ""),
 		linkMozart: String(r.link_mozart || ""),
 		cookieMozart: String(r.cookie_mozart || ""),
+		mozartAccounts: String(r.mozart_accounts || ""),
 	};
 }
 
@@ -49,15 +52,17 @@ export async function lapSaveCreds(env: Env, username: string, data: Partial<Lap
 		tokenMotion: pick(data.tokenMotion, cur.tokenMotion),
 		linkMozart: linkMozartRaw ? hostOnly(linkMozartRaw) : "",
 		cookieMozart: pick(data.cookieMozart, cur.cookieMozart),
+		mozartAccounts: data.mozartAccounts === undefined ? cur.mozartAccounts : String(data.mozartAccounts),
 	};
 	await env.DB.prepare(
 		`INSERT INTO lap_credentials
-		   (username, link_admin, cookie_admin, link_motion, token_motion, link_mozart, cookie_mozart, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		   (username, link_admin, cookie_admin, link_motion, token_motion, link_mozart, cookie_mozart, mozart_accounts, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(username) DO UPDATE SET
 		   link_admin=excluded.link_admin, cookie_admin=excluded.cookie_admin,
 		   link_motion=excluded.link_motion, token_motion=excluded.token_motion,
 		   link_mozart=excluded.link_mozart, cookie_mozart=excluded.cookie_mozart,
+		   mozart_accounts=excluded.mozart_accounts,
 		   updated_at=excluded.updated_at`,
 	)
 		.bind(
@@ -68,6 +73,7 @@ export async function lapSaveCreds(env: Env, username: string, data: Partial<Lap
 			next.tokenMotion,
 			next.linkMozart,
 			next.cookieMozart,
+			next.mozartAccounts,
 			tsNow(),
 		)
 		.run();

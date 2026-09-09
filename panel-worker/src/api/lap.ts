@@ -29,6 +29,7 @@ function credsForClient(c: LapCreds) {
 		tokenMotion: c.tokenMotion,
 		linkMozart: c.linkMozart,
 		tokenMozart: c.cookieMozart,
+		mozartAccounts: c.mozartAccounts,
 	};
 }
 
@@ -50,6 +51,7 @@ export async function lapSaveConfig(env: Env, token: string, data: Record<string
 		tokenMotion: str(data.tokenMotion),
 		linkMozart: str(data.linkMozart),
 		cookieMozart: str(data.tokenMozart ?? data.cookieMozart),
+		mozartAccounts: str(data.mozartAccounts),
 	});
 	await logActivity(env, s.username, "LAP SIMPAN SETTING", "Kredensial Laporan Harian diperbarui", "BERHASIL", "");
 	return { success: true, message: "Konfigurasi Laporan Harian tersimpan.", config: credsForClient(c) };
@@ -486,6 +488,12 @@ export async function lapMozartImport(
 	const dRaw = Array.isArray(depositRows) ? (depositRows as Rec[]) : [];
 	const wRaw = Array.isArray(withdrawRows) ? (withdrawRows as Rec[]) : [];
 	const accIdx = buildAccIndex(accountsRaw);
+	// Pemetaan manual dari Setting ("<id> = <Nama>") menimpa hasil auto.
+	const creds = await lapLoadCreds(env, s.username);
+	for (const line of String(creds.mozartAccounts || "").split(/\r?\n/)) {
+		const m = line.match(/^\s*([^=]+?)\s*=\s*(.+?)\s*$/);
+		if (m) accIdx[m[1].trim()] = { name: m[2].trim(), bank: "" };
+	}
 	const accLabel = (...cands: unknown[]): { name: string; bank: string } => {
 		for (const c of cands) {
 			const key = c == null ? "" : String(c).trim();
@@ -494,13 +502,15 @@ export async function lapMozartImport(
 		return { name: "", bank: "" };
 	};
 	const depositData = mozMap(dRaw, "depo").map((r, i) => {
-		const a = accLabel((dRaw[i] || {}).account_number);
-		return { ...r, accName: a.name || `${r.bank} ${r.accountNumber}`.trim() };
+		const acctNo = String((dRaw[i] || {}).account_number || "");
+		const a = accLabel(acctNo);
+		return { ...r, accName: a.name || `${r.bank} ${r.accountNumber}`.trim(), accKey: acctNo || r.accountNumber };
 	});
 	const withdrawData = mozMap(wRaw, "wd").map((r, i) => {
 		const raw = (wRaw[i] || {}) as Rec;
 		const a = accLabel(raw.assigned_to, raw.bank_source, raw.account_number);
-		return { ...r, accName: a.name || String(raw.bank_source || raw.assigned_to || "-") };
+		const fallback = String(raw.assigned_to || raw.bank_source || "-").toUpperCase();
+		return { ...r, accName: a.name || fallback, accKey: String(raw.assigned_to || raw.bank_source || "-") };
 	});
 	const sum = (a: Rec[]) => a.reduce((n, x) => n + (num(x.amount) || 0), 0);
 	const summary = {
