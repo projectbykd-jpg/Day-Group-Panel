@@ -4,6 +4,7 @@
 import { requireSession } from "./auth";
 import { logActivity } from "../lib/activity";
 import { tsNow } from "../lib/time";
+import { getTurso } from "../lib/turso"; // tabel lap_* ada di Turso, bukan D1
 import {
 	LapCreds,
 	extractPureUsername,
@@ -609,7 +610,7 @@ async function dispatchScrapeJob(env: Env, username: string, kind: "admin" | "mo
 	if (!env.GH_TOKEN || !env.GH_REPO) {
 		return { success: false as const, message: "GitHub Actions belum dikonfigurasi (GH_TOKEN/GH_REPO). Hubungi admin." };
 	}
-	const running = await env.DB.prepare(
+	const running = await getTurso(env).prepare(
 		`SELECT id FROM lap_job WHERE username = ? AND kind = ? AND status IN ('pending','running')
 		 AND created_at > datetime('now','+7 hours','-30 minutes') LIMIT 1`,
 	)
@@ -620,7 +621,7 @@ async function dispatchScrapeJob(env: Env, username: string, kind: "admin" | "mo
 	const jobId = crypto.randomUUID().replace(/-/g, "");
 	const key = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "").slice(0, 16);
 	const params = JSON.stringify({ kind, startDate, endDate, key });
-	await env.DB.prepare(
+	await getTurso(env).prepare(
 		`INSERT INTO lap_job (id, username, kind, status, params, message, created_at, updated_at)
 		 VALUES (?, ?, ?, 'pending', ?, 'Menunggu GitHub Actions...', ?, ?)`,
 	)
@@ -650,7 +651,7 @@ async function dispatchScrapeJob(env: Env, username: string, kind: "admin" | "mo
 		} catch {
 			/* ignore */
 		}
-		await env.DB.prepare(`UPDATE lap_job SET status='error', message=?, updated_at=? WHERE id=?`)
+		await getTurso(env).prepare(`UPDATE lap_job SET status='error', message=?, updated_at=? WHERE id=?`)
 			.bind("GitHub " + resp.status + detail, tsNow(), jobId)
 			.run();
 		return { success: false as const, message: "Gagal memicu GitHub Actions (" + resp.status + ")" + detail + hint };
@@ -671,7 +672,7 @@ export async function lapRunAdmin(env: Env, token: string, startDate: string, en
 
 export async function lapAdminStatus(env: Env, token: string, jobId: string) {
 	const s = await requireSession(env, token, { ignoreMaintenance: true });
-	const row = await env.DB.prepare(`SELECT * FROM lap_job WHERE id = ? AND username = ?`)
+	const row = await getTurso(env).prepare(`SELECT * FROM lap_job WHERE id = ? AND username = ?`)
 		.bind(jobId, s.username)
 		.first<Record<string, string>>();
 	if (!row) return { success: false, message: "Job tidak ditemukan." };
@@ -687,7 +688,7 @@ export async function lapAdminStatus(env: Env, token: string, jobId: string) {
 
 /** Dipanggil oleh GitHub Actions (auth: job key, bukan sesi). */
 export async function lapJobStart(env: Env, jobId: string, key: string) {
-	const row = await env.DB.prepare(`SELECT username, status, params FROM lap_job WHERE id = ?`)
+	const row = await getTurso(env).prepare(`SELECT username, status, params FROM lap_job WHERE id = ?`)
 		.bind(jobId)
 		.first<{ username: string; status: string; params: string }>();
 	if (!row) return { success: false, message: "job tidak ada" };
@@ -698,7 +699,7 @@ export async function lapJobStart(env: Env, jobId: string, key: string) {
 		/* ignore */
 	}
 	if (!p.key || p.key !== key) return { success: false, message: "key salah" };
-	await env.DB.prepare(`UPDATE lap_job SET status='running', message='Scraping...', updated_at=? WHERE id=?`)
+	await getTurso(env).prepare(`UPDATE lap_job SET status='running', message='Scraping...', updated_at=? WHERE id=?`)
 		.bind(tsNow(), jobId)
 		.run();
 	const c = await lapLoadCreds(env, row.username);
@@ -722,7 +723,7 @@ export async function lapJobResult(
 	data: Record<string, unknown[]>,
 	errors: Record<string, string>,
 ) {
-	const row = await env.DB.prepare(`SELECT username, params FROM lap_job WHERE id = ?`)
+	const row = await getTurso(env).prepare(`SELECT username, params FROM lap_job WHERE id = ?`)
 		.bind(jobId)
 		.first<{ username: string; params: string }>();
 	if (!row) return { success: false, message: "job tidak ada" };
@@ -740,7 +741,7 @@ export async function lapJobResult(
 		if (Object.keys(save).length) await lapSaveResults(env, row.username, save);
 	}
 	const errMsg = errors && Object.keys(errors).length ? " | error: " + Object.values(errors).join("; ") : "";
-	await env.DB.prepare(`UPDATE lap_job SET status=?, message=?, updated_at=? WHERE id=?`)
+	await getTurso(env).prepare(`UPDATE lap_job SET status=?, message=?, updated_at=? WHERE id=?`)
 		.bind(ok ? "done" : "error", (ok ? "Selesai." : "Gagal.") + errMsg, tsNow(), jobId)
 		.run();
 	await logActivity(

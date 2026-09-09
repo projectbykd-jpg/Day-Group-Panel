@@ -7,4 +7,8 @@ interface Env {
 	MOZART_GAS_URL?: string;
 	/** SHARED_KEY yang sama dengan di Apps Script daygroup-mozart. */
 	MOZART_GAS_KEY?: string;
+	/** URL database Turso (libSQL) — tabel berat Laporan Harian + Invest. */
+	TURSO_URL?: string;
+	/** Auth token Turso (read & write). */
+	TURSO_TOKEN?: string;
 }

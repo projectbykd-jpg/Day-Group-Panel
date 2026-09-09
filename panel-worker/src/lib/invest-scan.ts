@@ -4,6 +4,7 @@
 // (kolom cursor), lalu tick berikutnya melanjutkan.
 import { tsNow } from "./time";
 import { logActivity } from "./activity";
+import { getTurso } from "./turso";
 import {
 	INVEST_GAMES,
 	INVEST_MAX_PAGES_PER_GAME,
@@ -94,12 +95,12 @@ async function flushRaw(env: Env, owner: string, buffer: RawRow[]): Promise<void
 	if (!buffer.length) return;
 	const rows = buffer.splice(0, buffer.length);
 	const stmts = rows.map((r) =>
-		env.DB.prepare(
+		getTurso(env).prepare(
 			`INSERT INTO invest_raw (owner, tanggal, bettor, pasaran, periode, game, line, limit_val)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		).bind(owner, r.tanggal, r.bettor, r.pasaran, r.periode, r.game, r.line, r.limitVal),
 	);
-	for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
+	for (let i = 0; i < stmts.length; i += 50) await getTurso(env).batch(stmts.slice(i, i + 50));
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +121,7 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number)
 	const buffer: RawRow[] = [];
 
 	if (cursor === 0) {
-		await env.DB.prepare(`DELETE FROM invest_raw WHERE owner = ?`).bind(user).run();
+		await getTurso(env).prepare(`DELETE FROM invest_raw WHERE owner = ?`).bind(user).run();
 		await investSetState(env, user, { state: "running", cursor, total: pas.length, message: "Scan berjalan…" });
 	}
 
@@ -277,7 +278,7 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number)
 // Agregasi invest_raw -> invest_result (1 baris per bettor)
 // ---------------------------------------------------------------------------
 export async function investAggregateUser(env: Env, owner: string): Promise<number> {
-	const res = await env.DB.prepare(
+	const res = await getTurso(env).prepare(
 		`SELECT tanggal, bettor, pasaran, periode, game, line, limit_val FROM invest_raw WHERE owner = ?`,
 	)
 		.bind(owner)
@@ -332,16 +333,16 @@ export async function investAggregateUser(env: Env, owner: string): Promise<numb
 		})
 		.sort((a, b) => b.excess - a.excess);
 
-	await env.DB.prepare(`DELETE FROM invest_result WHERE owner = ?`).bind(owner).run();
+	await getTurso(env).prepare(`DELETE FROM invest_result WHERE owner = ?`).bind(owner).run();
 	if (list.length) {
 		const now = tsNow();
 		const stmts = list.map((x) =>
-			env.DB.prepare(
+			getTurso(env).prepare(
 				`INSERT INTO invest_result (owner, bettor, dates, markets, excess, hits, created_at)
 				 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 			).bind(owner, x.user, x.dates.join(", "), x.markets.join(", "), x.excess, JSON.stringify(x.hits), now),
 		);
-		for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
+		for (let i = 0; i < stmts.length; i += 50) await getTurso(env).batch(stmts.slice(i, i + 50));
 	}
 	return list.length;
 }

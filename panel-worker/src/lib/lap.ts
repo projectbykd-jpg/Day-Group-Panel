@@ -1,6 +1,8 @@
 // Menu "Laporan Harian" — port PANEL AUTO (Code.cpp) ke Worker.
-// Bagian ini: kredensial per operator + snapshot hasil di D1 + helper umum.
+// Bagian ini: kredensial per operator + snapshot hasil + helper umum.
+// Tabel lap_* ada di Turso (bukan D1) -> pakai getTurso(env).
 import { tsNow } from "./time";
+import { getTurso } from "./turso";
 
 export interface LapCreds {
 	linkAdmin: string;
@@ -23,7 +25,7 @@ const EMPTY: LapCreds = {
 };
 
 export async function lapLoadCreds(env: Env, username: string): Promise<LapCreds> {
-	const r = await env.DB.prepare(`SELECT * FROM lap_credentials WHERE username = ?`)
+	const r = await getTurso(env).prepare(`SELECT * FROM lap_credentials WHERE username = ?`)
 		.bind(username)
 		.first<Record<string, string>>();
 	if (!r) return { ...EMPTY };
@@ -54,7 +56,7 @@ export async function lapSaveCreds(env: Env, username: string, data: Partial<Lap
 		cookieMozart: pick(data.cookieMozart, cur.cookieMozart),
 		mozartAccounts: data.mozartAccounts === undefined ? cur.mozartAccounts : String(data.mozartAccounts),
 	};
-	await env.DB.prepare(
+	await getTurso(env).prepare(
 		`INSERT INTO lap_credentials
 		   (username, link_admin, cookie_admin, link_motion, token_motion, link_mozart, cookie_mozart, mozart_accounts, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -89,16 +91,16 @@ function pick(v: string | undefined, fallback: string): string {
 export async function lapSaveResults(env: Env, username: string, map: Record<string, unknown[]>): Promise<void> {
 	const now = tsNow();
 	const stmts = Object.keys(map).map((mod) =>
-		env.DB.prepare(
+		getTurso(env).prepare(
 			`INSERT INTO lap_result (username, module, data, updated_at) VALUES (?, ?, ?, ?)
 			 ON CONFLICT(username, module) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at`,
 		).bind(username, mod, JSON.stringify(map[mod] ?? []), now),
 	);
-	for (let i = 0; i < stmts.length; i += 40) await env.DB.batch(stmts.slice(i, i + 40));
+	for (let i = 0; i < stmts.length; i += 40) await getTurso(env).batch(stmts.slice(i, i + 40));
 }
 
 export async function lapLoadResults(env: Env, username: string): Promise<Record<string, unknown>> {
-	const res = await env.DB.prepare(`SELECT module, data, updated_at FROM lap_result WHERE username = ?`)
+	const res = await getTurso(env).prepare(`SELECT module, data, updated_at FROM lap_result WHERE username = ?`)
 		.bind(username)
 		.all<{ module: string; data: string; updated_at: string }>();
 	const out: Record<string, unknown> = {};

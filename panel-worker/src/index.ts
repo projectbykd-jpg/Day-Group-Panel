@@ -3,6 +3,7 @@
 // POST /api  body: { "action": "<fn>", ...args }
 import { CORS_HEADERS, json } from "./lib/respond";
 import { migrateKvSessionsOnce, pruneExpiredSessions } from "./lib/session";
+import { getTurso } from "./lib/turso";
 import { checkLogin, logout, resumeSession } from "./api/auth";
 import { getBootstrapData, getDashboard } from "./api/dashboard";
 import { logClientActivity } from "./api/activity";
@@ -208,6 +209,18 @@ export default {
 			}
 			const job = url.searchParams.get("job") || "all";
 
+			// Cek koneksi Turso: /__cron?key=...&job=tursoping
+			if (job === "tursoping") {
+				try {
+					const t0 = Date.now();
+					const r = await getTurso(env).prepare(`SELECT COUNT(*) AS n FROM invest_config`).first<{ n: number }>();
+					const r2 = await getTurso(env).prepare(`SELECT COUNT(*) AS n FROM lap_result`).first<{ n: number }>();
+					return json({ ok: true, ms: Date.now() - t0, invest_config: r?.n ?? null, lap_result: r2?.n ?? null });
+				} catch (e) {
+					return json({ ok: false, error: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack : undefined }, 500);
+				}
+			}
+
 			// Diagnosa sementara: /__cron?key=...&job=debug&user=<username>&path=<path>
 			//   atau inline: &base=<url>&cookie=<PHPSESSID=...>
 			if (job === "debug") {
@@ -215,7 +228,7 @@ export default {
 				let cookie = url.searchParams.get("cookie") || "";
 				if (!baseUrl || !cookie) {
 					const dbgUser = url.searchParams.get("user") || "Admin";
-					const cfgRow = await env.DB.prepare(
+					const cfgRow = await getTurso(env).prepare(
 						`SELECT base_url, phpsessid, koderedis, cookie_extra FROM invest_config WHERE username = ?`,
 					)
 						.bind(dbgUser)

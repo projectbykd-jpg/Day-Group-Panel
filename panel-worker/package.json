@@ -18,5 +18,8 @@
     "typescript": "^5.5.2",
     "vitest": "~4.1.0",
     "wrangler": "^4.129.1"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.15.15"
   }
 }

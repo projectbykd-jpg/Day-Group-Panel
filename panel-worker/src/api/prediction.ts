@@ -148,6 +148,23 @@ export async function runAutoPostRouter(env: Env, opts: { force?: boolean; windo
 	const nowMinutes = d.getUTCHours() * 60 + d.getUTCMinutes();
 	const dateKey = predictionTodayKey();
 
+	// KUNCI ANTI-TUMPANG-TINDIH: cron eksternal memanggil endpoint ini tiap menit.
+	// Kalau satu run belum selesai (Telegram lambat) dan run berikutnya sudah masuk,
+	// dua-duanya bisa memproses slot yang sama SEBELUM guard slot terkunci -> pesan
+	// penutup / prediksi terkirim DOBEL. Lock ini (KV, TTL 3 menit) mencegah itu.
+	const RUN_LOCK = "autopost:router:running";
+	if (!opts.force) {
+		try {
+			if (await env.SESS.get(RUN_LOCK)) {
+				summary.message = "Router auto-post lain masih berjalan — tick ini dilewati.";
+				return summary;
+			}
+			await env.SESS.put(RUN_LOCK, String(Date.now()), { expirationTtl: 180 });
+		} catch {
+			/* KV error -> lanjut tanpa lock (lebih baik jalan daripada macet) */
+		}
+	}
+
 	const runSlot = async (guardKey: string, job: () => Promise<{ counters?: { success?: number; already?: number; failed?: number }; pendingWebsites?: string[] }>) => {
 		if (!opts.force) {
 			const g = await env.SESS.get(guardKey);
@@ -221,6 +238,14 @@ export async function runAutoPostRouter(env: Env, opts: { force?: boolean; windo
 				messageForWebsite: (w) => buildClosingPredictionMessage(w, now7(), slot),
 			}),
 		);
+	}
+
+	if (!opts.force) {
+		try {
+			await env.SESS.delete(RUN_LOCK);
+		} catch {
+			/* biarkan TTL 3 menit yang membersihkan */
+		}
 	}
 
 	summary.message = summary.ran

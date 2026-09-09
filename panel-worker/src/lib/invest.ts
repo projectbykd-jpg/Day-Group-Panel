@@ -1,7 +1,8 @@
 // Port Invest.gs — Menu INVEST (AutoCheck batas line invest per operator).
-// Config + state per-user di D1 (invest_config / invest_state), hasil di invest_result.
-// Tahap 1: config, test session, state CRUD, baca hasil. Mesin scan menyusul.
+// Config + state per-user (invest_config / invest_state), hasil di invest_result.
+// Tabel invest_* ada di Turso (bukan D1) -> pakai getTurso(env).
 import { tsNow } from "./time";
+import { getTurso } from "./turso";
 
 export const INVEST_DEFAULT_CONFIG = {
 	BASE_URL: "https://ag.suksesbogil.com/",
@@ -67,7 +68,7 @@ export function normalizeInvestBaseUrl(raw: string): string {
 // CONFIG (per-user) — invest_config
 // ---------------------------------------------------------------------------
 export async function investLoadConfig(env: Env, user: string): Promise<InvestConfig> {
-	const row = await env.DB.prepare(`SELECT * FROM invest_config WHERE username = ?`)
+	const row = await getTurso(env).prepare(`SELECT * FROM invest_config WHERE username = ?`)
 		.bind(user)
 		.first<Record<string, unknown>>();
 	const cfg: InvestConfig = { ...INVEST_DEFAULT_CONFIG };
@@ -95,7 +96,7 @@ export async function investSaveConfig(env: Env, user: string, data: Record<stri
 	};
 	const baseUrl = normalizeInvestBaseUrl(pick("BASE_URL"));
 
-	await env.DB.prepare(
+	await getTurso(env).prepare(
 		`INSERT INTO invest_config
 		   (username, base_url, phpsessid, koderedis, cookie_extra, limit_2d, limit_3d, limit_4d, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -133,7 +134,7 @@ export interface InvestState {
 	warningCount?: number;
 }
 export async function investGetState(env: Env, user: string): Promise<InvestState> {
-	const row = await env.DB.prepare(`SELECT * FROM invest_state WHERE username = ?`)
+	const row = await getTurso(env).prepare(`SELECT * FROM invest_state WHERE username = ?`)
 		.bind(user)
 		.first<Record<string, unknown>>();
 	return {
@@ -149,7 +150,7 @@ export async function investGetState(env: Env, user: string): Promise<InvestStat
 export async function investSetState(env: Env, user: string, patch: Partial<InvestState>): Promise<InvestState> {
 	const cur = await investGetState(env, user);
 	const next: InvestState = { ...cur, ...patch, updatedAt: tsNow() };
-	await env.DB.prepare(
+	await getTurso(env).prepare(
 		`INSERT INTO invest_state (username, state, cursor, total, started_at, finished_at, message, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(username) DO UPDATE SET
@@ -162,7 +163,7 @@ export async function investSetState(env: Env, user: string, patch: Partial<Inve
 	return next;
 }
 export async function investRunningUsers(env: Env): Promise<string[]> {
-	const res = await env.DB.prepare(`SELECT username FROM invest_state WHERE state = 'running'`).all<{ username: string }>();
+	const res = await getTurso(env).prepare(`SELECT username FROM invest_state WHERE state = 'running'`).all<{ username: string }>();
 	return (res.results ?? []).map((r) => r.username);
 }
 
@@ -170,12 +171,12 @@ export async function investRunningUsers(env: Env): Promise<string[]> {
 // HASIL — invest_result
 // ---------------------------------------------------------------------------
 export async function investWarningCount(env: Env, user: string): Promise<number> {
-	const r = await env.DB.prepare(`SELECT COUNT(*) n FROM invest_result WHERE owner = ?`).bind(user).first<{ n: number }>();
+	const r = await getTurso(env).prepare(`SELECT COUNT(*) n FROM invest_result WHERE owner = ?`).bind(user).first<{ n: number }>();
 	return Number(r?.n ?? 0);
 }
 
 export async function investGetWarningsList(env: Env, user: string) {
-	const res = await env.DB.prepare(
+	const res = await getTurso(env).prepare(
 		`SELECT bettor, dates, markets, excess, hits FROM invest_result WHERE owner = ? ORDER BY excess DESC`,
 	)
 		.bind(user)
