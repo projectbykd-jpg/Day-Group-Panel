@@ -649,8 +649,11 @@
       if (s) s.textContent = msg || '';
     }
     function lapStatCard(label, val, color) {
-      const n = String(val).replace(/[^0-9.-]/g, '');
-      const cnt = n !== '' && !isNaN(Number(n)) ? ` data-fx-count="${n}"` : '';
+      // count-up HANYA kalau val = satu angka bersih (mis. "1,234"), BUKAN string
+      // gabungan seperti "2 (2,632,014,000)" — jangan sampai formatnya rusak.
+      const s = String(val).trim();
+      const cnt = /^-?[0-9][0-9,]*(\.[0-9]+)?$/.test(s)
+        ? ` data-fx-count="${s.replace(/,/g, '')}"` : '';
       return `<div class="glass-inner rounded-2xl p-3.5 border border-white/[0.05]"><div class="text-[9.5px] font-bold text-slate-400 uppercase tracking-[0.1em]">${label}</div><div class="text-[19px] font-black mt-1.5 tabular-nums ${color||'text-slate-50'}"${cnt}>${val}</div></div>`;
     }
 
