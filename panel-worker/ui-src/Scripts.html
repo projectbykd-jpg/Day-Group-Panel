@@ -68,6 +68,65 @@
         if (!el || !FX.on) return;
         anime.remove(el);
         anime({ targets: el, scale: [0.82, 1], opacity: [0.35, 1], duration: 520, easing: 'spring(1, 80, 12, 0)' });
+      },
+      // reveal teks huruf-per-huruf dengan "scramble" (acak) sebelum mengunci.
+      // el hanya boleh berisi teks (mis. #market). Aman: kalau FX mati -> set teks biasa.
+      scramble(el, opt) {
+        opt = opt || {};
+        if (!el) return;
+        const finalText = (opt.text != null ? String(opt.text) : el.textContent) || '';
+        if (!FX.on) { el.textContent = finalText; return; }
+        const glyphs = opt.glyphs || 'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789';
+        const step = opt.step || 30;
+        el.textContent = '';
+        const spans = finalText.split('').map(ch => {
+          const s = document.createElement('span');
+          s.textContent = ch === ' ' ? ' ' : ch;
+          s.style.display = 'inline-block';
+          s.style.opacity = '0';
+          el.appendChild(s);
+          return { s, ch };
+        });
+        spans.forEach((it, i) => {
+          if (it.ch === ' ') { it.s.style.opacity = '1'; return; }
+          const st = { p: 0 };
+          anime({
+            targets: st, p: 1, duration: 460, delay: i * step + (opt.start || 0), easing: 'easeOutQuad',
+            update: () => {
+              it.s.style.opacity = String(Math.min(1, st.p * 2));
+              it.s.textContent = st.p < 0.75 ? glyphs[(Math.random() * glyphs.length) | 0] : it.ch;
+            },
+            complete: () => { it.s.style.opacity = '1'; it.s.textContent = it.ch; }
+          });
+        });
+      },
+      // reveal saat elemen masuk viewport (daftar/tabel panjang). Sekali jalan.
+      scrollReveal(nodes, opt) {
+        const list = FX._list ? FX._list(nodes) : ((nodes && nodes.length != null) ? Array.from(nodes) : (nodes ? [nodes] : []));
+        if (!list.length) return;
+        if (!FX.on || !('IntersectionObserver' in window)) { list.forEach(n => { n.style.opacity=''; n.style.transform=''; }); return; }
+        list.forEach(n => { n.style.opacity = '0'; });
+        const io = new IntersectionObserver((entries, obs) => {
+          const vis = entries.filter(e => e.isIntersecting).map(e => e.target);
+          if (vis.length) { FX.reveal(vis, opt || { y: 14, step: 26, duration: 420 }); vis.forEach(t => obs.unobserve(t)); }
+        }, { rootMargin: '0px 0px -6% 0px', threshold: 0.04 });
+        list.forEach(n => io.observe(n));
+      },
+      _list(nodes) { return (nodes && nodes.length != null) ? Array.from(nodes) : (nodes ? [nodes] : []); },
+      // urutan masuk saat panel terbuka (login / resume sesi)
+      enter() {
+        if (!FX.on) return;
+        try {
+          const tl = anime.timeline({ easing: 'cubicBezier(.2,.8,.2,1)', duration: 520 });
+          const header = document.querySelector('#app-container .header-frozen');
+          const sidebar = document.querySelector('#app-container .sidebar-frozen');
+          const navs = document.querySelectorAll('#app-container .nav-group, #app-container .nav-solo');
+          const content = document.querySelectorAll('#main-panel > .grid > *, #main-panel > .glass-card');
+          if (sidebar) tl.add({ targets: sidebar, opacity: [0, 1], translateX: [-18, 0] }, 0);
+          if (header) tl.add({ targets: header, opacity: [0, 1], translateY: [-14, 0] }, 60);
+          if (navs.length) tl.add({ targets: navs, opacity: [0, 1], translateX: [-10, 0], delay: anime.stagger(38) }, 140);
+          if (content.length) tl.add({ targets: content, opacity: [0, 1], translateY: [14, 0], scale: [0.98, 1], delay: anime.stagger(50) }, 220);
+        } catch (e) {}
       }
     };
 
@@ -294,10 +353,8 @@
       document.getElementById('app-container').style.display = 'flex';
       document.body.classList.remove('justify-center');
       document.getElementById('sidebar-user').innerText = currentUser.toUpperCase();
-      // masuk panel: sidebar mengalir dari kiri, konten fade-up
-      setTimeout(() => {
-        FX.reveal(document.querySelectorAll('#app-container .nav-group, #app-container .nav-solo'), { y: 0, scale: 1, step: 45, duration: 420 });
-      }, 30);
+      // masuk panel: sidebar dari kiri, header dari atas, menu & konten di-stagger
+      setTimeout(() => FX.enter(), 30);
       applyWebsiteTheme(res.websites || []);
       // switchPage('home') sudah memanggil loadHeaderSummary() di bagian akhirnya,
       // jadi tidak perlu dipanggil lagi di sini (dulu jadi 2x panggil server).
@@ -731,6 +788,8 @@
           <thead class="bg-slate-900/60 text-slate-400 text-[9px] uppercase sticky top-0"><tr>${head}</tr></thead>
           <tbody>${rowsHtml}</tbody></table></div>${st.footer || ''}${pager}`;
       if (keepFocus) { const si = document.getElementById('lapSearch_' + id); if (si) { si.focus(); si.setSelectionRange(si.value.length, si.value.length); } }
+      // baris tabel muncul di-stagger (dibatasi 24 baris pertama biar ringan)
+      if (pageRows.length) FX.reveal(Array.from(body.querySelectorAll('tbody tr')).slice(0, 24), { y: 8, step: 14, duration: 340, scale: 1 });
     }
     // dipanggil sesudah host.innerHTML dipasang: render body tiap tabel
     function lapTblMountAll() {
@@ -1755,8 +1814,11 @@
       const prev = resultData || {};
       resultData = res || {};
       const marketEl = document.getElementById('market');
-      marketEl.innerText = res.market || '-';
-      marketEl.className = (res.market && res.market !== '-' && res.market !== 'UNKNOWN') ? "text-base sm:text-lg font-extrabold text-white tracking-widest animate-market" : "text-base sm:text-lg font-extrabold text-white tracking-widest";
+      const newMarket = res.market || '-';
+      const realMarket = newMarket !== '-' && newMarket !== 'UNKNOWN';
+      marketEl.className = realMarket ? "text-base sm:text-lg font-extrabold text-white tracking-widest animate-market" : "text-base sm:text-lg font-extrabold text-white tracking-widest";
+      if (realMarket && newMarket !== (prev.market || '-')) FX.scramble(marketEl, { text: newMarket, step: 26 });
+      else marketEl.innerText = newMarket;
       const td2 = document.getElementById('twoDigit');
       const newTd = res.twoDigit !== '' ? String(res.twoDigit).padStart(2, '0') : '-';
       td2.innerText = newTd;
@@ -2595,6 +2657,7 @@
           <td><span class="activity-source-chip ${sourceClass}"><i class="fa-solid ${source === 'BACKUP' ? 'fa-box-archive' : 'fa-bolt'}"></i>${sourceLabel}</span></td>
         </tr>`;
       }).join('');
+      FX.reveal(Array.from(body.querySelectorAll('tr')).slice(0, 28), { y: 8, step: 12, duration: 320, scale: 1 });
     }
 
     function activityId(mode, suffix) {
