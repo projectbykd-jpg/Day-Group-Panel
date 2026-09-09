@@ -292,11 +292,24 @@ export async function lapRunMotion(env: Env, token: string, startDate: string, e
 		totalWdRecords: totalWdRecords || motionWdPga.length,
 		totalWdAmount,
 	};
+	// Diagnosa: kenapa banyak "TIDAK ADA DI CREATE"? Simpan contoh baris mentah
+	// + berapa key paid yang ketemu di createMap.
+	const paidRefFound = listPaid.filter((it) => {
+		const k = String(it.reference_no || it.invoice_no || "");
+		return k && createMap.has(k);
+	}).length;
 	await lapSaveResults(env, s.username, {
 		motionDpPga,
 		motionPendingError: pgaPendingError,
 		motionWd: motionWdPga,
 		_motionMeta: [{ summary, truncated, at: startDate + "|" + endDate }],
+		_motionRawSample: [
+			{
+				paid: listPaid.slice(0, 3),
+				create: listCreate.slice(0, 3),
+				counts: { listPaid: listPaid.length, listCreate: listCreate.length, paidRefFound },
+			},
+		],
 	});
 	await logActivity(
 		env,
