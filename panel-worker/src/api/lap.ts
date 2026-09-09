@@ -417,7 +417,9 @@ function mozMap(rows: Rec[], kind: "depo" | "wd"): Rec[] {
 				status,
 				statusRaw: st,
 				doneBy,
-				panelId: String(r.panel_id ?? r.panel ?? ""),
+				panelId: String(
+				r._panelId != null && String(r._panelId) !== "0" ? r._panelId : r.panel_id ?? r._panelId ?? r.panel ?? "",
+			),
 			};
 		}
 		const st = String(r.status || "").toLowerCase().trim();
@@ -436,7 +438,9 @@ function mozMap(rows: Rec[], kind: "depo" | "wd"): Rec[] {
 			statusRaw: st,
 			approved,
 			overridden,
-			panelId: String(r.panel_id ?? r.panel ?? ""),
+			panelId: String(
+				r._panelId != null && String(r._panelId) !== "0" ? r._panelId : r.panel_id ?? r._panelId ?? r.panel ?? "",
+			),
 		};
 	});
 }
