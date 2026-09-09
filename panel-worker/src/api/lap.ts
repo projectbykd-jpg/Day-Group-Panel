@@ -308,8 +308,11 @@ export async function lapRunMotion(env: Env, token: string, startDate: string, e
 }
 
 // =========================================================================
-// LAP MOZART  (via GitHub Actions — API Mozart di belakang Cloudflare menolak
-// request dari Cloudflare Worker, jadi scrape dijalankan di runner GitHub)
+// LAP MOZART — via Apps Script.
+// Cloudflare Mozart (limatogel.makintajir.com) memblokir SEMUA IP datacenter
+// (Cloudflare Workers + GitHub Actions/Azure). IP Google Apps Script lolos,
+// jadi scrape Mozart dijalankan di Apps Script kecil (daygroup-mozart), panel
+// cukup memanggilnya sinkron.
 // =========================================================================
 export async function lapRunMozart(
 	env: Env,
@@ -321,11 +324,53 @@ export async function lapRunMozart(
 	const s = await requireSession(env, token, { ignoreMaintenance: true });
 	const c = await lapLoadCreds(env, s.username);
 	if (!c.cookieMozart) return { success: false, message: "Cookie Mozart belum diisi di menu Setting!" };
-	const r = await dispatchScrapeJob(env, s.username, "mozart", startDate, endDate);
-	if (r.success && !("reused" in r)) {
-		await logActivity(env, s.username, "LAP MOZART", `Tarik ${startDate}..${endDate} dipicu`, "INFO", "");
+	if (!env.MOZART_GAS_URL || !env.MOZART_GAS_KEY) {
+		return { success: false, message: "Endpoint Mozart (Apps Script) belum dikonfigurasi. Hubungi admin." };
 	}
-	return r;
+
+	let j: {
+		success?: boolean;
+		message?: string;
+		depositData?: Rec[];
+		withdrawData?: Rec[];
+		summary?: Rec;
+	};
+	try {
+		const r = await fetch(env.MOZART_GAS_URL, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				key: env.MOZART_GAS_KEY,
+				cookie: c.cookieMozart,
+				base: c.linkMozart || "https://limatogel.makintajir.com",
+				startDate,
+				endDate,
+			}),
+		});
+		const text = await r.text();
+		j = JSON.parse(text);
+	} catch (e) {
+		return { success: false, message: "Gagal menghubungi Apps Script Mozart: " + (e instanceof Error ? e.message : String(e)) };
+	}
+	if (!j.success) return { success: false, message: j.message || "Apps Script Mozart gagal." };
+
+	const depositData = j.depositData ?? [];
+	const withdrawData = j.withdrawData ?? [];
+	const summary = j.summary ?? {};
+	await lapSaveResults(env, s.username, {
+		mozartDepo: depositData,
+		mozartWd: withdrawData,
+		_mozartMeta: [{ summary }],
+	});
+	await logActivity(
+		env,
+		s.username,
+		"LAP MOZART",
+		`${startDate}..${endDate} — DP ${depositData.length}, WD ${withdrawData.length}`,
+		"BERHASIL",
+		"",
+	);
+	return { success: true, depositData, withdrawData, summary };
 }
 
 // =========================================================================
