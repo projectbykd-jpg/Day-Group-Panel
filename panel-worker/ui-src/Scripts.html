@@ -588,7 +588,7 @@
       opts = opts || {};
       rows = rows || [];
       const title = (opts.title || id.replace(/_/g,' '));
-      lapTblState[id] = { rows, rowFn, headers, searchKeys: searchKeys || [], copyFn, title, page:1, q:'', open:!!opts.open };
+      lapTblState[id] = { rows, rowFn, headers, searchKeys: searchKeys || [], copyFn, title, page:1, q:'', open:!!opts.open, prefilter: opts.prefilter || null, footer: opts.footer || '' };
       const st = lapTblState[id];
       window['__lapCopy_' + id] = (ev) => {
         ev && ev.stopPropagation();
@@ -652,7 +652,7 @@
         ${st.searchKeys.length ? `<div class="p-2"><input id="lapSearch_${id}" value="${st.q||''}" oninput="window['__lapSearch_${id}'](this.value)" placeholder="Cari di ${(st.title||id).toLowerCase()}..." class="w-full glass-inner rounded-lg px-3 py-1.5 text-xs text-slate-100"></div>` : ''}
         <div class="overflow-x-auto"><table class="w-full text-[11px] text-slate-300 font-mono min-w-[560px]">
           <thead class="bg-slate-900/60 text-slate-400 text-[9px] uppercase sticky top-0"><tr>${head}</tr></thead>
-          <tbody>${rowsHtml}</tbody></table></div>${pager}`;
+          <tbody>${rowsHtml}</tbody></table></div>${st.footer || ''}${pager}`;
       if (keepFocus) { const si = document.getElementById('lapSearch_' + id); if (si) { si.focus(); si.setSelectionRange(si.value.length, si.value.length); } }
     }
     // dipanggil sesudah host.innerHTML dipasang: render body tiap tabel
@@ -822,13 +822,49 @@
           ${lapStatCard('WD Nominal', lapFmt(sm.totalWdAmount), 'text-rose-400')}
         </div>
         <div>
-          ${lapTable('mozart_deposit', ['DATE','USER','NAMA PENGIRIM','BANK','REKENING','NOMINAL','STATUS'], dp,
-            r => `<tr>${td(r.date)}${td(r.username,'font-bold text-cyan-300')}${td(r.name)}${td(r.bank,'uppercase text-[10px]')}${td(r.accountNumber,'text-[10px]')}${td(lapFmt(r.amount),'text-right text-emerald-400')}${td(r.status,'text-center uppercase text-[10px]')}</tr>`,
-            r => [r.username, r.amount].join('\t'), ['username','name','bank','accountNumber'], {title:'Mozart Deposit', open:true})}
-          ${lapTable('mozart_withdraw', ['DATE','USER','NAMA REKENING','BANK','REKENING','NOMINAL','STATUS'], wd,
-            r => `<tr>${td(r.date)}${td(r.username,'font-bold text-rose-300')}${td(r.name)}${td(r.bank,'uppercase text-[10px]')}${td(r.accountNumber,'text-[10px]')}${td(lapFmt(r.amount),'text-right text-rose-400')}${td(r.status,'text-center uppercase text-[10px]')}</tr>`,
-            r => [r.username, r.amount].join('\t'), ['username','name','bank','accountNumber'], {title:'Mozart Withdraw'})}
+          ${lapTable('mozart_deposit', ['TANGGAL','USER','NAMA PENGIRIM','BANK','REK TUJUAN','NOMINAL','STATUS'], dp,
+            r => `<tr>${td((r.date||'')+(r.time?' '+r.time:''),'text-[10px]')}${td(r.username,'font-bold text-cyan-300')}${td(r.name)}${td(r.bank,'uppercase text-[10px]')}${td(r.accountNumber,'text-[10px]')}${td(lapFmt(r.amount),'text-right text-emerald-400')}${td(r.status,'text-center uppercase text-[10px]')}</tr>`,
+            r => [r.date, r.username, r.name, r.bank, r.amount, r.status].join('\t'), ['username','name','bank','accountNumber','status'], {title:'Mozart Deposit', open:true})}
+          ${lapTable('mozart_withdraw', ['TANGGAL','USER','NAMA REKENING','BANK','REKENING','NOMINAL','STATUS'], wd,
+            r => `<tr>${td((r.date||'')+(r.time?' '+r.time:''),'text-[10px]')}${td(r.username,'font-bold text-rose-300')}${td(r.name)}${td(r.bank,'uppercase text-[10px]')}${td(r.accountNumber,'text-[10px]')}${td(lapFmt(r.amount),'text-right text-rose-400')}${td(r.status,'text-center uppercase text-[10px]')}</tr>`,
+            r => [r.date, r.username, r.name, r.bank, r.amount, r.status].join('\t'), ['username','name','bank','accountNumber','status'], {title:'Mozart Withdraw'})}
+        </div>
+
+        <div class="mt-1 text-[10px] text-slate-500 uppercase font-bold tracking-wide">Rekap Bank</div>
+        <div>
+          ${(() => {
+            const bw = wd.filter(r => r.approved);
+            const bwSum = bw.reduce((n,r) => n + Number(r.amount||0), 0);
+            return lapTable('bank_withdraw', ['TANGGAL','USER','NAMA REKENING','BANK','REKENING','NOMINAL','STATUS'], bw,
+              r => `<tr>${td((r.date||'')+(r.time?' '+r.time:''),'text-[10px]')}${td(r.username,'font-bold text-rose-300')}${td(r.name)}${td(r.bank,'uppercase text-[10px]')}${td(r.accountNumber,'text-[10px]')}${td(lapFmt(r.amount),'text-right text-rose-300')}${td(r.status,'text-center uppercase text-[10px] text-emerald-300')}</tr>`,
+              r => [r.date, r.username, r.name, r.bank, r.accountNumber, r.amount].join('\t'),
+              ['username','name','bank','accountNumber'],
+              {title:'Bank Withdraw', open:true, footer: lapMozFooter('TOTAL SELESAI ' + lapMozRangeLabel(meta), bw.length, bwSum)});
+          })()}
+          ${(() => {
+            const bd = dp.filter(r => r.statusRaw === 'done' && r.doneBy === 'BOT');
+            const bdSum = bd.reduce((n,r) => n + Number(r.amount||0), 0);
+            return lapTable('bank_deposit', ['TANGGAL','USER','NAMA PENGIRIM','BANK','REK TUJUAN','NOMINAL','STATUS'], bd,
+              r => `<tr>${td((r.date||'')+(r.time?' '+r.time:''),'text-[10px]')}${td(r.username,'font-bold text-cyan-300')}${td(r.name)}${td(r.bank,'uppercase text-[10px]')}${td(r.accountNumber,'text-[10px]')}${td(lapFmt(r.amount),'text-right text-emerald-300')}${td(r.status,'text-center uppercase text-[10px] text-emerald-300')}</tr>`,
+              r => [r.date, r.username, r.name, r.bank, r.accountNumber, r.amount].join('\t'),
+              ['username','name','bank','accountNumber'],
+              {title:'Bank Deposit', open:true, footer: lapMozFooter('TOTAL DONE BY BOT ' + lapMozRangeLabel(meta), bd.length, bdSum)});
+          })()}
         </div>`);
+    }
+    function lapMozFooter(label, count, sum) {
+      return `<div class="flex items-center justify-between px-3 py-2 bg-slate-900/70 border-t border-white/10 text-[11px] font-bold">
+        <span class="text-slate-300">${label} <span class="text-slate-500">(${count} Transaksi)</span></span>
+        <span class="text-emerald-300 font-mono">Rp ${lapFmt(sum)}</span></div>`;
+    }
+    function lapMozRangeLabel(meta) {
+      const at = (meta && meta.at) || '';
+      const [a, b] = at.split('|');
+      const f = s => { const p = String(s||'').split('-'); if (p.length !== 3) return s || '-';
+        const bl = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+        return `${+p[2]} ${bl[+p[1]-1]||p[1]} ${p[0]}`; };
+      if (!a) return '';
+      return (!b || a === b) ? f(a) : f(a) + ' – ' + f(b);
     }
 
     // ---------- ADMIN (via GitHub Actions) ----------

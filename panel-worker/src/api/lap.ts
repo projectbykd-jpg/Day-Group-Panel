@@ -377,29 +377,63 @@ export async function lapRunMozart(
 // Cloudflare Mozart blok SEMUA IP non-residensial (Worker/GitHub/Apps Script).
 // Jalan terakhir: user jalankan bookmarklet di tab Mozart mereka -> fetch API
 // same-origin (punya cf_clearance) -> kirim baris mentah ke sini.
-function mozMap(rows: Rec[], kind: "depo" | "wd"): Rec[] {
-	const g = (r: Rec, keys: string[], fb: unknown): unknown => {
-		for (const k of keys) {
-			const v = r[k];
-			if (v !== undefined && v !== null && String(v).trim() !== "") return v;
-		}
-		return fb;
+// Ubah ISO UTC -> tanggal & jam WIB (GMT+7).
+function wib(iso: unknown): { date: string; time: string } {
+	const s = String(iso || "");
+	const t = Date.parse(s);
+	if (!s || Number.isNaN(t)) return { date: "-", time: "" };
+	const d = new Date(t + 7 * 3600 * 1000);
+	const p = (n: number) => String(n).padStart(2, "0");
+	return {
+		date: `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`,
+		time: `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`,
 	};
+}
+
+// Peta baris mentah API Mozart -> baris yang dipakai panel.
+// Field asli (dari _mozartRawSample):
+//   deposit: date, amount(str), name, app(bank), account_number(rek bank situs),
+//            username, status("done"/"pending"/...), done_by("BOT"/"USER"/"WDBOT")
+//   withdraw: CreatedAt(ISO), amount(num), rekening_name, rekening, bank_name,
+//            username, status("done"/"timeout"/...), approved_at, is_overridden
+function mozMap(rows: Rec[], kind: "depo" | "wd"): Rec[] {
 	return (Array.isArray(rows) ? rows : []).map((r) => {
-		const cust = (r.customer as Rec) || {};
-		const base = {
-			date: String(g(r, ["created_at", "date", "transaction_date", "trx_date", "waktu", "time"], "-")),
-			username: String(g(r, ["username", "user", "player", "user_id", "nama_user"], "-")),
-			name: String(g(r, ["name", "sender_name", "recipient", "recipient_name", "nama", "account_name"], "-")),
-			amount: num(g(r, ["amount", "nominal", "jumlah", "net_amount"], 0)),
-			accountNumber: String(
-				g(r, ["account_number", "rekening", "bank_account", "no_rek"], cust.bank_account_number || "-"),
-			),
-			status: String(g(r, ["status", "status_description", "state", "transaction_status"], kind === "depo" ? "SUCCESS" : "-")),
+		if (kind === "depo") {
+			const st = String(r.status || "").toLowerCase().trim();
+			const doneBy = String(r.done_by || "").toUpperCase().trim();
+			const status =
+				st === "done" ? (doneBy ? "DONE BY " + doneBy : "DONE") : st.toUpperCase().replace(/_/g, " ") || "-";
+			const w = wib(r.CreatedAt);
+			return {
+				date: String(r.date || w.date || "-"),
+				time: w.time,
+				username: String(r.username || "-"),
+				name: String(r.name || "-"),
+				amount: num(r.amount),
+				bank: String(r.app || r.bank_name || "-").toUpperCase(),
+				accountNumber: String(r.account_number || "-"),
+				status,
+				statusRaw: st,
+				doneBy,
+			};
+		}
+		const st = String(r.status || "").toLowerCase().trim();
+		const approved = st === "done" || !!r.approved_at;
+		const overridden = !!r.is_overridden;
+		const w = wib(r.CreatedAt);
+		return {
+			date: String(r.date || w.date || "-"),
+			time: w.time,
+			username: String(r.username || "-"),
+			name: String(r.rekening_name || r.name || "-"),
+			amount: num(r.amount),
+			bank: String(r.bank_name || r.destination || "-").toUpperCase(),
+			accountNumber: String(r.rekening || "-"),
+			status: approved ? (overridden ? "OVERRIDE SELESAI" : "SELESAI") : st.toUpperCase().replace(/_/g, " ") || "-",
+			statusRaw: st,
+			approved,
+			overridden,
 		};
-		return kind === "depo"
-			? { ...base, bank: String(g(r, ["bank", "bank_name", "bank_code", "app"], cust.bank_name || "-")) }
-			: { ...base, bank: String(g(r, ["destination", "bank", "bank_name", "bank_code", "app", "to_bank"], cust.bank_name || "-")) };
 	});
 }
 
