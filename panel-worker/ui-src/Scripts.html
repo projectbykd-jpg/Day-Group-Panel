@@ -1179,7 +1179,7 @@
     }
 
     /* Menu admin: tampilkan satu panel per waktu (tidak numpuk scroll). */
-    const ADMIN_PANELS = ['dashboard','users','sesi','autopost','backup','maintenance'];
+    const ADMIN_PANELS = ['dashboard','users','sites','sesi','autopost','backup','maintenance'];
     function switchAdminPanel(key, fromNav) {
       if (ADMIN_PANELS.indexOf(key) < 0) key = 'dashboard';
       currentAdminPanel = key;
@@ -1198,6 +1198,8 @@
         if (!pageDataCache.admin || Date.now() - pageFetchedAt.admin > NAV_FRESH_MS) loadDashboard(false, 'admin');
       } else if (key === 'users') {
         if (Date.now() - pageFetchedAt.users > NAV_FRESH_MS) { loadUsers(); pageFetchedAt.users = Date.now(); }
+      } else if (key === 'sites') {
+        if (!sitesData.length || Date.now() - (pageFetchedAt.sites||0) > NAV_FRESH_MS) { loadSites(); pageFetchedAt.sites = Date.now(); }
       } else if (key === 'sesi') {
         if (Date.now() - pageFetchedAt.sesi > NAV_FRESH_MS) { loadActiveSessions(); pageFetchedAt.sesi = Date.now(); }
       } else if (key === 'autopost') {
@@ -3081,6 +3083,79 @@
         </tr>`).join('')||'<tr><td colspan="10" class="text-center text-slate-500 py-8">Belum ada user</td></tr>';
     }
     function filterUserRows(){const q=(document.getElementById('userSearch').value||'').toLowerCase();const role=document.getElementById('userRoleFilter').value;const status=document.getElementById('userStatusFilter').value;document.querySelectorAll('#userTableBody tr[data-search]').forEach(tr=>{tr.style.display=(!q||tr.dataset.search.includes(q))&&(!role||tr.dataset.role===role)&&(!status||tr.dataset.status===status)?'':'none';});}
+
+    // ============ KELOLA WEBSITE (site_accounts) ============
+    let sitesData = [];
+    const SITE_FIELDS = ['display_name','tg_token','tg_chat_id','tg_pred_token','tg_pred_chat_id','lt_email','lt_pass','pz_user','pz_pass','pz_user2','pz_pass2','pz_url'];
+    function loadSites(force){
+      const st=document.getElementById('sitesStatus'); if(st) st.textContent='Memuat daftar website…';
+      google.script.run.withSuccessHandler(res=>{
+        sitesData=(res&&res.success&&Array.isArray(res.sites))?res.sites:[];
+        renderSiteCards();
+        if(st) st.textContent=`${sitesData.length} website tersimpan.`;
+      }).withFailureHandler(e=>{ if(st) st.textContent='Gagal memuat: '+((e&&e.message)||e); toast('Gagal memuat website'); })
+        .adminListSites(currentSessionToken);
+    }
+    function renderSiteCards(){
+      const box=document.getElementById('siteCards'); if(!box)return;
+      const q=(document.getElementById('siteSearch')&&document.getElementById('siteSearch').value||'').toLowerCase().trim();
+      const list=sitesData.filter(s=>!q||(s.website+' '+(s.display_name||'')).toLowerCase().includes(q));
+      if(!list.length){ box.innerHTML='<div class="text-xs text-slate-500 py-6 text-center sm:col-span-2 xl:col-span-3">'+(sitesData.length?'Tidak ada yang cocok.':'Belum ada website. Klik TAMBAH WEBSITE.')+'</div>'; return; }
+      const b=(on,label)=>`<span class="site-badge ${on?'on':'off'}">${on?'✓':'○'} ${label}</span>`;
+      box.innerHTML=list.map(s=>`
+        <div class="site-card">
+          <div class="flex items-start justify-between gap-2">
+            <div><div class="site-card-code">${escapeHtml(s.website)}</div><div class="site-card-name">${escapeHtml(s.display_name||'—')}</div></div>
+          </div>
+          <div class="site-card-badges">
+            ${b(!!(s.tg_token&&s.tg_chat_id),'TG Result')}
+            ${b(!!(s.tg_pred_token&&s.tg_pred_chat_id),'TG Prediksi')}
+            ${b(!!(s.lt_email&&s.lt_pass),'LinkTree')}
+            ${b(!!(s.pz_url&&(s.pz_user||s.pz_user2)),'Panel-Z')}
+          </div>
+          <div class="site-card-actions">
+            <button onclick="openSiteModal('${encodeURIComponent(s.website)}')"><i class="fa-solid fa-pen mr-1"></i>EDIT</button>
+            <button onclick="deleteSite('${encodeURIComponent(s.website)}')"><i class="fa-solid fa-trash mr-1"></i>HAPUS</button>
+          </div>
+        </div>`).join('');
+    }
+    function openSiteModal(codeEnc){
+      const code=codeEnc?decodeURIComponent(codeEnc):'';
+      const cur=code?sitesData.find(s=>s.website===code):null;
+      document.getElementById('siteModalTitle').textContent=cur?('Edit '+cur.website):'Tambah Website';
+      document.getElementById('siteOriginalWebsite').value=cur?cur.website:'';
+      document.getElementById('siteWebsite').value=cur?cur.website:'';
+      SITE_FIELDS.forEach(f=>{ const el=document.getElementById('site_'+f); if(el) el.value=cur?(cur[f]||''):''; });
+      const del=document.getElementById('siteDeleteBtn'); if(del) del.classList.toggle('hidden',!cur);
+      const err=document.getElementById('siteModalError'); if(err){ err.classList.add('hidden'); err.textContent=''; }
+      const m=document.getElementById('siteEditModal'); m.style.display='flex'; m.classList.add('open'); document.body.classList.add('modal-open');
+      setTimeout(()=>{ const w=document.getElementById('siteWebsite'); if(w&&!cur) w.focus(); },50);
+    }
+    function closeSiteModal(){ const m=document.getElementById('siteEditModal'); m.style.display='none'; m.classList.remove('open'); document.body.classList.remove('modal-open'); }
+    function saveSiteFromModal(){
+      const err=document.getElementById('siteModalError'), btn=document.getElementById('saveSiteBtn');
+      const payload={ website:(document.getElementById('siteWebsite').value||'').trim().toUpperCase(), originalWebsite:document.getElementById('siteOriginalWebsite').value||'' };
+      SITE_FIELDS.forEach(f=>{ const el=document.getElementById('site_'+f); payload[f]=el?el.value.trim():''; });
+      if(!/^[A-Z0-9_-]{2,}$/.test(payload.website)){ err.textContent='Kode website minimal 2 karakter (huruf/angka).'; err.classList.remove('hidden'); return; }
+      err.classList.add('hidden');
+      btn.disabled=true; btn.innerHTML='<i class="fa-solid fa-spinner fa-spin mr-2"></i>MENYIMPAN…';
+      google.script.run.withSuccessHandler(res=>{
+        btn.disabled=false; btn.innerHTML='<i class="fa-solid fa-floppy-disk mr-2"></i>SIMPAN';
+        if(res&&res.success){ toast(res.message||'Tersimpan'); closeSiteModal(); loadSites(true); }
+        else { err.textContent=(res&&res.message)||'Gagal menyimpan'; err.classList.remove('hidden'); }
+      }).withFailureHandler(e=>{ btn.disabled=false; btn.innerHTML='<i class="fa-solid fa-floppy-disk mr-2"></i>SIMPAN'; err.textContent='Gagal: '+((e&&e.message)||e); err.classList.remove('hidden'); })
+        .adminSaveSite(currentSessionToken, payload);
+    }
+    function deleteSiteFromModal(){ const w=document.getElementById('siteOriginalWebsite').value; if(w) deleteSite(encodeURIComponent(w)); }
+    function deleteSite(codeEnc){
+      const code=decodeURIComponent(codeEnc);
+      confirmCenter({ type:'danger', title:'Hapus website '+code+'?', message:'Semua token & login website ini akan dihapus dari database. User yang memakai kode ini tidak akan bisa kirim/prediksi sampai dibuat ulang.', confirmText:'HAPUS', showCancel:true }).then(ok=>{
+        if(!ok)return;
+        google.script.run.withSuccessHandler(res=>{ toast((res&&res.message)||'Dihapus'); closeSiteModal(); loadSites(true); })
+          .withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e)))
+          .adminDeleteSite(currentSessionToken, code);
+      });
+    }
     function openUserModal(index){
       const u=Number.isInteger(index)?adminUsersData[index]:null;
       document.getElementById('userModalTitle').textContent=u?'Edit User':'Tambah User';

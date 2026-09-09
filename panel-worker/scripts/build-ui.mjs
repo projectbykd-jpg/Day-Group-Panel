@@ -37,6 +37,9 @@ const ARG_MAP = {
 	adminResetUserLock: ["token", "targetUsername"],
 	adminListActiveSessions: ["token"],
 	setMaintenance: ["token", "enabled", "message"],
+	adminListSites: ["token"],
+	adminSaveSite: ["token", "data"],
+	adminDeleteSite: ["token", "website"],
 	// --- belum di-port ke Worker (prediksi & invest) — dipetakan supaya siap dipakai nanti
 	getPredictionStatusData: ["token"],
 	generateClosingPredictionCopy: ["token", "slot"],

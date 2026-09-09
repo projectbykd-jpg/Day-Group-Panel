@@ -423,6 +423,7 @@
           <div class="admin-tabs" id="adminTabs">
             <button class="admin-tab active" data-admin-tab="dashboard" onclick="switchAdminPanel('dashboard')"><i class="fa-solid fa-chart-line"></i>Dashboard</button>
             <button class="admin-tab" data-admin-tab="users" onclick="switchAdminPanel('users')"><i class="fa-solid fa-users-gear"></i>Users</button>
+            <button class="admin-tab" data-admin-tab="sites" onclick="switchAdminPanel('sites')"><i class="fa-solid fa-globe"></i>Website</button>
             <button class="admin-tab" data-admin-tab="sesi" onclick="switchAdminPanel('sesi')"><i class="fa-solid fa-users-viewfinder"></i>Sesi Aktif</button>
             <button class="admin-tab" data-admin-tab="autopost" onclick="switchAdminPanel('autopost')"><i class="fa-solid fa-robot"></i>Auto Posting</button>
             <button class="admin-tab" data-admin-tab="backup" onclick="switchAdminPanel('backup')"><i class="fa-solid fa-box-archive"></i>Backup Log</button>
@@ -431,6 +432,7 @@
           <select class="admin-tab-select" id="adminTabSelect" onchange="switchAdminPanel(this.value)">
             <option value="dashboard">Dashboard &amp; Aktivitas</option>
             <option value="users">Kelola Users</option>
+            <option value="sites">Kelola Website</option>
             <option value="sesi">Sesi Login Aktif</option>
             <option value="autopost">Auto Posting Prediksi</option>
             <option value="backup">Backup Activity Log</option>
@@ -513,6 +515,24 @@
             <div class="flex flex-col sm:flex-row gap-3"><input id="userSearch" oninput="filterUserRows()" class="glass-inner rounded-2xl px-4 py-3 text-xs flex-1" placeholder="Cari username, nama, website, role..."><select id="userRoleFilter" onchange="filterUserRows()" class="glass-inner rounded-2xl px-4 py-3 text-xs"><option value="">Semua Role</option><option>ADMIN</option><option>OPERATOR</option><option>VIEWER</option></select><select id="userStatusFilter" onchange="filterUserRows()" class="glass-inner rounded-2xl px-4 py-3 text-xs"><option value="">Semua Status</option><option>AKTIF</option><option>NONAKTIF</option><option>TERKUNCI</option></select></div>
             <div id="userManageStatus" class="text-xs text-slate-400">Memuat daftar user...</div>
             <div class="admin-users-table-wrap"><table class="admin-users-table"><thead><tr><th>Username</th><th>Nama</th><th>Website</th><th>Role</th><th>Status</th><th>Telegram</th><th>LinkTree</th><th>Panel-Z</th><th>Login Terakhir</th><th>Aksi</th></tr></thead><tbody id="userTableBody"></tbody></table></div>
+          </div>
+          </div>
+
+          <div class="admin-panel" data-admin-panel="sites">
+          <div class="mini-card flex flex-col gap-4">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div>
+                <div class="font-extrabold text-base"><i class="fa-solid fa-globe mr-2 text-cyan-300"></i>Kelola Website</div>
+                <div class="text-xs text-slate-400 mt-1">Token & Chat ID Telegram (Result + Prediksi), login LinkTree, dan login Panel-Z per website. Tersimpan langsung ke database — tidak perlu utak-atik DB manual.</div>
+                <div id="sitesStatus" class="text-[10px] text-slate-500 mt-2">Memuat daftar website…</div>
+              </div>
+              <div class="flex gap-2 shrink-0">
+                <button onclick="loadSites(true)" class="glass-inner px-4 py-3 rounded-2xl text-xs font-bold"><i class="fa-solid fa-rotate mr-2"></i>REFRESH</button>
+                <button onclick="openSiteModal()" class="bg-gradient-to-r from-cyan-400 to-blue-600 text-slate-950 px-4 py-3 rounded-2xl text-xs font-extrabold"><i class="fa-solid fa-plus mr-2"></i>TAMBAH WEBSITE</button>
+              </div>
+            </div>
+            <input id="siteSearch" oninput="renderSiteCards()" class="glass-inner rounded-2xl px-4 py-3 text-xs" placeholder="Cari kode / nama website…">
+            <div id="siteCards" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3"></div>
           </div>
           </div>
 
@@ -693,6 +713,73 @@
       </div>
       <div id="userModalError" class="text-xs text-rose-300 hidden"></div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3"><button onclick="closeUserModal()" class="glass-inner py-3.5 rounded-2xl text-xs font-bold">BATAL</button><button id="saveUserBtn" onclick="saveUserFromModal()" class="bg-gradient-to-r from-emerald-400 to-teal-500 text-slate-950 py-3.5 rounded-2xl text-xs font-extrabold"><i class="fa-solid fa-floppy-disk mr-2"></i>SIMPAN KE SHEET USERS</button></div>
+    </div>
+  </div>
+
+  <!-- MODAL EDIT WEBSITE (site_accounts) -->
+  <div id="siteEditModal" class="modal-shell" style="display:none" role="dialog" aria-modal="true" aria-labelledby="siteModalTitle">
+    <div class="glass-card popup-card w-full max-w-3xl rounded-[2rem] p-6 flex flex-col gap-5 relative max-h-[92vh] overflow-y-auto">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <div class="text-[10px] text-cyan-400 font-bold tracking-widest">ADMIN • KELOLA WEBSITE</div>
+          <h3 id="siteModalTitle" class="text-lg font-extrabold mt-1">Tambah Website</h3>
+          <p class="text-xs text-slate-400 mt-1">Kolom kosong berarti fitur itu tidak dipakai untuk website ini.</p>
+        </div>
+        <button onclick="closeSiteModal()" class="w-10 h-10 rounded-xl glass-inner"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <input type="hidden" id="siteOriginalWebsite">
+
+      <div class="site-form-sec">
+        <div class="site-form-sec-title"><i class="fa-solid fa-id-card"></i>Identitas</div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label class="text-xs text-slate-400">Kode Website <span class="text-slate-500">(huruf/angka, mis. HUGO)</span><input id="siteWebsite" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1 uppercase" autocomplete="off"></label>
+          <label class="text-xs text-slate-400">Nama Tampilan<input id="site_display_name" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1" placeholder="Contoh: HUGOTOGEL"></label>
+        </div>
+      </div>
+
+      <div class="site-form-sec">
+        <div class="site-form-sec-title"><i class="fa-brands fa-telegram text-cyan-400"></i>Telegram — Result</div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label class="text-xs text-slate-400">Bot Token<input id="site_tg_token" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1 font-mono text-[11px]" autocomplete="off"></label>
+          <label class="text-xs text-slate-400">Chat ID<input id="site_tg_chat_id" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1 font-mono text-[11px]" autocomplete="off"></label>
+        </div>
+      </div>
+
+      <div class="site-form-sec">
+        <div class="site-form-sec-title"><i class="fa-brands fa-telegram text-pink-400"></i>Telegram — Prediksi <span class="text-slate-500 font-normal">(wajib untuk auto-posting)</span></div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label class="text-xs text-slate-400">Bot Token<input id="site_tg_pred_token" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1 font-mono text-[11px]" autocomplete="off"></label>
+          <label class="text-xs text-slate-400">Chat ID<input id="site_tg_pred_chat_id" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1 font-mono text-[11px]" autocomplete="off"></label>
+        </div>
+      </div>
+
+      <div class="site-form-sec">
+        <div class="site-form-sec-title"><i class="fa-solid fa-tree text-emerald-400"></i>LinkTree</div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label class="text-xs text-slate-400">Email<input id="site_lt_email" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1" autocomplete="off"></label>
+          <label class="text-xs text-slate-400">Password<input id="site_lt_pass" type="text" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1" autocomplete="off"></label>
+        </div>
+      </div>
+
+      <div class="site-form-sec">
+        <div class="site-form-sec-title"><i class="fa-solid fa-server text-amber-400"></i>Panel-Z</div>
+        <div class="grid grid-cols-1 gap-3">
+          <label class="text-xs text-slate-400">Base URL Panel-Z<input id="site_pz_url" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1" placeholder="https://..."></label>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label class="text-xs text-slate-400">User (basic auth)<input id="site_pz_user" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1" autocomplete="off"></label>
+            <label class="text-xs text-slate-400">Password (basic auth)<input id="site_pz_pass" type="text" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1" autocomplete="off"></label>
+            <label class="text-xs text-slate-400">User (form login)<input id="site_pz_user2" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1" autocomplete="off"></label>
+            <label class="text-xs text-slate-400">Password (form login)<input id="site_pz_pass2" type="text" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1" autocomplete="off"></label>
+          </div>
+        </div>
+      </div>
+
+      <div id="siteModalError" class="text-xs text-rose-300 hidden"></div>
+      <div class="flex flex-col sm:flex-row gap-3">
+        <button id="siteDeleteBtn" onclick="deleteSiteFromModal()" class="glass-inner py-3.5 px-5 rounded-2xl text-xs font-bold text-rose-300 hidden"><i class="fa-solid fa-trash mr-2"></i>HAPUS</button>
+        <button onclick="closeSiteModal()" class="glass-inner py-3.5 rounded-2xl text-xs font-bold flex-1">BATAL</button>
+        <button id="saveSiteBtn" onclick="saveSiteFromModal()" class="bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 py-3.5 rounded-2xl text-xs font-extrabold flex-1"><i class="fa-solid fa-floppy-disk mr-2"></i>SIMPAN</button>
+      </div>
     </div>
   </div>
 

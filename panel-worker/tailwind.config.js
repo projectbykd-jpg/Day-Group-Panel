@@ -10,7 +10,7 @@ module.exports = {
 	// "'text-'+var") jadi ke-scan otomatis oleh `content`. Safelist dikecilkan
 	// -> CSS jauh lebih kecil (~43KB vs ~107KB).
 	safelist: [
-		{ pattern: /^(sm:|md:|lg:)?grid-cols-([1-9]|1[0-2])$/ },
+		{ pattern: /^(sm:|md:|lg:|xl:)?grid-cols-([1-9]|1[0-2])$/ },
 	],
 	theme: { extend: {} },
 	plugins: [],

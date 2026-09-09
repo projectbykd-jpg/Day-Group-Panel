@@ -19,6 +19,7 @@ import {
 	adminSetLogRetention,
 	pruneActivityLogCron,
 } from "./api/admin";
+import { adminDeleteSite, adminListSites, adminSaveSite } from "./api/sites";
 import { setMaintenance } from "./api/settings";
 import { getCurrentUserProfile, getLivePanelData } from "./api/live";
 import {
@@ -105,6 +106,11 @@ const ROUTES: Record<string, Handler> = {
 	adminResetUserLock: (env, b) => adminResetUserLock(env, s(b.token), s(b.targetUsername)),
 	adminListActiveSessions: (env, b) => adminListActiveSessions(env, s(b.token)),
 	setMaintenance: (env, b) => setMaintenance(env, s(b.token), !!b.enabled, s(b.message)),
+
+	// kelola website (site_accounts)
+	adminListSites: (env, b) => adminListSites(env, s(b.token)),
+	adminSaveSite: (env, b) => adminSaveSite(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
+	adminDeleteSite: (env, b) => adminDeleteSite(env, s(b.token), s(b.website)),
 
 	// prediksi
 	getPredictionStatusData: (env, b) => getPredictionStatusData(env, s(b.token)),
