@@ -4,7 +4,8 @@
 // - Scripts.html: <script>...</script>  (uses google.script.run)
 //
 // We inline Styles + Scripts and prepend a google.script.run -> fetch('/api') shim.
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -114,8 +115,39 @@ const shim = `<script>
 })();
 </script>`;
 
+// --- Tailwind: compile sekali di sini -> CSS statis di-inline.
+// Play CDN (cdn.tailwindcss.com) meng-compile ulang di browser tiap kali DOM
+// berubah (panel ini sering rebuild innerHTML) -> berat & lag. Versi statis
+// tidak punya MutationObserver / runtime compiler.
+function buildTailwind() {
+	const cli = resolve(root, "node_modules", "tailwindcss", "lib", "cli.js");
+	if (!existsSync(cli)) {
+		console.warn("WARNING: tailwindcss belum ter-install -> pakai Play CDN (lebih lambat). Jalankan `npm install`.");
+		return null;
+	}
+	const outCss = resolve(root, "public", "_tw.css");
+	mkdirSync(dirname(outCss), { recursive: true });
+	execFileSync(
+		process.execPath,
+		[cli, "-c", resolve(root, "tailwind.config.js"), "-i", resolve(root, "ui-src", "tw.css"), "-o", outCss, "--minify"],
+		{ cwd: root, stdio: ["ignore", "ignore", "inherit"] },
+	);
+	return readFileSync(outCss, "utf8");
+}
+const tailwindCss = buildTailwind();
+
 let out = indexHtml;
-out = out.replace(/<\?!?=?\s*include\(\s*['"]Styles['"]\s*\)\s*;?\s*\?>/, stylesHtml);
+if (tailwindCss) {
+	// buang Play CDN + preconnect-nya, ganti dengan <style> hasil compile
+	out = out.replace(/\s*<link rel="preconnect" href="https:\/\/cdn\.tailwindcss\.com">/, "");
+	out = out.replace(/\s*<script src="https:\/\/cdn\.tailwindcss\.com"><\/script>/, "");
+	out = out.replace(
+		/<\?!?=?\s*include\(\s*['"]Styles['"]\s*\)\s*;?\s*\?>/,
+		`<style id="tw-base">\n${tailwindCss}\n</style>\n` + stylesHtml,
+	);
+} else {
+	out = out.replace(/<\?!?=?\s*include\(\s*['"]Styles['"]\s*\)\s*;?\s*\?>/, stylesHtml);
+}
 out = out.replace(/<\?!?=?\s*include\(\s*['"]Scripts['"]\s*\)\s*;?\s*\?>/, shim + "\n" + scriptsHtml);
 
 // safety: buang scriptlet Apps Script lain kalau ada
