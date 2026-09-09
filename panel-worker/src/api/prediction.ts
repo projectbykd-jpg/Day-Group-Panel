@@ -21,7 +21,7 @@ import {
 	validatePredictionContext,
 	sendPredictionJob,
 } from "../lib/prediction";
-import { SessionRecord } from "../lib/session";
+import { listActiveSessions } from "../lib/session";
 
 const now7 = () => new Date(Date.now() + 7 * 60 * 60 * 1000);
 
@@ -95,20 +95,9 @@ async function isAutoPostEnabled(env: Env): Promise<boolean> {
 }
 
 async function activeSessionUsernames(env: Env): Promise<string[]> {
-	const list = await env.SESS.list({ prefix: "dg_" });
-	const seen: Record<string, string> = {};
-	const now = Date.now();
-	for (const k of list.keys) {
-		const raw = await env.SESS.get(k.name);
-		if (!raw) continue;
-		try {
-			const rec = JSON.parse(raw) as SessionRecord;
-			if (rec && rec.username && Number(rec.expiresAt) > now) seen[rec.username.toLowerCase()] = rec.username;
-		} catch {
-			/* skip */
-		}
-	}
-	return Object.values(seen);
+	// Dari D1, bukan SESS.list — dipanggil tiap tick cron auto-post; kuota KV
+	// list Free cuma 1000/hari (dulu jebol tiap sore -> daftar sesi kosong).
+	return (await listActiveSessions(env)).map((g) => g.username);
 }
 
 async function autoPostWebsites(env: Env, usernames: string[]): Promise<string[]> {

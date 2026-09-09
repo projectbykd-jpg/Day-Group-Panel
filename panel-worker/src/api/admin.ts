@@ -5,7 +5,7 @@ import { requireSession } from "./auth";
 import { hashPassword } from "../lib/crypto";
 import { logActivity } from "../lib/activity";
 import { getUserProfile } from "../lib/db";
-import { SessionRecord } from "../lib/session";
+import { listActiveSessions, migrateKvSessionsOnce } from "../lib/session";
 import { tsNow } from "../lib/time";
 
 const OFFSET_MS = 7 * 60 * 60 * 1000;
@@ -232,33 +232,12 @@ export async function adminResetUserLock(env: Env, token: string, targetUsername
 
 export async function adminListActiveSessions(env: Env, token: string) {
 	await requireSession(env, token, { admin: true });
-	const list = await env.SESS.list({ prefix: "dg_" });
-	const now = Date.now();
-
-	// Kelompokkan token per username.
-	const byUser: Record<string, { username: string; count: number; firstLoginMs: number; lastExpiresMs: number }> = {};
-	for (const k of list.keys) {
-		const raw = await env.SESS.get(k.name);
-		if (!raw) continue;
-		let rec: SessionRecord;
-		try {
-			rec = JSON.parse(raw) as SessionRecord;
-		} catch {
-			continue;
-		}
-		if (!rec.username || !rec.expiresAt || Number(rec.expiresAt) <= now) continue;
-		const key = rec.username.toLowerCase();
-		if (!byUser[key]) byUser[key] = { username: rec.username, count: 0, firstLoginMs: 0, lastExpiresMs: 0 };
-		const g = byUser[key];
-		g.count++;
-		const created = Number(rec.createdAt || 0);
-		if (created && (!g.firstLoginMs || created < g.firstLoginMs)) g.firstLoginMs = created;
-		if (Number(rec.expiresAt) > g.lastExpiresMs) g.lastExpiresMs = Number(rec.expiresAt);
-	}
+	await migrateKvSessionsOnce(env); // no-op setelah sekali jalan
+	// Dibaca dari D1 (bukan SESS.list) — kuota KV list Free cuma 1000/hari.
+	const groups = await listActiveSessions(env);
 
 	const sessions = [];
-	for (const key of Object.keys(byUser).sort()) {
-		const g = byUser[key];
+	for (const g of groups) {
 		const p = await getUserProfile(env, g.username);
 		const websites = p ? p.websites : [];
 		const telegramOn = !!(p && p.permissions.telegram);

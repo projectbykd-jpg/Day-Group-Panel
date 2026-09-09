@@ -2,6 +2,7 @@
 // Semua panggilan frontend lama google.script.run.<fn>(...) dipetakan ke
 // POST /api  body: { "action": "<fn>", ...args }
 import { CORS_HEADERS, json } from "./lib/respond";
+import { migrateKvSessionsOnce, pruneExpiredSessions } from "./lib/session";
 import { checkLogin, logout, resumeSession } from "./api/auth";
 import { getBootstrapData, getDashboard } from "./api/dashboard";
 import { logClientActivity } from "./api/activity";
@@ -57,7 +58,9 @@ type Handler = (env: Env, body: Record<string, unknown>) => Promise<unknown>;
 const s = (v: unknown) => String(v ?? "");
 
 // Pangkas Activity Log sekali per hari WIB (dikunci lewat KV).
+// Pangkas Activity Log sekali per hari WIB (dikunci lewat KV).
 async function dailyPrune(env: Env): Promise<number | "skip"> {
+	await migrateKvSessionsOnce(env);
 	const dayKey = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 	const guard = "retention:" + dayKey;
 	try {
@@ -66,6 +69,7 @@ async function dailyPrune(env: Env): Promise<number | "skip"> {
 	} catch {
 		/* lanjut */
 	}
+	await pruneExpiredSessions(env).catch(() => {});
 	return pruneActivityLogCron(env).catch(() => 0);
 }
 
