@@ -141,9 +141,13 @@ if (tailwindCss) {
 	// buang Play CDN + preconnect-nya, ganti dengan <style> hasil compile
 	out = out.replace(/\s*<link rel="preconnect" href="https:\/\/cdn\.tailwindcss\.com">/, "");
 	out = out.replace(/\s*<script src="https:\/\/cdn\.tailwindcss\.com"><\/script>/, "");
+	// PENTING: Tailwind di-inline SESUDAH Styles.html (custom CSS), meniru urutan
+	// Play CDN yang meng-inject <style>-nya paling akhir. Kalau ditaruh sebelum
+	// Styles.html, rule custom dengan specificity sama menang atas utility Tailwind
+	// -> layout header/dll berantakan.
 	out = out.replace(
 		/<\?!?=?\s*include\(\s*['"]Styles['"]\s*\)\s*;?\s*\?>/,
-		`<style id="tw-base">\n${tailwindCss}\n</style>\n` + stylesHtml,
+		stylesHtml + `\n<style id="tw-base">\n${tailwindCss}\n</style>`,
 	);
 } else {
 	out = out.replace(/<\?!?=?\s*include\(\s*['"]Styles['"]\s*\)\s*;?\s*\?>/, stylesHtml);
