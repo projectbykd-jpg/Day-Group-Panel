@@ -717,15 +717,19 @@
       const meta = (lapResults._motionMeta && lapResults._motionMeta[0]) || {};
       const sm = meta.summary || {};
       const dp = lapResults.motionDpPga || [], pe = lapResults.motionPendingError || [], wd = lapResults.motionWd || [];
+      const wdSum = Number(sm.totalWdAmount) || wd.reduce((n,r) => n + Number(r.amount||0), 0);
+      const wdCnt = Number(sm.totalWdRecords) || wd.length;
       host.innerHTML = lapHeaderCard('fa-bolt-lightning', 'Lap Motion', 'Motion DP PGA · PGA Pending/Error · PGA Withdraw', `
         ${lapDateBar('lapMotion', lapRunMotion)}
         ${meta.truncated ? '<div class="text-[11px] text-amber-300 mt-1">⚠ Data terpotong (batas request Worker). Untuk periode besar pakai Lap Admin nanti.</div>' : ''}
-        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 mt-3">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 mt-3">
           ${lapStatCard('Transaksi Paid', lapFmt(sm.totalTransaksiPaid), 'text-cyan-400')}
           ${lapStatCard('Total By Paid At', lapFmt(sm.totalNominalPaidAt), 'text-emerald-400')}
           ${lapStatCard('Transaksi Create', lapFmt(sm.totalTransaksiCreate), 'text-indigo-400')}
           ${lapStatCard('Total By Created At', lapFmt(sm.totalNominalCreatedAt), 'text-slate-100')}
           ${lapStatCard('Pending / Error', lapFmt(sm.totalPendingErrorCount), 'text-rose-400')}
+          ${lapStatCard('Transaksi WD PGA', lapFmt(wdCnt), 'text-purple-300')}
+          ${lapStatCard('Total WD PGA', lapFmt(wdSum), 'text-purple-300')}
         </div>
         <div id="lapMotionTables">
           ${lapTable('motion_dp_pga', ['CREATED','PAID','USER','REF','WEBSITE','VENDOR','NOMINAL','FEE','STATUS'], dp,
@@ -736,7 +740,8 @@
             r => [r.createdAt,r.paidAt,r.user,r.refNo,r.game,r.vendor,r.amount,r.status].join('\t'), ['user','refNo','game','status'], {title:'PGA Pending / Error'})}
           ${lapTable('pga_withdraw', ['PAYOUT','CREATED','USER','BANK','REKENING','REF','NOMINAL','STATUS','ADMIN'], wd,
             r => `<tr>${td(r.payoutAt,'text-purple-300')}${td(r.createdAt)}${td(r.user,'font-bold text-cyan-300')}${td(r.bank,'text-[10px]')}${td(r.accountNumber,'text-[10px]')}${td(r.refNo,'text-[9px]')}${td(lapFmt(r.amount),'text-right text-purple-300')}${td(r.status,'text-center')}${td(r.adminName,'text-[10px]')}</tr>`,
-            r => [r.user,r.amount].join('\t'), ['user','bank','accountNumber','refNo'], {title:'PGA Withdraw'})}
+            r => [r.user,r.amount].join('\t'), ['user','bank','accountNumber','refNo'],
+            {title:'PGA Withdraw', footer: lapMozFooter('TOTAL WD PGA', wdCnt, wdSum)})}
         </div>`);
     }
     function lapRunMotion() {
