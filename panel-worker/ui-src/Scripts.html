@@ -1647,12 +1647,16 @@
       }
       // Tab tidak terlihat: TIDAK berhenti total, hanya melambat ke 2 menit supaya
       // data tetap "hangat" tanpa boros kuota. Begitu tab dibuka lagi -> sinkron 1x instan.
-      if (document.hidden) return 120000;
-      if (livePollFailStreak >= 4) return 60000; // endpoint bermasalah -> jangan spam
+      if (document.hidden) return 180000;
+      if (livePollFailStreak >= 4) return 90000; // endpoint bermasalah -> jangan spam
       const idle = Date.now() - lastUserActivityAt;
-      if (idle > 300000) return 60000;
-      if (idle > 90000)  return 30000;
-      return 15000;
+      // Halaman Aktivitas / Dashboard admin butuh refresh log lebih sering.
+      // Halaman lain (Result/Prediksi/Invest/Lap) cuma perlu status header -> lebih lambat,
+      // hemat request Worker & baca D1 (16 CS x poll cepat = dekat limit 100k req/hari).
+      const onLog = currentPage === 'activity' || (currentPage === 'admin' && currentAdminPanel === 'dashboard');
+      if (idle > 300000) return onLog ? 75000 : 150000;
+      if (idle > 90000)  return onLog ? 45000 : 90000;
+      return onLog ? 20000 : 45000;
     }
 
     function scheduleLivePoll(){

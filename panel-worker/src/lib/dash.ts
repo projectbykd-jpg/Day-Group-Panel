@@ -45,9 +45,30 @@ export function normalizeDashOptions(raw: unknown): DashOptions {
 }
 
 // Ringkasan aktivitas untuk header/poll — SATU query agregat (bukan 5 full-scan
-// seperti getDashboardData). Dipakai live-poll tiap 15 dtk supaya tidak
-// menghabiskan kuota "rows read" D1 (5 juta/hari di paket Free).
-export async function getActivitySummary(env: Env, profile: UserProfile) {
+// seperti getDashboardData). Dipakai live-poll supaya tidak menghabiskan kuota
+// "rows read" D1 (5 juta/hari di paket Free).
+//
+// Cache per-isolate 25 dtk: 16 CS yang poll tiap ~45 dtk sering jatuh di isolate
+// Worker yang sama & hangat -> mayoritas poll dilayani dari memori, nol baca D1.
+type SumResult = Awaited<ReturnType<typeof buildActivitySummary>>;
+const _sumCache = new Map<string, { ts: number; data: SumResult }>();
+const SUM_TTL_MS = 25_000;
+
+export async function getActivitySummary(env: Env, profile: UserProfile): Promise<SumResult> {
+	const key = profile.role === "ADMIN" ? "__admin__" : profile.username;
+	const hit = _sumCache.get(key);
+	if (hit && Date.now() - hit.ts < SUM_TTL_MS) return hit.data;
+	const data = await buildActivitySummary(env, profile);
+	_sumCache.set(key, { ts: Date.now(), data });
+	if (_sumCache.size > 64) {
+		// jaga-jaga: buang entri terlama
+		const oldest = [..._sumCache.entries()].sort((a, b) => a[1].ts - b[1].ts)[0];
+		if (oldest) _sumCache.delete(oldest[0]);
+	}
+	return data;
+}
+
+async function buildActivitySummary(env: Env, profile: UserProfile) {
 	const isAdmin = profile.role === "ADMIN";
 	const today = dateKeyNow();
 	const scope = isAdmin ? "substr(ts,1,10) = ?" : "substr(ts,1,10) = ? AND username = ?";

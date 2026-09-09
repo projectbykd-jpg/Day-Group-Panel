@@ -6,15 +6,11 @@
  */
 module.exports = {
 	content: ["./ui-src/**/*.html"],
-	// Kelas yang dibangun lewat string di Scripts.html (ternary/interpolasi) —
-	// aman-kan supaya tidak ke-purge.
+	// Semua kelas warna di ui-src/*.html sudah string literal (ternary, bukan
+	// "'text-'+var") jadi ke-scan otomatis oleh `content`. Safelist dikecilkan
+	// -> CSS jauh lebih kecil (~43KB vs ~107KB).
 	safelist: [
-		// warna yang dipilih lewat argumen string (lapStatCard, selisih koin, dst)
-		{
-			pattern:
-				/^(text|bg|border|from|to|via)-(slate|gray|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|red|orange|amber|yellow|lime|green|emerald|teal)-(200|300|400|500|600|700)$/,
-		},
-		{ pattern: /^grid-cols-(1|2|3|4|5|6)$/ },
+		{ pattern: /^(sm:|md:|lg:)?grid-cols-([1-9]|1[0-2])$/ },
 	],
 	theme: { extend: {} },
 	plugins: [],
