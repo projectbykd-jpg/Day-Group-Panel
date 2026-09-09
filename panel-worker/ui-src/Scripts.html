@@ -751,7 +751,7 @@
     function lapMozartBookmarklet() {
       const panel = location.origin;
       const token = currentSessionToken || '';
-      const src = "(async()=>{try{var O=location.origin;if(!/limatogel|makintajir|mozart/i.test(O)&&!confirm('Kamu tidak di situs Mozart. Lanjut?'))return;"
+      const src = "void (async()=>{try{var O=location.origin;if(!/limatogel|makintajir|mozart/i.test(O)&&!confirm('Kamu tidak di situs Mozart. Lanjut?'))return;"
         + "var f=function(d){return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)};"
         + "var sd=prompt('Tanggal MULAI (YYYY-MM-DD)',f(new Date()));if(!sd)return;var ed=prompt('Tanggal AKHIR (YYYY-MM-DD)',sd);if(!ed)return;"
         + "var FR=function(j){if(Array.isArray(j))return j;var b=[];for(var k in j){var v=j[k];if(Array.isArray(v)){if((v.length===0||typeof v[0]==='object')&&v.length>=b.length)b=v}else if(v&&typeof v==='object'){var n=FR(v);if(n.length>b.length)b=n}}return b};"
