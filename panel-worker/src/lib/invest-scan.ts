@@ -350,6 +350,13 @@ export async function investAggregateUser(env: Env, owner: string): Promise<numb
 // Pump — dipanggil dari Cron Trigger scheduled()
 // ---------------------------------------------------------------------------
 export async function investPump(env: Env): Promise<void> {
+	// PENTING: cron memanggil ini tiap menit. Cek dulu ke D1 (murah, kuota 100k/hari)
+	// apakah ADA user yang scan-nya 'running'. Kalau tidak ada -> keluar SEBELUM
+	// menyentuh KV. Dulu setiap tick menulis+hapus PUMP_FLAG (2 write KV/menit =
+	// ~2880/hari) sehingga jebol limit Free 1000 write/hari -> semua SESS.put gagal,
+	// termasuk pembuatan sesi saat login ("Terjadi kesalahan saat login.").
+	const users = await investRunningUsers(env);
+	if (!users.length) return;
 	try {
 		if (await env.SESS.get(PUMP_FLAG)) return;
 	} catch {
@@ -358,7 +365,6 @@ export async function investPump(env: Env): Promise<void> {
 	await env.SESS.put(PUMP_FLAG, "1", { expirationTtl: 300 });
 	try {
 		const deadline = Date.now() + PUMP_BUDGET_MS;
-		const users = await investRunningUsers(env);
 		for (const user of users) {
 			if (Date.now() >= deadline) break;
 			const slice = Math.min(deadline, Date.now() + USER_SLICE_MS);
