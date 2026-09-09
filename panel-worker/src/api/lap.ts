@@ -437,6 +437,42 @@ function mozMap(rows: Rec[], kind: "depo" | "wd"): Rec[] {
 	});
 }
 
+// Dari daftar rekening Mozart (accountsRaw), bangun indeks: nilai identifier
+// apa pun -> { name, bank }. Dipakai untuk melabeli transaksi dengan nama
+// pemilik rekening (mis. "BCA PENI PEBRIANI").
+function buildAccIndex(accountsRaw: unknown): Record<string, { name: string; bank: string }> {
+	const idx: Record<string, { name: string; bank: string }> = {};
+	const idKeys = [
+		"account_number", "rekening", "number", "no_rek", "phone", "phone_number", "msisdn",
+		"login", "username", "user", "id", "ID", "mbanking_id", "account_id", "assigned_to", "code",
+	];
+	const nameKeys = ["name", "account_name", "holder_name", "holder", "owner", "owner_name", "nama", "rekening_name", "label"];
+	const bankKeys = ["bank_name", "bank", "app", "bank_code", "type"];
+	const walk = (v: unknown) => {
+		if (Array.isArray(v)) {
+			for (const x of v) walk(x);
+			return;
+		}
+		if (!v || typeof v !== "object") return;
+		const o = v as Rec;
+		const name = String(nameKeys.map((k) => o[k]).find((x) => x != null && String(x).trim() !== "") || "").trim();
+		const bank = String(bankKeys.map((k) => o[k]).find((x) => x != null && String(x).trim() !== "") || "").trim().toUpperCase();
+		if (name) {
+			for (const k of idKeys) {
+				const val = o[k];
+				if (val != null && String(val).trim() !== "") idx[String(val).trim()] = { name, bank };
+			}
+		}
+		// telusuri nested
+		for (const k of Object.keys(o)) {
+			const c = o[k];
+			if (c && typeof c === "object") walk(c);
+		}
+	};
+	walk(accountsRaw);
+	return idx;
+}
+
 export async function lapMozartImport(
 	env: Env,
 	token: string,
@@ -444,10 +480,28 @@ export async function lapMozartImport(
 	endDate: string,
 	depositRows: unknown,
 	withdrawRows: unknown,
+	accountsRaw?: unknown,
 ) {
 	const s = await requireSession(env, token, { ignoreMaintenance: true });
-	const depositData = mozMap(depositRows as Rec[], "depo");
-	const withdrawData = mozMap(withdrawRows as Rec[], "wd");
+	const dRaw = Array.isArray(depositRows) ? (depositRows as Rec[]) : [];
+	const wRaw = Array.isArray(withdrawRows) ? (withdrawRows as Rec[]) : [];
+	const accIdx = buildAccIndex(accountsRaw);
+	const accLabel = (...cands: unknown[]): { name: string; bank: string } => {
+		for (const c of cands) {
+			const key = c == null ? "" : String(c).trim();
+			if (key && accIdx[key]) return accIdx[key];
+		}
+		return { name: "", bank: "" };
+	};
+	const depositData = mozMap(dRaw, "depo").map((r, i) => {
+		const a = accLabel((dRaw[i] || {}).account_number);
+		return { ...r, accName: a.name || `${r.bank} ${r.accountNumber}`.trim() };
+	});
+	const withdrawData = mozMap(wRaw, "wd").map((r, i) => {
+		const raw = (wRaw[i] || {}) as Rec;
+		const a = accLabel(raw.assigned_to, raw.bank_source, raw.account_number);
+		return { ...r, accName: a.name || String(raw.bank_source || raw.assigned_to || "-") };
+	});
 	const sum = (a: Rec[]) => a.reduce((n, x) => n + (num(x.amount) || 0), 0);
 	const summary = {
 		totalDepoRecords: depositData.length,
@@ -456,13 +510,11 @@ export async function lapMozartImport(
 		totalWdAmount: sum(withdrawData),
 		netAmount: sum(depositData) - sum(withdrawData),
 	};
-	const dRaw = Array.isArray(depositRows) ? (depositRows as Rec[]) : [];
-	const wRaw = Array.isArray(withdrawRows) ? (withdrawRows as Rec[]) : [];
 	await lapSaveResults(env, s.username, {
 		mozartDepo: depositData,
 		mozartWd: withdrawData,
-		_mozartMeta: [{ summary, source: "browser", at: `${startDate}|${endDate}` }],
-		_mozartRawSample: [{ depo: dRaw.slice(0, 3), wd: wRaw.slice(0, 3) }],
+		_mozartMeta: [{ summary, source: "browser", at: `${startDate}|${endDate}`, accounts: Object.keys(accIdx).length }],
+		_mozartRawSample: [{ depo: dRaw.slice(0, 3), wd: wRaw.slice(0, 3), accountsRaw: (accountsRaw ?? []) as unknown, accIdx }],
 	});
 	await logActivity(
 		env,
