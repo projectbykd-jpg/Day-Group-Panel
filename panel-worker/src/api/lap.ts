@@ -364,7 +364,7 @@ async function dispatchScrapeJob(env: Env, username: string, kind: "admin" | "mo
 			"User-Agent": "daygroup-panel",
 			"X-GitHub-Api-Version": "2022-11-28",
 		},
-		body: JSON.stringify({ ref: "main", inputs: { job_id: jobId, callback, key } }),
+		body: JSON.stringify({ ref: "main", inputs: { job_id: jobId, callback, key, kind } }),
 	});
 	if (resp.status !== 204) {
 		const body = await resp.text();
