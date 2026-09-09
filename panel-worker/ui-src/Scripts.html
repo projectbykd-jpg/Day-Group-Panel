@@ -683,8 +683,8 @@
             <input id="lapTokenMozart" placeholder="Cookie Mozart — TIDAK dipakai lagi (pakai skrip di menu Lap Mozart)" value="${(c.tokenMozart||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
           </div>
           <div>
-            <label class="text-[10px] font-bold text-slate-400 uppercase">Nama Rekening Mozart <span class="text-slate-500 normal-case">— untuk tabel Bank Deposit / Bank Withdraw. 1 baris = <code>nomor/id = Nama Pemilik</code></span></label>
-            <textarea id="lapMozartAccounts" rows="4" placeholder="6822057825 = BCA PENI PEBRIANI&#10;384901047325533 = BRI AJIS ABDUL M TOPIK&#10;2059553011 = BRI AJIS ABDUL M TOPIK" class="w-full mt-1 glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100 font-mono leading-relaxed">${(c.mozartAccounts||'').replace(/</g,'&lt;')}</textarea>
+            <label class="text-[10px] font-bold text-slate-400 uppercase">Nama Rekening / Panel Mozart <span class="text-slate-500 normal-case">— 1 baris = <code>nomor/id = Nama</code>. Untuk panel pakai <code>panel:&lt;id&gt; = NAMA</code></span></label>
+            <textarea id="lapMozartAccounts" rows="5" placeholder="6822057825 = BCA PENI PEBRIANI&#10;384901047325533 = BRI AJIS ABDUL M TOPIK&#10;2059553011 = BRI AJIS ABDUL M TOPIK&#10;panel:4 = HUGOTOGEL&#10;panel:2 = FOLATOTO" class="w-full mt-1 glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100 font-mono leading-relaxed">${(c.mozartAccounts||'').replace(/</g,'&lt;')}</textarea>
           </div>
           <button id="lapSaveBtn" onclick="lapSaveSetting()" class="bg-gradient-to-r from-emerald-400 to-teal-500 text-slate-950 font-extrabold py-2.5 rounded-xl text-xs mt-1"><i class="fa-solid fa-floppy-disk mr-2"></i>SIMPAN KONFIGURASI</button>
           <span id="lapSaveStatus" class="text-[11px] text-slate-400"></span>
@@ -781,10 +781,11 @@
         + "  const wd=await pull('/api/wd/fetchWithdrawal',{panel_id:0,start_date:sd,end_date:ed,filter_by:{minimum_amount:0}});\n"
         + "  const tryEP=async(m,path,body)=>{try{const o={method:m,credentials:'include',headers:{'content-type':'application/json'}};if(m==='POST')o.body=JSON.stringify(body||{});const r=await fetch(O+path,o);if(!r.ok)return null;const j=await r.json();return {path,data:j};}catch(e){return null;}};\n"
         + "  const seen=performance.getEntriesByType('resource').map(e=>e.name).filter(u=>u.indexOf(O)===0&&/bank|account|rekening|mbank|panel/i.test(u)).map(u=>u.slice(O.length).split('?')[0]);\n"
-        + "  const accCand=['/api/bank/fetchBank','/api/bank-account/fetchBankAccount','/api/account/fetchAccount','/api/mbanking/fetchMbanking','/api/bank/fetch','/api/panel/fetchPanel','/api/bank','/api/account'];\n"
+        + "  const accCand=['/api/bank/fetchBank','/api/bank-account/fetchBankAccount','/api/account/fetchAccount','/api/mbanking/fetchMbanking','/api/bank/fetch','/api/panel/fetchPanel','/api/panel/fetch','/api/panel','/api/bank','/api/account'];\n"
         + "  const paths=[...new Set([...seen,...accCand])];\n"
-        + "  const accountsRaw=[]; for(const p of paths){const g=await tryEP('POST',p,{})||await tryEP('GET',p); if(g&&g.data){accountsRaw.push(g); console.log('  akun ok:',p);}}\n"
-        + "  const x=await fetch(PANEL+'/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'lapMozartImport',token:TOKEN,startDate:sd,endDate:ed,depositRows:dep,withdrawRows:wd,accountsRaw:accountsRaw})});\n"
+        + "  const accountsRaw=[]; for(const p of paths){const g=await tryEP('POST',p,{})||await tryEP('GET',p); if(g&&g.data){accountsRaw.push(g); console.log('  meta ok:',p);}}\n"
+        + "  const panelsRaw=[]; for(const p of ['/api/panel/fetchPanel','/api/panel/fetch','/api/panel','/api/panels','/api/panel/list']){const g=await tryEP('POST',p,{})||await tryEP('GET',p); if(g&&g.data){panelsRaw.push(g); console.log('  panel ok:',p);}}\n"
+        + "  const x=await fetch(PANEL+'/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'lapMozartImport',token:TOKEN,startDate:sd,endDate:ed,depositRows:dep,withdrawRows:wd,accountsRaw:accountsRaw,panelsRaw:panelsRaw})});\n"
         + "  const jr=await x.json(); console.log(jr);\n"
         + "  alert(jr.success?('Mozart terkirim ke panel OK\\nDP '+jr.deposit+' / WD '+jr.withdraw+'\\n\\nBuka panel -> Lap Mozart -> Muat Ulang.'):('Gagal: '+(jr.message||'?')));\n"
         + "})();";
@@ -797,10 +798,21 @@
         if (ta) { ta.focus(); ta.select(); try { document.execCommand('copy'); done(); } catch(e){ toast('Salin manual dari kotak di bawah'); } }
       });
     }
+    let lapMozPanel = 'SEMUA';
+    window.lapSetMozPanel = (p) => { lapMozPanel = p; renderLapPage('lap-mozart'); };
     function lapRenderMozart(host) {
       const meta = (lapResults._mozartMeta && lapResults._mozartMeta[0]) || {};
       const sm = meta.summary || {};
-      const dp = lapResults.mozartDepo || [], wd = lapResults.mozartWd || [];
+      const dpAll = lapResults.mozartDepo || [], wdAll = lapResults.mozartWd || [];
+      const panelNames = [...new Set(dpAll.concat(wdAll).map(r => r.panel).filter(p => p && p !== '-'))].sort();
+      if (lapMozPanel !== 'SEMUA' && !panelNames.includes(lapMozPanel)) lapMozPanel = 'SEMUA';
+      const keep = r => lapMozPanel === 'SEMUA' || r.panel === lapMozPanel;
+      const dp = dpAll.filter(keep), wd = wdAll.filter(keep);
+      const panelBar = panelNames.length > 1 ? `
+        <div class="flex flex-wrap items-center gap-1.5 mt-3">
+          <span class="text-[10px] font-bold text-slate-500 uppercase mr-1">Panel:</span>
+          ${['SEMUA', ...panelNames].map(p => `<button onclick="lapSetMozPanel('${p.replace(/'/g,"\\'")}')" class="lap-chip ${lapMozPanel===p?'on':''}">${p}</button>`).join('')}
+        </div>` : '';
       const dpBot = dp.filter(r => r.statusRaw === 'done' && r.doneBy === 'BOT');
       const wdOk = wd.filter(r => r.approved);
       const dpBotSum = dpBot.reduce((n,r) => n + Number(r.amount||0), 0);
@@ -829,6 +841,7 @@
         </div>
         <div id="lapMozartProgress" class="text-[11px] text-cyan-300 mt-1"></div>
         ${meta.truncated ? '<div class="text-[11px] text-amber-300 mt-1">⚠ Data terpotong.</div>' : ''}
+        ${panelBar}
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3">
           ${lapStatCard('DP Done By Bot', lapFmt(dpBot.length), 'text-emerald-400')}
           ${lapStatCard('Nominal DP Bot', lapFmt(dpBotSum), 'text-emerald-400')}

@@ -61,7 +61,7 @@ const ARG_MAP = {
 	lapRunMotion: ["token", "startDate", "endDate"],
 	lapRunMozart: ["token", "startDate", "endDate", "opts"],
 	lapRunAdmin: ["token", "startDate", "endDate"],
-	lapMozartImport: ["token", "startDate", "endDate", "depositRows", "withdrawRows", "accountsRaw"],
+	lapMozartImport: ["token", "startDate", "endDate", "depositRows", "withdrawRows", "accountsRaw", "panelsRaw"],
 	lapAdminStatus: ["token", "jobId"],
 };
 

@@ -149,6 +149,7 @@ const ROUTES: Record<string, Handler> = {
 			(b.depositRows ?? []) as unknown[],
 			(b.withdrawRows ?? []) as unknown[],
 			b.accountsRaw ?? [],
+			b.panelsRaw ?? [],
 		),
 	lapAdminStatus: (env, b) => lapAdminStatus(env, s(b.token), s(b.jobId)),
 	// dipanggil GitHub Actions (auth via job key, bukan sesi)

@@ -417,6 +417,7 @@ function mozMap(rows: Rec[], kind: "depo" | "wd"): Rec[] {
 				status,
 				statusRaw: st,
 				doneBy,
+				panelId: String(r.panel_id ?? r.panel ?? ""),
 			};
 		}
 		const st = String(r.status || "").toLowerCase().trim();
@@ -435,6 +436,7 @@ function mozMap(rows: Rec[], kind: "depo" | "wd"): Rec[] {
 			statusRaw: st,
 			approved,
 			overridden,
+			panelId: String(r.panel_id ?? r.panel ?? ""),
 		};
 	});
 }
@@ -475,6 +477,30 @@ function buildAccIndex(accountsRaw: unknown): Record<string, { name: string; ban
 	return idx;
 }
 
+// Dari daftar panel Mozart (panelsRaw) -> { panel_id: "NAMA PANEL" }.
+function buildPanelIndex(panelsRaw: unknown): Record<string, string> {
+	const idx: Record<string, string> = {};
+	const idKeys = ["id", "ID", "panel_id", "panelId"];
+	const nameKeys = ["name", "panel_name", "panelName", "label", "title", "domain", "nama"];
+	const walk = (v: unknown) => {
+		if (Array.isArray(v)) {
+			for (const x of v) walk(x);
+			return;
+		}
+		if (!v || typeof v !== "object") return;
+		const o = v as Rec;
+		const id = idKeys.map((k) => o[k]).find((x) => x != null && String(x).trim() !== "");
+		const name = String(nameKeys.map((k) => o[k]).find((x) => x != null && String(x).trim() !== "") || "").trim();
+		if (id != null && name) idx[String(id).trim()] = name.toUpperCase();
+		for (const k of Object.keys(o)) {
+			const c = o[k];
+			if (c && typeof c === "object") walk(c);
+		}
+	};
+	walk(panelsRaw);
+	return idx;
+}
+
 export async function lapMozartImport(
 	env: Env,
 	token: string,
@@ -483,17 +509,27 @@ export async function lapMozartImport(
 	depositRows: unknown,
 	withdrawRows: unknown,
 	accountsRaw?: unknown,
+	panelsRaw?: unknown,
 ) {
 	const s = await requireSession(env, token, { ignoreMaintenance: true });
 	const dRaw = Array.isArray(depositRows) ? (depositRows as Rec[]) : [];
 	const wRaw = Array.isArray(withdrawRows) ? (withdrawRows as Rec[]) : [];
 	const accIdx = buildAccIndex(accountsRaw);
+	const panelIdx = buildPanelIndex(panelsRaw);
 	// Pemetaan manual dari Setting ("<id> = <Nama>") menimpa hasil auto.
 	const creds = await lapLoadCreds(env, s.username);
 	for (const line of String(creds.mozartAccounts || "").split(/\r?\n/)) {
 		const m = line.match(/^\s*([^=]+?)\s*=\s*(.+?)\s*$/);
-		if (m) accIdx[m[1].trim()] = { name: m[2].trim(), bank: "" };
+		if (!m) continue;
+		// baris "panel:<id> = NAMA" -> peta panel; selain itu peta rekening
+		const pm = m[1].trim().match(/^panel\s*[:=]?\s*(.+)$/i);
+		if (pm) panelIdx[pm[1].trim()] = m[2].trim().toUpperCase();
+		else accIdx[m[1].trim()] = { name: m[2].trim(), bank: "" };
 	}
+	const panelName = (id: unknown) => {
+		const k = String(id ?? "").trim();
+		return k ? panelIdx[k] || "PANEL " + k : "-";
+	};
 	const accLabel = (...cands: unknown[]): { name: string; bank: string } => {
 		for (const c of cands) {
 			const key = c == null ? "" : String(c).trim();
@@ -504,13 +540,23 @@ export async function lapMozartImport(
 	const depositData = mozMap(dRaw, "depo").map((r, i) => {
 		const acctNo = String((dRaw[i] || {}).account_number || "");
 		const a = accLabel(acctNo);
-		return { ...r, accName: a.name || `${r.bank} ${r.accountNumber}`.trim(), accKey: acctNo || r.accountNumber };
+		return {
+			...r,
+			accName: a.name || `${r.bank} ${r.accountNumber}`.trim(),
+			accKey: acctNo || r.accountNumber,
+			panel: panelName(r.panelId),
+		};
 	});
 	const withdrawData = mozMap(wRaw, "wd").map((r, i) => {
 		const raw = (wRaw[i] || {}) as Rec;
 		const a = accLabel(raw.assigned_to, raw.bank_source, raw.account_number);
 		const fallback = String(raw.assigned_to || raw.bank_source || "-").toUpperCase();
-		return { ...r, accName: a.name || fallback, accKey: String(raw.assigned_to || raw.bank_source || "-") };
+		return {
+			...r,
+			accName: a.name || fallback,
+			accKey: String(raw.assigned_to || raw.bank_source || "-"),
+			panel: panelName(r.panelId),
+		};
 	});
 	const sum = (a: Rec[]) => a.reduce((n, x) => n + (num(x.amount) || 0), 0);
 	const summary = {
@@ -523,8 +569,8 @@ export async function lapMozartImport(
 	await lapSaveResults(env, s.username, {
 		mozartDepo: depositData,
 		mozartWd: withdrawData,
-		_mozartMeta: [{ summary, source: "browser", at: `${startDate}|${endDate}`, accounts: Object.keys(accIdx).length }],
-		_mozartRawSample: [{ depo: dRaw.slice(0, 3), wd: wRaw.slice(0, 3), accountsRaw: (accountsRaw ?? []) as unknown, accIdx }],
+		_mozartMeta: [{ summary, source: "browser", at: `${startDate}|${endDate}`, accounts: Object.keys(accIdx).length, panels: panelIdx }],
+		_mozartRawSample: [{ depo: dRaw.slice(0, 3), wd: wRaw.slice(0, 3), accountsRaw: (accountsRaw ?? []) as unknown, panelsRaw: (panelsRaw ?? []) as unknown, accIdx, panelIdx }],
 	});
 	await logActivity(
 		env,
