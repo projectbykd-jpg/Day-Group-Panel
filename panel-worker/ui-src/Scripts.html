@@ -746,46 +746,61 @@
 
     // ---------- MOZART ----------
     // Cloudflare di Mozart (limatogel.makintajir.com) memblokir SEMUA IP server
-    // (Worker, GitHub Actions, Apps Script). Satu-satunya jalur: scrape dari
-    // browser CS sendiri lewat bookmarklet, lalu kirim ke panel (lapMozartImport).
-    function lapMozartBookmarklet() {
+    // (Worker, GitHub Actions, Apps Script). Bookmarklet juga gagal: CSP situs
+    // Mozart memblok javascript: -> "about:blank#blocked". Jalur yang jalan =
+    // tempel skrip di DevTools Console tab Mozart (Console bypass CSP halaman).
+    function lapMozartConsoleScript() {
       const panel = location.origin;
       const token = currentSessionToken || '';
-      const src = "void (async()=>{try{var O=location.origin;if(!/limatogel|makintajir|mozart/i.test(O)&&!confirm('Kamu tidak di situs Mozart. Lanjut?'))return;"
-        + "var f=function(d){return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)};"
-        + "var sd=prompt('Tanggal MULAI (YYYY-MM-DD)',f(new Date()));if(!sd)return;var ed=prompt('Tanggal AKHIR (YYYY-MM-DD)',sd);if(!ed)return;"
-        + "var FR=function(j){if(Array.isArray(j))return j;var b=[];for(var k in j){var v=j[k];if(Array.isArray(v)){if((v.length===0||typeof v[0]==='object')&&v.length>=b.length)b=v}else if(v&&typeof v==='object'){var n=FR(v);if(n.length>b.length)b=n}}return b};"
-        + "var pull=async function(p,bd){var rows=[];for(var i=0;i<300;i++){var r=await fetch(O+p,{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({},bd,{page_number:i,page_size:100}))});if(!r.ok){if(i===0)throw new Error(p+' HTTP '+r.status);break}var j=await r.json();var rr=FR(j);rows=rows.concat(rr);if(rr.length<100)break}return rows};"
-        + "var dep=await pull('/api/transactions/fetchTransaction',{panel_id:0,start_date:sd,end_date:ed,not_done_filter:false,filter_by:null});"
-        + "var wd=await pull('/api/wd/fetchWithdrawal',{panel_id:0,start_date:sd,end_date:ed,filter_by:{minimum_amount:0}});"
-        + "var x=await fetch('" + panel + "/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'lapMozartImport',token:'" + token + "',startDate:sd,endDate:ed,depositRows:dep,withdrawRows:wd})});"
-        + "var jr=await x.json();alert(jr.success?('Mozart terkirim ke panel OK\\nDP '+jr.deposit+' / WD '+jr.withdraw):('Gagal: '+(jr.message||'?')));}catch(e){alert('Error Mozart: '+e.message)}})();";
-      return 'javascript:' + encodeURIComponent(src);
+      return "(async()=>{\n"
+        + "  const O=location.origin, PANEL=" + JSON.stringify(panel) + ", TOKEN=" + JSON.stringify(token) + ";\n"
+        + "  if(!/limatogel|makintajir|mozart/i.test(O)){alert('Buka skrip ini di TAB MOZART, bukan di sini.');return;}\n"
+        + "  const p2=n=>('0'+n).slice(-2), td=d=>d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());\n"
+        + "  const sd=prompt('Tanggal MULAI (YYYY-MM-DD)',td(new Date())); if(!sd)return;\n"
+        + "  const ed=prompt('Tanggal AKHIR (YYYY-MM-DD)',sd); if(!ed)return;\n"
+        + "  const FR=j=>{if(Array.isArray(j))return j;let b=[];for(const k in j){const v=j[k];if(Array.isArray(v)){if((v.length===0||typeof v[0]==='object')&&v.length>=b.length)b=v;}else if(v&&typeof v==='object'){const n=FR(v);if(n.length>b.length)b=n;}}return b;};\n"
+        + "  const pull=async(path,bd)=>{const rows=[];for(let i=0;i<400;i++){const r=await fetch(O+path,{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({...bd,page_number:i,page_size:100})});if(!r.ok){if(i===0)throw new Error(path+' HTTP '+r.status);break;}const rr=FR(await r.json());rows.push(...rr);console.log(path,'hal',i,'(+'+rr.length+')');if(rr.length<100)break;}return rows;};\n"
+        + "  console.log('%cMozart: menarik deposit...','color:#0ff');\n"
+        + "  const dep=await pull('/api/transactions/fetchTransaction',{panel_id:0,start_date:sd,end_date:ed,not_done_filter:false,filter_by:null});\n"
+        + "  console.log('%cMozart: menarik withdraw...','color:#0ff');\n"
+        + "  const wd=await pull('/api/wd/fetchWithdrawal',{panel_id:0,start_date:sd,end_date:ed,filter_by:{minimum_amount:0}});\n"
+        + "  const x=await fetch(PANEL+'/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'lapMozartImport',token:TOKEN,startDate:sd,endDate:ed,depositRows:dep,withdrawRows:wd})});\n"
+        + "  const jr=await x.json(); console.log(jr);\n"
+        + "  alert(jr.success?('Mozart terkirim ke panel OK\\nDP '+jr.deposit+' / WD '+jr.withdraw+'\\n\\nBuka panel -> Lap Mozart -> Muat Ulang.'):('Gagal: '+(jr.message||'?')));\n"
+        + "})();";
     }
-    function lapMozartCopyBookmarklet() {
-      navigator.clipboard.writeText(lapMozartBookmarklet())
-        .then(() => toast('Kode bookmarklet disalin. Buat bookmark baru, tempel di kolom URL.'))
-        .catch(() => toast('Gagal menyalin'));
+    function lapMozartCopyScript() {
+      const code = lapMozartConsoleScript();
+      const done = () => toast('Skrip disalin. Buka Console di tab Mozart, tempel, Enter.');
+      navigator.clipboard.writeText(code).then(done).catch(() => {
+        const ta = document.getElementById('lapMozartCode');
+        if (ta) { ta.focus(); ta.select(); try { document.execCommand('copy'); done(); } catch(e){ toast('Salin manual dari kotak di bawah'); } }
+      });
     }
     function lapRenderMozart(host) {
       const meta = (lapResults._mozartMeta && lapResults._mozartMeta[0]) || {};
       const sm = meta.summary || {};
       const dp = lapResults.mozartDepo || [], wd = lapResults.mozartWd || [];
-      const bm = lapMozartBookmarklet();
+      const code = lapMozartConsoleScript();
       host.innerHTML = lapHeaderCard('fa-cubes-stacked', 'Lap Mozart', 'Deposit & Withdraw Mozart (m-banking)', `
         <div class="glass-inner rounded-2xl p-4 border border-amber-500/20 text-[11px] text-slate-300 leading-relaxed">
           <div class="font-bold text-amber-300 mb-1"><i class="fa-solid fa-shield-halved mr-1"></i>Mozart diproteksi Cloudflare</div>
-          Server tidak bisa menarik data Mozart (semua IP server diblokir). Tarik datanya lewat <b>browser kamu sendiri</b>:
+          Server tidak bisa menarik data Mozart (semua IP server diblokir), dan bookmarklet ditolak proteksi situs Mozart (<code>about:blank#blocked</code>).
+          Cara yang jalan — tempel skrip di <b>Console</b> tab Mozart:
           <ol class="list-decimal ml-4 mt-1.5 space-y-1">
-            <li>Seret tombol <b>“↯ Ambil Mozart”</b> di bawah ke <b>bookmarks bar</b> browser (atau klik <b>Salin Kode</b> lalu buat bookmark baru & tempel di kolom URL).</li>
-            <li>Buka tab <b>Mozart</b> (limatogel...) dan pastikan sudah login.</li>
-            <li>Klik bookmark itu → isi tanggal → tunggu sampai muncul “terkirim ke panel OK”.</li>
-            <li>Kembali ke sini, klik <b>Muat Ulang</b>.</li>
+            <li>Klik <b>Salin Skrip</b> di bawah.</li>
+            <li>Buka tab <b>Mozart</b> (limatogel...), pastikan sudah login.</li>
+            <li>Tekan <b>F12</b> → tab <b>Console</b>. (Pertama kali Chrome minta ketik <code>allow pasting</code> lalu Enter.)</li>
+            <li>Tempel (Ctrl+V) → <b>Enter</b> → isi tanggal → tunggu muncul “terkirim ke panel OK”.</li>
+            <li>Balik ke sini → <b>Muat Ulang</b>.</li>
           </ol>
           <div class="flex flex-wrap gap-2 mt-3">
-            <a href="${bm.replace(/"/g,'&quot;')}" onclick="return false" class="bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs cursor-move" title="Seret ke bookmarks bar">↯ Ambil Mozart</a>
-            <button onclick="lapMozartCopyBookmarklet()" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-regular fa-copy mr-1"></i>Salin Kode</button>
+            <button onclick="lapMozartCopyScript()" class="bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs"><i class="fa-regular fa-copy mr-1"></i>Salin Skrip</button>
             <button onclick="renderLapPage('lap-mozart')" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-solid fa-rotate mr-1"></i>Muat Ulang</button>
+            <button onclick="document.getElementById('lapMozartCodeWrap').hidden=!document.getElementById('lapMozartCodeWrap').hidden" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-solid fa-code mr-1"></i>Lihat Skrip</button>
+          </div>
+          <div id="lapMozartCodeWrap" hidden class="mt-2">
+            <textarea id="lapMozartCode" readonly onclick="this.select()" class="w-full h-40 glass-inner rounded-xl p-2 text-[10px] font-mono text-slate-200 leading-tight">${code.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</textarea>
           </div>
         </div>
         <div id="lapMozartProgress" class="text-[11px] text-cyan-300 mt-1"></div>
