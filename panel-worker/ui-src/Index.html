@@ -70,13 +70,13 @@
     <!-- LEFT SIDEBAR -->
     <div class="w-full lg:w-64 glass-card rounded-3xl p-4 sm:p-5 flex flex-row lg:flex-col justify-between shrink-0 z-30 lg:sticky lg:top-3 lg:self-start lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto sidebar-frozen">
       <div class="flex flex-row lg:flex-col items-center lg:items-stretch gap-4 w-full">
-        <div class="flex items-center gap-3.5 px-2 py-2 border-b border-white/5 w-full">
-          <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-500/20 to-blue-500/20 p-1 border border-cyan-500/40 flex items-center justify-center shrink-0 shadow-lg shadow-cyan-500/20">
+        <div class="flex items-center gap-3 px-1.5 pb-3.5 mb-1 border-b border-white/[0.06] w-full">
+          <div class="w-11 h-11 rounded-xl bg-white/[0.04] p-1.5 border border-white/10 flex items-center justify-center shrink-0">
             <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhYjE6BX7rI2uk1VjMLC-V4XRzRB7Eb4-ygwD5bmFHQP-kRyWpYk4STrRJkQ0L7M_CHVgWSaDoZz_ed3n0IABdVWiUP5jUqOrydIHopOKAVkBcoFVWvu-IqRRqXZvK9OdeJgMP730ITqRRjg8hZqIdXkkalsjWjebwKse2848SecaMSIF8uaXFUxvcsAkCP/s96/ChatGPT%20Image%20Jun%2010,%202026,%2001_13_08%20PM.png" width="32" height="32" decoding="async" referrerpolicy="no-referrer" alt="Day-Group" class="w-8 h-8 object-contain">
           </div>
           <div class="hidden lg:block overflow-hidden">
-            <h3 class="text-xs font-extrabold text-white tracking-wider truncate">DAY-GROUP</h3>
-            <p class="text-[9px] text-cyan-400 font-bold tracking-[0.2em] mt-0.5">PANEL</p>
+            <h3 class="text-[13px] font-extrabold text-white tracking-wide truncate leading-tight">DAY-GROUP</h3>
+            <p class="text-[9px] text-slate-400 font-bold tracking-[0.22em] mt-0.5">PANEL</p>
           </div>
         </div>
 
@@ -155,33 +155,31 @@
       </div>
 
       <!-- HEADER CONTAINER (dibekukan saat scroll) -->
-      <div class="w-full glass-card rounded-3xl p-4 sm:p-5 flex flex-col xl:flex-row justify-between items-center gap-4 relative overflow-hidden sticky top-2 z-40 header-frozen">
-        <div class="absolute -top-16 -left-16 w-48 h-48 bg-cyan-500/10 blur-[60px] rounded-full pointer-events-none"></div>
-        
-        <div class="flex items-center gap-4 z-10 w-full xl:w-auto">
-          <div class="w-full">
-            <p id="headerKicker" class="text-[11px] text-cyan-400/80 font-bold tracking-widest mb-2">DAY-GROUP PANEL · RESULT HARI INI</p>
-            <div id="headerSummary" class="header-stat-strip">
-              <span class="header-stat"><span class="skeleton-bar" style="width:74px"></span></span>
-              <span class="header-stat"><span class="skeleton-bar" style="width:62px"></span></span>
-              <span class="header-stat"><span class="skeleton-bar" style="width:88px"></span></span>
-            </div>
+      <div class="w-full glass-card rounded-3xl p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 relative overflow-hidden sticky top-2 z-40 header-frozen">
+        <div class="absolute -top-24 -left-20 w-52 h-52 bg-cyan-500/[0.05] blur-[70px] rounded-full pointer-events-none"></div>
+
+        <div class="z-10 w-full lg:w-auto min-w-0">
+          <p id="headerKicker" class="text-[10px] text-slate-400 font-bold uppercase tracking-[0.16em] mb-2">DAY-GROUP PANEL · RESULT HARI INI</p>
+          <div id="headerSummary" class="header-stat-strip">
+            <span class="header-stat"><span class="skeleton-bar" style="width:74px"></span></span>
+            <span class="header-stat"><span class="skeleton-bar" style="width:62px"></span></span>
+            <span class="header-stat"><span class="skeleton-bar" style="width:88px"></span></span>
           </div>
         </div>
 
-        <div id="market-wrapper" class="z-10 w-full xl:w-auto flex justify-center">
-          <div id="market-container" class="glass-inner px-8 py-3 rounded-2xl text-center border-cyan-500/30 shadow-xl min-w-[220px]">
-            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Pasaran Aktif</div>
-            <div id="market" class="text-base sm:text-lg font-extrabold text-white tracking-widest mt-0.5">-</div>
+        <div id="market-wrapper" class="z-10 w-full lg:w-auto flex lg:justify-center">
+          <div id="market-container" class="glass-inner px-7 py-2.5 rounded-2xl text-center border border-white/[0.07] min-w-[210px]">
+            <div class="text-[9px] font-bold text-slate-400 uppercase tracking-[0.2em]">Pasaran Aktif</div>
+            <div id="market" class="text-base sm:text-lg font-extrabold text-white tracking-[0.15em] mt-1">-</div>
           </div>
         </div>
 
-        <div class="flex items-center gap-3.5 z-10 w-full xl:w-auto justify-between xl:justify-end">
-          <div class="text-center xl:text-right glass-inner px-5 py-2.5 rounded-2xl border-white/5 min-w-[130px]">
+        <div class="flex items-center gap-3 z-10 w-full lg:w-auto justify-between lg:justify-end">
+          <div class="text-center lg:text-right glass-inner px-4 py-2 rounded-2xl border border-white/[0.06] min-w-[128px]">
             <div id="live-clock" class="text-sm sm:text-base font-bold font-mono tracking-wider neon-pink">00:00:00</div>
             <div id="live-date" class="text-[10px] text-slate-400 font-semibold mt-0.5">LOADING...</div>
           </div>
-          <button onclick="handleLogout()" class="bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 font-bold text-xs px-4 py-3.5 rounded-2xl transition-all active:scale-95 shadow-md flex items-center gap-2 cursor-pointer" title="Log Out">
+          <button onclick="handleLogout()" class="bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/25 font-bold text-xs px-4 py-3 rounded-2xl transition-all active:scale-95 flex items-center gap-2 cursor-pointer" title="Log Out">
             <i class="fa-solid fa-power-off"></i> <span class="hidden sm:inline">Keluar</span>
           </button>
         </div>

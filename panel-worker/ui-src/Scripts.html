@@ -524,9 +524,9 @@
 
     function lapHeaderCard(icon, title, sub, inner) {
       return `<div class="glass-card rounded-3xl p-5 sm:p-6 flex flex-col gap-4">
-        <div class="flex items-center gap-3 border-b border-white/5 pb-3">
-          <div class="w-11 h-11 rounded-2xl bg-sky-500/12 border border-sky-500/25 flex items-center justify-center text-sky-300 text-lg"><i class="fa-solid ${icon}"></i></div>
-          <div><h2 class="text-lg font-black text-white">${title}</h2><p class="text-[11px] text-slate-400">${sub}</p></div>
+        <div class="flex items-center gap-3.5 border-b border-white/[0.06] pb-4">
+          <div class="w-10 h-10 rounded-xl bg-white/[0.04] border border-white/10 flex items-center justify-center text-sky-300 text-base shrink-0"><i class="fa-solid ${icon}"></i></div>
+          <div class="min-w-0"><h2 class="text-base font-extrabold text-white tracking-tight leading-tight">${title}</h2><p class="text-[11px] text-slate-400 mt-0.5">${sub}</p></div>
         </div>${inner}</div>`;
     }
 
@@ -577,7 +577,7 @@
       if (s) s.textContent = msg || '';
     }
     function lapStatCard(label, val, color) {
-      return `<div class="glass-inner rounded-2xl p-3.5"><div class="text-[10px] font-bold text-slate-400 uppercase">${label}</div><div class="text-lg font-black mt-1 ${color||'text-slate-50'}">${val}</div></div>`;
+      return `<div class="glass-inner rounded-2xl p-3.5 border border-white/[0.05]"><div class="text-[9.5px] font-bold text-slate-400 uppercase tracking-[0.1em]">${label}</div><div class="text-[19px] font-black mt-1.5 tabular-nums ${color||'text-slate-50'}">${val}</div></div>`;
     }
 
     // Tabel collapsible + search bawaan. rows = array; rowFn(r,i)->'<tr>...'; copyFn(r,i)->string;
