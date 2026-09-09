@@ -669,8 +669,8 @@
             <input id="lapTokenMotion" placeholder="Token Motion (x-access-token)" value="${(c.tokenMotion||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
           </div>
           <div class="grid sm:grid-cols-2 gap-3">
-            <input id="lapLinkMozart" placeholder="Link Mozart" value="${(c.linkMozart||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
-            <input id="lapTokenMozart" placeholder="Cookie Mozart (atoken=... atau full cookie)" value="${(c.tokenMozart||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
+            <input id="lapLinkMozart" placeholder="Link Mozart (opsional)" value="${(c.linkMozart||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
+            <input id="lapTokenMozart" placeholder="Cookie Mozart — TIDAK dipakai lagi (pakai bookmarklet di menu Lap Mozart)" value="${(c.tokenMozart||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
           </div>
           <button id="lapSaveBtn" onclick="lapSaveSetting()" class="bg-gradient-to-r from-emerald-400 to-teal-500 text-slate-950 font-extrabold py-2.5 rounded-xl text-xs mt-1"><i class="fa-solid fa-floppy-disk mr-2"></i>SIMPAN KONFIGURASI</button>
           <span id="lapSaveStatus" class="text-[11px] text-slate-400"></span>
@@ -745,12 +745,49 @@
     }
 
     // ---------- MOZART ----------
+    // Cloudflare di Mozart (limatogel.makintajir.com) memblokir SEMUA IP server
+    // (Worker, GitHub Actions, Apps Script). Satu-satunya jalur: scrape dari
+    // browser CS sendiri lewat bookmarklet, lalu kirim ke panel (lapMozartImport).
+    function lapMozartBookmarklet() {
+      const panel = location.origin;
+      const token = currentSessionToken || '';
+      const src = "(async()=>{try{var O=location.origin;if(!/limatogel|makintajir|mozart/i.test(O)&&!confirm('Kamu tidak di situs Mozart. Lanjut?'))return;"
+        + "var f=function(d){return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)};"
+        + "var sd=prompt('Tanggal MULAI (YYYY-MM-DD)',f(new Date()));if(!sd)return;var ed=prompt('Tanggal AKHIR (YYYY-MM-DD)',sd);if(!ed)return;"
+        + "var FR=function(j){if(Array.isArray(j))return j;var b=[];for(var k in j){var v=j[k];if(Array.isArray(v)){if((v.length===0||typeof v[0]==='object')&&v.length>=b.length)b=v}else if(v&&typeof v==='object'){var n=FR(v);if(n.length>b.length)b=n}}return b};"
+        + "var pull=async function(p,bd){var rows=[];for(var i=0;i<300;i++){var r=await fetch(O+p,{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({},bd,{page_number:i,page_size:100}))});if(!r.ok){if(i===0)throw new Error(p+' HTTP '+r.status);break}var j=await r.json();var rr=FR(j);rows=rows.concat(rr);if(rr.length<100)break}return rows};"
+        + "var dep=await pull('/api/transactions/fetchTransaction',{panel_id:0,start_date:sd,end_date:ed,not_done_filter:false,filter_by:null});"
+        + "var wd=await pull('/api/wd/fetchWithdrawal',{panel_id:0,start_date:sd,end_date:ed,filter_by:{minimum_amount:0}});"
+        + "var x=await fetch('" + panel + "/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'lapMozartImport',token:'" + token + "',startDate:sd,endDate:ed,depositRows:dep,withdrawRows:wd})});"
+        + "var jr=await x.json();alert(jr.success?('Mozart terkirim ke panel OK\\nDP '+jr.deposit+' / WD '+jr.withdraw):('Gagal: '+(jr.message||'?')));}catch(e){alert('Error Mozart: '+e.message)}})();";
+      return 'javascript:' + encodeURIComponent(src);
+    }
+    function lapMozartCopyBookmarklet() {
+      navigator.clipboard.writeText(lapMozartBookmarklet())
+        .then(() => toast('Kode bookmarklet disalin. Buat bookmark baru, tempel di kolom URL.'))
+        .catch(() => toast('Gagal menyalin'));
+    }
     function lapRenderMozart(host) {
       const meta = (lapResults._mozartMeta && lapResults._mozartMeta[0]) || {};
       const sm = meta.summary || {};
       const dp = lapResults.mozartDepo || [], wd = lapResults.mozartWd || [];
+      const bm = lapMozartBookmarklet();
       host.innerHTML = lapHeaderCard('fa-cubes-stacked', 'Lap Mozart', 'Deposit & Withdraw Mozart (m-banking)', `
-        ${lapDateBar('lapMozart', lapRunMozart)}
+        <div class="glass-inner rounded-2xl p-4 border border-amber-500/20 text-[11px] text-slate-300 leading-relaxed">
+          <div class="font-bold text-amber-300 mb-1"><i class="fa-solid fa-shield-halved mr-1"></i>Mozart diproteksi Cloudflare</div>
+          Server tidak bisa menarik data Mozart (semua IP server diblokir). Tarik datanya lewat <b>browser kamu sendiri</b>:
+          <ol class="list-decimal ml-4 mt-1.5 space-y-1">
+            <li>Seret tombol <b>“↯ Ambil Mozart”</b> di bawah ke <b>bookmarks bar</b> browser (atau klik <b>Salin Kode</b> lalu buat bookmark baru & tempel di kolom URL).</li>
+            <li>Buka tab <b>Mozart</b> (limatogel...) dan pastikan sudah login.</li>
+            <li>Klik bookmark itu → isi tanggal → tunggu sampai muncul “terkirim ke panel OK”.</li>
+            <li>Kembali ke sini, klik <b>Muat Ulang</b>.</li>
+          </ol>
+          <div class="flex flex-wrap gap-2 mt-3">
+            <a href="${bm.replace(/"/g,'&quot;')}" onclick="return false" class="bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs cursor-move" title="Seret ke bookmarks bar">↯ Ambil Mozart</a>
+            <button onclick="lapMozartCopyBookmarklet()" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-regular fa-copy mr-1"></i>Salin Kode</button>
+            <button onclick="renderLapPage('lap-mozart')" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-solid fa-rotate mr-1"></i>Muat Ulang</button>
+          </div>
+        </div>
         <div id="lapMozartProgress" class="text-[11px] text-cyan-300 mt-1"></div>
         ${meta.truncated ? '<div class="text-[11px] text-amber-300 mt-1">⚠ Data terpotong.</div>' : ''}
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3">
@@ -767,27 +804,6 @@
             r => `<tr>${td(r.date)}${td(r.username,'font-bold text-rose-300')}${td(r.name)}${td(r.bank,'uppercase text-[10px]')}${td(r.accountNumber,'text-[10px]')}${td(lapFmt(r.amount),'text-right text-rose-400')}${td(r.status,'text-center uppercase text-[10px]')}</tr>`,
             r => [r.username, r.amount].join('\t'), ['username','name','bank','accountNumber'], {title:'Mozart Withdraw'})}
         </div>`);
-    }
-    function lapRunMozart() {
-      lapEnsureConfig(() => {
-        if (!lapConfig || !lapConfig.tokenMozart) { toast('Isi Cookie Mozart di menu Setting dulu'); switchPage('lap-setting'); return; }
-        const sd = lapDateVal('lapMozartStart'), ed = lapDateVal('lapMozartEnd');
-        if (!sd || !ed) { toast('Pilih tanggal'); return; }
-        lapBusy('lapMozart', true, 'Menghubungi Mozart (via Apps Script)...');
-        const prog = document.getElementById('lapMozartProgress');
-        if (prog) prog.textContent = '⚙️ Menarik data Mozart... (~15-30 detik)';
-        google.script.run.withSuccessHandler(res => {
-          lapBusy('lapMozart', false, '');
-          if (prog) prog.textContent = '';
-          if (!res || !res.success) { toast((res && res.message) || 'Gagal'); return; }
-          lapResults.mozartDepo = res.depositData || [];
-          lapResults.mozartWd = res.withdrawData || [];
-          lapResults._mozartMeta = [{ summary: res.summary || {} }];
-          renderLapPage('lap-mozart');
-          toast('Mozart: DP ' + lapResults.mozartDepo.length + ' · WD ' + lapResults.mozartWd.length);
-        }).withFailureHandler(e => { lapBusy('lapMozart', false, ''); if (prog) prog.textContent = ''; toast((e && e.message) || 'Gagal'); })
-          .lapRunMozart(currentSessionToken, sd, ed, {});
-      });
     }
 
     // ---------- ADMIN (via GitHub Actions) ----------

@@ -373,6 +373,71 @@ export async function lapRunMozart(
 	return { success: true, depositData, withdrawData, summary };
 }
 
+// --- Impor Mozart dari browser user (bookmarklet) ------------------------
+// Cloudflare Mozart blok SEMUA IP non-residensial (Worker/GitHub/Apps Script).
+// Jalan terakhir: user jalankan bookmarklet di tab Mozart mereka -> fetch API
+// same-origin (punya cf_clearance) -> kirim baris mentah ke sini.
+function mozMap(rows: Rec[], kind: "depo" | "wd"): Rec[] {
+	const g = (r: Rec, keys: string[], fb: unknown): unknown => {
+		for (const k of keys) {
+			const v = r[k];
+			if (v !== undefined && v !== null && String(v).trim() !== "") return v;
+		}
+		return fb;
+	};
+	return (Array.isArray(rows) ? rows : []).map((r) => {
+		const cust = (r.customer as Rec) || {};
+		const base = {
+			date: String(g(r, ["created_at", "date", "transaction_date", "trx_date", "waktu", "time"], "-")),
+			username: String(g(r, ["username", "user", "player", "user_id", "nama_user"], "-")),
+			name: String(g(r, ["name", "sender_name", "recipient", "recipient_name", "nama", "account_name"], "-")),
+			amount: num(g(r, ["amount", "nominal", "jumlah", "net_amount"], 0)),
+			accountNumber: String(
+				g(r, ["account_number", "rekening", "bank_account", "no_rek"], cust.bank_account_number || "-"),
+			),
+			status: String(g(r, ["status", "status_description", "state", "transaction_status"], kind === "depo" ? "SUCCESS" : "-")),
+		};
+		return kind === "depo"
+			? { ...base, bank: String(g(r, ["bank", "bank_name", "bank_code", "app"], cust.bank_name || "-")) }
+			: { ...base, bank: String(g(r, ["destination", "bank", "bank_name", "bank_code", "app", "to_bank"], cust.bank_name || "-")) };
+	});
+}
+
+export async function lapMozartImport(
+	env: Env,
+	token: string,
+	startDate: string,
+	endDate: string,
+	depositRows: unknown,
+	withdrawRows: unknown,
+) {
+	const s = await requireSession(env, token, { ignoreMaintenance: true });
+	const depositData = mozMap(depositRows as Rec[], "depo");
+	const withdrawData = mozMap(withdrawRows as Rec[], "wd");
+	const sum = (a: Rec[]) => a.reduce((n, x) => n + (num(x.amount) || 0), 0);
+	const summary = {
+		totalDepoRecords: depositData.length,
+		totalDepoAmount: sum(depositData),
+		totalWdRecords: withdrawData.length,
+		totalWdAmount: sum(withdrawData),
+		netAmount: sum(depositData) - sum(withdrawData),
+	};
+	await lapSaveResults(env, s.username, {
+		mozartDepo: depositData,
+		mozartWd: withdrawData,
+		_mozartMeta: [{ summary, source: "browser", at: `${startDate}|${endDate}` }],
+	});
+	await logActivity(
+		env,
+		s.username,
+		"LAP MOZART",
+		`Impor browser ${startDate}..${endDate} — DP ${depositData.length}, WD ${withdrawData.length}`,
+		"BERHASIL",
+		"",
+	);
+	return { success: true, summary, deposit: depositData.length, withdraw: withdrawData.length };
+}
+
 // =========================================================================
 // LAP ADMIN â€” via GitHub Actions (scraper berat)
 // =========================================================================

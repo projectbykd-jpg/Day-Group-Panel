@@ -1,7 +1,7 @@
 // Day-Group Panel — Cloudflare Worker (port dari Apps Script).
 // Semua panggilan frontend lama google.script.run.<fn>(...) dipetakan ke
 // POST /api  body: { "action": "<fn>", ...args }
-import { json } from "./lib/respond";
+import { CORS_HEADERS, json } from "./lib/respond";
 import { checkLogin, logout, resumeSession } from "./api/auth";
 import { getBootstrapData, getDashboard } from "./api/dashboard";
 import { logClientActivity } from "./api/activity";
@@ -46,6 +46,7 @@ import {
 	lapGetConfig,
 	lapJobResult,
 	lapJobStart,
+	lapMozartImport,
 	lapRunAdmin,
 	lapRunMotion,
 	lapRunMozart,
@@ -139,6 +140,15 @@ const ROUTES: Record<string, Handler> = {
 	lapRunMozart: (env, b) =>
 		lapRunMozart(env, s(b.token), s(b.startDate), s(b.endDate), (b.opts ?? {}) as { depo?: boolean; wd?: boolean; panelId?: number }),
 	lapRunAdmin: (env, b) => lapRunAdmin(env, s(b.token), s(b.startDate), s(b.endDate)),
+	lapMozartImport: (env, b) =>
+		lapMozartImport(
+			env,
+			s(b.token),
+			s(b.startDate),
+			s(b.endDate),
+			(b.depositRows ?? []) as unknown[],
+			(b.withdrawRows ?? []) as unknown[],
+		),
 	lapAdminStatus: (env, b) => lapAdminStatus(env, s(b.token), s(b.jobId)),
 	// dipanggil GitHub Actions (auth via job key, bukan sesi)
 	lapJobStart: (env, b) => lapJobStart(env, s(b.jobId), s(b.key)),
@@ -156,6 +166,10 @@ const ROUTES: Record<string, Handler> = {
 export default {
 	async fetch(request, env): Promise<Response> {
 		const url = new URL(request.url);
+
+		if (request.method === "OPTIONS" && url.pathname === "/api") {
+			return new Response(null, { status: 204, headers: CORS_HEADERS });
+		}
 
 		if (request.method === "POST" && url.pathname === "/api") {
 			let body: Record<string, unknown> = {};
