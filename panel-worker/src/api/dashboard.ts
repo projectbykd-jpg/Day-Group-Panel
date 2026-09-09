@@ -26,7 +26,7 @@ export async function getBootstrapData(env: Env, token: string) {
 		out.dashboard = await getDashboardData(
 			env,
 			session.profile,
-			normalizeDashOptions({ page: 1, pageSize: 5 }),
+			normalizeDashOptions({ page: 1, pageSize: 5, facets: true }),
 		);
 	} catch (e) {
 		out.errors.dashboard = e instanceof Error ? e.message : String(e);

@@ -303,7 +303,7 @@
       google.script.run
         .withSuccessHandler(data => { renderHeaderSummary(box, data); headerSummaryLoadedOnce = true; })
         .withFailureHandler(() => { if (box) box.innerHTML = '<span class="header-stat"><span class="header-stat-dot bad"></span>Gagal memuat ringkasan</span>'; })
-        .getDashboardData(currentSessionToken, { page: 1, pageSize: 1 });
+        .getDashboardData(currentSessionToken, { page: 1, pageSize: 1, facets: false });
     }
 
     window.addEventListener("DOMContentLoaded", () => {
@@ -2521,7 +2521,7 @@
       body.innerHTML = row.repeat(count || 6);
     }
 
-    function getActivityRequest(mode) {
+    function getActivityRequest(mode, withFacets) {
       const state = activityViews[mode] || activityViews.activity;
       const value = suffix => {
         const el = document.getElementById(activityId(mode, suffix));
@@ -2537,13 +2537,16 @@
         status: value('StatusFilter'),
         source: value('SourceFilter') || 'ALL',
         dateFrom: value('DateFrom'),
-        dateTo: value('DateTo')
+        dateTo: value('DateTo'),
+        // filterOptions (DISTINCT full-scan D1) hanya saat load manual, bukan auto-refresh
+        facets: !!withFacets
       };
     }
 
     function fillActivitySelect(id, placeholder, values) {
       const select = document.getElementById(id);
       if (!select) return;
+      if (values == null) return; // auto-refresh tanpa facets -> pertahankan opsi lama
       const current = select.value;
       const options = [`<option value="">${escapeHtml(placeholder)}</option>`]
         .concat((values || []).map(value => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`));
@@ -2625,10 +2628,10 @@
       }
       updateActivityMeta(mode, data);
 
-      const options = data.filterOptions || {};
-      fillActivitySelect(activityId(mode, 'UserFilter'), 'Semua User', options.usernames);
-      fillActivitySelect(activityId(mode, 'ActionFilter'), 'Semua Aksi', options.actions);
-      fillActivitySelect(activityId(mode, 'StatusFilter'), 'Semua Status', options.statuses);
+      const options = data.filterOptions || null;
+      fillActivitySelect(activityId(mode, 'UserFilter'), 'Semua User', options && options.usernames);
+      fillActivitySelect(activityId(mode, 'ActionFilter'), 'Semua Aksi', options && options.actions);
+      fillActivitySelect(activityId(mode, 'StatusFilter'), 'Semua Status', options && options.statuses);
 
       if (data.role === 'ADMIN') {
         const maintenance = data.maintenance || {enabled:false,message:''};
@@ -2706,7 +2709,7 @@
           }
           toast(message);
         })
-        .getDashboardData(currentSessionToken, getActivityRequest(mode));
+        .getDashboardData(currentSessionToken, getActivityRequest(mode, true));
     }
 
     function runActivityBackupNow() {

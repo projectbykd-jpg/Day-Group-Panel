@@ -13,6 +13,7 @@ export interface DashOptions {
 	status: string;
 	dateFrom: string; // yyyy-MM-dd
 	dateTo: string; // yyyy-MM-dd
+	facets: boolean; // hitung filterOptions (DISTINCT full-scan). false utk auto-refresh.
 }
 
 export function normalizeDashOptions(raw: unknown): DashOptions {
@@ -26,6 +27,7 @@ export function normalizeDashOptions(raw: unknown): DashOptions {
 			status: "",
 			dateFrom: "",
 			dateTo: "",
+			facets: true,
 		};
 	}
 	const v = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -38,6 +40,40 @@ export function normalizeDashOptions(raw: unknown): DashOptions {
 		status: String(v.status ?? "").trim(),
 		dateFrom: String(v.dateFrom ?? "").trim(),
 		dateTo: String(v.dateTo ?? "").trim(),
+		facets: v.facets !== false,
+	};
+}
+
+// Ringkasan aktivitas untuk header/poll — SATU query agregat (bukan 5 full-scan
+// seperti getDashboardData). Dipakai live-poll tiap 15 dtk supaya tidak
+// menghabiskan kuota "rows read" D1 (5 juta/hari di paket Free).
+export async function getActivitySummary(env: Env, profile: UserProfile) {
+	const isAdmin = profile.role === "ADMIN";
+	const today = dateKeyNow();
+	const scope = isAdmin ? "substr(ts,1,10) = ?" : "substr(ts,1,10) = ? AND username = ?";
+	const args: unknown[] = isAdmin ? [today] : [today, profile.username];
+	const s = await env.DB.prepare(
+		`SELECT
+		   COUNT(*) AS today,
+		   SUM(CASE WHEN action = 'LOGIN' AND status = 'BERHASIL' THEN 1 ELSE 0 END) AS login,
+		   SUM(CASE WHEN upper(action) LIKE '%SEND%' OR upper(action) LIKE '%KIRIM%' THEN 1 ELSE 0 END) AS sends,
+		   SUM(CASE WHEN status = 'BERHASIL' THEN 1 ELSE 0 END) AS success,
+		   SUM(CASE WHEN upper(status) IN ('GAGAL','ERROR') THEN 1 ELSE 0 END) AS failed
+		 FROM activity_log WHERE ${scope}`,
+	)
+		.bind(...args)
+		.first<Record<string, number>>();
+	return {
+		role: profile.role,
+		stats: {
+			today: Number(s?.today ?? 0),
+			login: Number(s?.login ?? 0),
+			sends: Number(s?.sends ?? 0),
+			success: Number(s?.success ?? 0),
+			failed: Number(s?.failed ?? 0),
+			found: Number(s?.today ?? 0),
+		},
+		maintenance: await getMaintenance(env),
 	};
 }
 
@@ -178,10 +214,12 @@ export async function getDashboardData(env: Env, profile: UserProfile, opts: Das
 			hasNext: page < totalPages,
 		},
 		sourceInfo: { currentTotal: total, backupTotal: 0, archiveScanned: 0, scanLimited: false },
-		filterOptions: {
-			usernames: await distinct("username"),
-			actions: await distinct("action"),
-			statuses: await distinct("status"),
-		},
+		filterOptions: opts.facets
+			? {
+					usernames: await distinct("username"),
+					actions: await distinct("action"),
+					statuses: await distinct("status"),
+				}
+			: null,
 	};
 }

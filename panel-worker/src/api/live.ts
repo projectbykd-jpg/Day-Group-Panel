@@ -1,6 +1,6 @@
 // Port getLivePanelData / getCurrentUserProfile dari V6Core.gs.
 import { publicProfile, requireSession } from "./auth";
-import { getDashboardData, normalizeDashOptions } from "../lib/dash";
+import { getActivitySummary, getDashboardData, normalizeDashOptions } from "../lib/dash";
 import { adminListActiveSessions } from "./admin";
 
 export async function getCurrentUserProfile(env: Env, token: string) {
@@ -38,7 +38,10 @@ export async function getLivePanelData(
 
 	if (opts.activity) {
 		try {
-			out.activity = await getDashboardData(env, session.profile, normalizeDashOptions(opts.activity));
+			// Auto-refresh: jangan hitung ulang filterOptions (5 full-scan D1).
+			const o = normalizeDashOptions(opts.activity);
+			o.facets = (opts.activity as { facets?: unknown })?.facets === true;
+			out.activity = await getDashboardData(env, session.profile, o);
 		} catch (e) {
 			out.errors.activity = e instanceof Error ? e.message : String(e);
 		}
@@ -49,11 +52,7 @@ export async function getLivePanelData(
 		out.summary = { stats: a.stats, role: a.role ?? "" };
 	} else {
 		try {
-			const head = await getDashboardData(
-				env,
-				session.profile,
-				normalizeDashOptions({ page: 1, pageSize: 1 }),
-			);
+			const head = await getActivitySummary(env, session.profile);
 			out.summary = { stats: head.stats, role: head.role };
 		} catch (e) {
 			out.errors.summary = e instanceof Error ? e.message : String(e);
