@@ -422,10 +422,13 @@ export async function lapMozartImport(
 		totalWdAmount: sum(withdrawData),
 		netAmount: sum(depositData) - sum(withdrawData),
 	};
+	const dRaw = Array.isArray(depositRows) ? (depositRows as Rec[]) : [];
+	const wRaw = Array.isArray(withdrawRows) ? (withdrawRows as Rec[]) : [];
 	await lapSaveResults(env, s.username, {
 		mozartDepo: depositData,
 		mozartWd: withdrawData,
 		_mozartMeta: [{ summary, source: "browser", at: `${startDate}|${endDate}` }],
+		_mozartRawSample: [{ depo: dRaw.slice(0, 3), wd: wRaw.slice(0, 3) }],
 	});
 	await logActivity(
 		env,
