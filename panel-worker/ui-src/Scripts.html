@@ -499,6 +499,16 @@
       }).withFailureHandler(() => cb && cb()).lapGetConfig(currentSessionToken);
     }
 
+    // Paksa ambil ulang hasil dari server (mis. setelah impor Mozart dari Console).
+    function lapRefresh(page) {
+      google.script.run.withSuccessHandler(res => {
+        if (res && res.success) { lapConfig = res.config || {}; lapResults = res.results || {}; }
+        renderLapPage(page);
+        toast('Data diperbarui');
+      }).withFailureHandler(() => { renderLapPage(page); toast('Gagal memuat ulang'); })
+        .lapGetConfig(currentSessionToken);
+    }
+
     function renderLapPage(page) {
       const host = document.getElementById('lap-page');
       if (!host) return;
@@ -796,7 +806,7 @@
           </ol>
           <div class="flex flex-wrap gap-2 mt-3">
             <button onclick="lapMozartCopyScript()" class="bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs"><i class="fa-regular fa-copy mr-1"></i>Salin Skrip</button>
-            <button onclick="renderLapPage('lap-mozart')" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-solid fa-rotate mr-1"></i>Muat Ulang</button>
+            <button onclick="lapRefresh('lap-mozart')" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-solid fa-rotate mr-1"></i>Muat Ulang</button>
             <button onclick="document.getElementById('lapMozartCodeWrap').hidden=!document.getElementById('lapMozartCodeWrap').hidden" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-solid fa-code mr-1"></i>Lihat Skrip</button>
           </div>
           <div id="lapMozartCodeWrap" hidden class="mt-2">
