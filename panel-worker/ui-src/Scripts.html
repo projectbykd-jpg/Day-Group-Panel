@@ -12,6 +12,65 @@
     let pendingSendText = ""; let pendingPreview = null; let lastSendResult = null; let maintenanceState = false; let inactivityTimer; let adminUsersData = []; let activePredictionIndex = null; let activePredictionKind = "schedule"; let activeClosingSlot = ""; let lastPredictionPendingWebsites = [];
     const activityViews = { activity:{page:1,pageSize:75}, admin:{page:1,pageSize:75} };
 
+    /* ===== FX: micro-interaction bergaya animejs.com (staggered reveal, count-up,
+       spring pop). Semua opsional — kalau anime.js gagal dimuat atau user pilih
+       reduced-motion, panel tetap jalan normal tanpa animasi. Durasi sengaja
+       pendek (<=520ms) supaya tidak menghambat kerja CS. ===== */
+    const FX = {
+      get on() {
+        try {
+          if (!window.anime) return false;
+          if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+          return localStorage.getItem('dg_fx') !== 'off';
+        } catch (e) { return !!window.anime; }
+      },
+      // baris/kartu muncul dengan efek naik + skala, di-stagger
+      reveal(nodes, opt) {
+        opt = opt || {};
+        const list = (nodes && nodes.length != null) ? Array.from(nodes) : (nodes ? [nodes] : []);
+        if (!list.length) return;
+        if (!FX.on) { list.forEach(n => { n.style.opacity = ''; n.style.transform = ''; }); return; }
+        anime.remove(list);
+        anime({
+          targets: list,
+          opacity: [0, 1],
+          translateY: [opt.y != null ? opt.y : 10, 0],
+          scale: [opt.scale != null ? opt.scale : 0.985, 1],
+          duration: opt.duration || 460,
+          delay: anime.stagger(opt.step || 42, { start: opt.start || 0 }),
+          easing: opt.easing || 'cubicBezier(.2,.8,.2,1)'
+        });
+      },
+      // kartu-kartu utama pada sebuah halaman
+      page(container) {
+        if (!container) return;
+        const sel = container.querySelectorAll(':scope > .glass-card, :scope > .grid > .glass-card, :scope > div > .glass-card');
+        FX.reveal(sel.length ? sel : container.querySelectorAll(':scope > *'), { y: 14, step: 55, duration: 480 });
+      },
+      // angka menghitung naik dari 0; format ribuan otomatis. el butuh data-fx-count.
+      countUp(root) {
+        const els = (root || document).querySelectorAll('[data-fx-count]');
+        els.forEach(el => {
+          const to = Number(String(el.getAttribute('data-fx-count')).replace(/[^0-9.-]/g, '')) || 0;
+          if (el.getAttribute('data-fx-done') === String(to)) return;
+          el.setAttribute('data-fx-done', String(to));
+          if (!FX.on) { el.textContent = to.toLocaleString('en-US'); return; }
+          const obj = { v: 0 };
+          anime({
+            targets: obj, v: to, duration: Math.min(900, 260 + Math.log10(Math.max(to, 1)) * 220),
+            easing: 'easeOutExpo',
+            update: () => { el.textContent = Math.round(obj.v).toLocaleString('en-US'); }
+          });
+        });
+      },
+      // "denyut" spring kecil saat sebuah nilai berubah (pasaran, angka 2D)
+      pop(el) {
+        if (!el || !FX.on) return;
+        anime.remove(el);
+        anime({ targets: el, scale: [0.82, 1], opacity: [0.35, 1], duration: 520, easing: 'spring(1, 80, 12, 0)' });
+      }
+    };
+
     /* ===== Navigasi instan + auto-refresh "realtime" (polling adaptif) =====
        Apps Script tak punya WebSocket/SSE, jadi panel polling 1 endpoint gabungan
        (getLivePanelData) dengan interval yang menyesuaikan keaktifan user & tab. */
@@ -235,6 +294,10 @@
       document.getElementById('app-container').style.display = 'flex';
       document.body.classList.remove('justify-center');
       document.getElementById('sidebar-user').innerText = currentUser.toUpperCase();
+      // masuk panel: sidebar mengalir dari kiri, konten fade-up
+      setTimeout(() => {
+        FX.reveal(document.querySelectorAll('#app-container .nav-group, #app-container .nav-solo'), { y: 0, scale: 1, step: 45, duration: 420 });
+      }, 30);
       applyWebsiteTheme(res.websites || []);
       // switchPage('home') sudah memanggil loadHeaderSummary() di bagian akhirnya,
       // jadi tidak perlu dipanggil lagi di sini (dulu jadi 2x panggil server).
@@ -279,12 +342,15 @@
       if (!box) return;
       const s = (data && data.stats) || {};
       const failed = Number(s.failed || 0);
+      const first = !box.querySelector('.header-stat-dot');
       box.innerHTML = `
-        <span class="header-stat"><span class="header-stat-dot ok"></span>${Number(s.success||0)} Berhasil</span>
-        <span class="header-stat"><span class="header-stat-dot ${failed > 0 ? 'bad' : 'ok'}"></span>${failed} Gagal</span>
-        <span class="header-stat"><span class="header-stat-dot info"></span>${Number(s.sends||0)} Pengiriman</span>
-        <span class="header-stat"><span class="header-stat-dot info"></span>${Number(s.today||0)} Total Aktivitas</span>
+        <span class="header-stat"><span class="header-stat-dot ok"></span><b data-fx-count="${Number(s.success||0)}">${Number(s.success||0)}</b>&nbsp;Berhasil</span>
+        <span class="header-stat"><span class="header-stat-dot ${failed > 0 ? 'bad' : 'ok'}"></span><b data-fx-count="${failed}">${failed}</b>&nbsp;Gagal</span>
+        <span class="header-stat"><span class="header-stat-dot info"></span><b data-fx-count="${Number(s.sends||0)}">${Number(s.sends||0)}</b>&nbsp;Pengiriman</span>
+        <span class="header-stat"><span class="header-stat-dot info"></span><b data-fx-count="${Number(s.today||0)}">${Number(s.today||0)}</b>&nbsp;Total Aktivitas</span>
       `;
+      if (first) FX.reveal(box.querySelectorAll('.header-stat'), { y: 6, step: 60, scale: 0.9 });
+      FX.countUp(box);
     }
 
     function loadHeaderSummary() {
@@ -425,7 +491,7 @@
       });
 
       const target = document.getElementById(pages[page] || 'main-panel');
-      if (target) target.style.display = 'flex';
+      if (target) { target.style.display = 'flex'; if (page !== currentPage) FX.page(target); }
 
       const marketWrapper = document.getElementById('market-wrapper');
       if (marketWrapper) marketWrapper.style.display = page === 'home' ? 'block' : 'none';
@@ -519,6 +585,12 @@
         else if (page === 'lap-mozart') lapRenderMozart(host);
         else lapRenderAdmin(host);
         lapTblMountAll();
+        const card = host.querySelector('.glass-card');
+        if (card) {
+          FX.reveal(card.querySelectorAll(':scope > .grid > .glass-inner, :scope > .grid > div'), { y: 12, step: 34 });
+          FX.reveal(card.querySelectorAll('.lap-tbl'), { y: 14, step: 40, start: 120 });
+        }
+        FX.countUp(host);
       });
     }
 
@@ -577,7 +649,9 @@
       if (s) s.textContent = msg || '';
     }
     function lapStatCard(label, val, color) {
-      return `<div class="glass-inner rounded-2xl p-3.5 border border-white/[0.05]"><div class="text-[9.5px] font-bold text-slate-400 uppercase tracking-[0.1em]">${label}</div><div class="text-[19px] font-black mt-1.5 tabular-nums ${color||'text-slate-50'}">${val}</div></div>`;
+      const n = String(val).replace(/[^0-9.-]/g, '');
+      const cnt = n !== '' && !isNaN(Number(n)) ? ` data-fx-count="${n}"` : '';
+      return `<div class="glass-inner rounded-2xl p-3.5 border border-white/[0.05]"><div class="text-[9.5px] font-bold text-slate-400 uppercase tracking-[0.1em]">${label}</div><div class="text-[19px] font-black mt-1.5 tabular-nums ${color||'text-slate-50'}"${cnt}>${val}</div></div>`;
     }
 
     // Tabel collapsible + search bawaan. rows = array; rowFn(r,i)->'<tr>...'; copyFn(r,i)->string;
@@ -1675,13 +1749,19 @@
     }
 
     function showResult(res) {
+      const prev = resultData || {};
       resultData = res || {};
       const marketEl = document.getElementById('market');
       marketEl.innerText = res.market || '-';
       marketEl.className = (res.market && res.market !== '-' && res.market !== 'UNKNOWN') ? "text-base sm:text-lg font-extrabold text-white tracking-widest animate-market" : "text-base sm:text-lg font-extrabold text-white tracking-widest";
-      document.getElementById('twoDigit').innerText = res.twoDigit !== '' ? String(res.twoDigit).padStart(2, '0') : '-';
+      const td2 = document.getElementById('twoDigit');
+      const newTd = res.twoDigit !== '' ? String(res.twoDigit).padStart(2, '0') : '-';
+      td2.innerText = newTd;
       document.getElementById('shio').innerText = res.shio || '-';
       document.getElementById('shio-icon').innerText = shioIcons[res.shio] || '';
+      if (newTd !== '-' && newTd !== (prev.twoDigit !== undefined && prev.twoDigit !== '' ? String(prev.twoDigit).padStart(2,'0') : '-')) {
+        FX.pop(td2); FX.pop(document.getElementById('shio'));
+      }
       const st = document.getElementById('status'); st.innerText = res.status || '-';
       st.className = res.status === 'BENAR' ? "text-sm sm:text-base font-black tracking-wider text-emerald-400 neon-cyan" : (res.status === 'SALAH' ? "text-sm sm:text-base font-black tracking-wider text-rose-500" : "text-sm sm:text-base font-black tracking-wider text-slate-400");
       document.getElementById('outputPreview').innerText = res.output || '';
