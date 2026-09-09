@@ -801,6 +801,10 @@
       const meta = (lapResults._mozartMeta && lapResults._mozartMeta[0]) || {};
       const sm = meta.summary || {};
       const dp = lapResults.mozartDepo || [], wd = lapResults.mozartWd || [];
+      const dpBot = dp.filter(r => r.statusRaw === 'done' && r.doneBy === 'BOT');
+      const wdOk = wd.filter(r => r.approved);
+      const dpBotSum = dpBot.reduce((n,r) => n + Number(r.amount||0), 0);
+      const wdOkSum = wdOk.reduce((n,r) => n + Number(r.amount||0), 0);
       const code = lapMozartConsoleScript();
       host.innerHTML = lapHeaderCard('fa-cubes-stacked', 'Lap Mozart', 'Deposit & Withdraw Mozart (m-banking)', `
         <div class="glass-inner rounded-2xl p-4 border border-amber-500/20 text-[11px] text-slate-300 leading-relaxed">
@@ -826,15 +830,14 @@
         <div id="lapMozartProgress" class="text-[11px] text-cyan-300 mt-1"></div>
         ${meta.truncated ? '<div class="text-[11px] text-amber-300 mt-1">⚠ Data terpotong.</div>' : ''}
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3">
-          ${lapStatCard('DP Record', lapFmt(sm.totalDepoRecords), 'text-emerald-400')}
-          ${lapStatCard('DP Nominal', lapFmt(sm.totalDepoAmount), 'text-emerald-400')}
-          ${lapStatCard('WD Record', lapFmt(sm.totalWdRecords), 'text-rose-400')}
-          ${lapStatCard('WD Nominal', lapFmt(sm.totalWdAmount), 'text-rose-400')}
+          ${lapStatCard('DP Done By Bot', lapFmt(dpBot.length), 'text-emerald-400')}
+          ${lapStatCard('Nominal DP Bot', lapFmt(dpBotSum), 'text-emerald-400')}
+          ${lapStatCard('WD Selesai', lapFmt(wdOk.length), 'text-rose-400')}
+          ${lapStatCard('Nominal WD Selesai', lapFmt(wdOkSum), 'text-rose-400')}
         </div>
         <div>
           ${(() => {
-            const bot = dp.filter(r => r.statusRaw === 'done' && r.doneBy === 'BOT');
-            const botSum = bot.reduce((n,r) => n + Number(r.amount||0), 0);
+            const bot = dpBot, botSum = dpBotSum;
             return lapTable('mozart_deposit', ['TANGGAL','USER','NAMA PENGIRIM','BANK','REK TUJUAN','NOMINAL','STATUS'], bot,
               r => `<tr>${td((r.date||'')+(r.time?' '+r.time:''),'text-[10px]')}${td(r.username,'font-bold text-cyan-300')}${td(r.name)}${td(r.bank,'uppercase text-[10px]')}${td(r.accountNumber,'text-[10px]')}${td(lapFmt(r.amount),'text-right text-emerald-400')}${td(r.status,'text-center uppercase text-[10px] text-emerald-300')}</tr>`,
               r => [r.date, r.username, r.name, r.bank, r.amount].join('\t'), ['username','name','bank','accountNumber','accName'],
