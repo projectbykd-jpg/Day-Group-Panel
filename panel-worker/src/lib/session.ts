@@ -8,7 +8,12 @@
 // Sekarang daftar sesi aktif dibaca dari D1 (lihat listActiveSessions),
 // tanpa SESS.list sama sekali.
 
-const TTL_SECONDS = 60 * 60 * 24 * 180;
+// Sesi hidup 21 hari (dulu 180) — cukup panjang untuk CS yang login rutin,
+// cukup pendek supaya sesi yang ditinggalkan tidak menumpuk berbulan-bulan.
+const TTL_SECONDS = 60 * 60 * 24 * 21;
+// Maksimal token per user. Login ke-N+1 membuang token terlama. Mencegah
+// riwayat login (ganti browser/HP, clear cookie) menumpuk jadi puluhan.
+const MAX_SESSIONS_PER_USER = 6;
 
 export interface SessionRecord {
 	username: string;
@@ -33,6 +38,7 @@ export async function createSession(env: Env, username: string): Promise<string>
 		)
 			.bind(token, username, rec.createdAt, rec.expiresAt)
 			.run();
+		await capUserSessions(env, username);
 	} catch {
 		/* kalau D1 gagal, KV di bawah masih jadi andalan */
 	}
@@ -42,6 +48,35 @@ export async function createSession(env: Env, username: string): Promise<string>
 		/* kuota KV habis -> tetap OK, loadSession akan baca D1 */
 	}
 	return token;
+}
+
+// Sisakan hanya MAX_SESSIONS_PER_USER token terbaru milik user; sisanya
+// dihapus dari D1 dan (best-effort) dari KV.
+async function capUserSessions(env: Env, username: string, keep = MAX_SESSIONS_PER_USER): Promise<void> {
+	const old = await env.DB.prepare(
+		`SELECT token FROM sessions WHERE username = ?
+		 ORDER BY created_at DESC LIMIT -1 OFFSET ?`,
+	)
+		.bind(username, keep)
+		.all<{ token: string }>();
+	const tokens = (old.results ?? []).map((r) => r.token);
+	if (!tokens.length) return;
+	try {
+		await env.DB.prepare(
+			`DELETE FROM sessions WHERE token IN (${tokens.map(() => "?").join(",")})`,
+		)
+			.bind(...tokens)
+			.run();
+	} catch {
+		/* abaikan */
+	}
+	for (const t of tokens) {
+		try {
+			await env.SESS.delete(t);
+		} catch {
+			/* abaikan (kuota KV delete) */
+		}
+	}
 }
 
 // Daftar sesi aktif (username unik + jumlah token + login pertama + kedaluwarsa
@@ -67,6 +102,13 @@ export async function listActiveSessions(env: Env): Promise<
 export async function pruneExpiredSessions(env: Env): Promise<void> {
 	try {
 		await env.DB.prepare(`DELETE FROM sessions WHERE expires_at <= ?`).bind(Date.now()).run();
+		// Rapikan tumpukan token lama: sisakan MAX_SESSIONS_PER_USER terbaru/user.
+		const many = await env.DB.prepare(
+			`SELECT username FROM sessions GROUP BY username HAVING COUNT(*) > ?`,
+		)
+			.bind(MAX_SESSIONS_PER_USER)
+			.all<{ username: string }>();
+		for (const r of many.results ?? []) await capUserSessions(env, r.username);
 	} catch {
 		/* abaikan */
 	}
