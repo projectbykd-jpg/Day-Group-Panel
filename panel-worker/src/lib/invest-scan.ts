@@ -173,9 +173,13 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 	// 2) Auto-discovery dari <select> di halaman panel (kalau belum ada list tersimpan).
 	//    Dropdown bisa ada di beberapa halaman tergantung varian panel.
 	if (pasSrc === "default") {
+		// agent_bt.php = frame menu semua panel suksesbogil; di situ <select>
+		// "Pilih Pasar" (format value="NAMA,pXXXX"). Kode pXXXX BEDA tiap panel
+		// DAN kadang beda tiap agen — INVEST_PASARAN hardcoded sudah usang
+		// (ARIZONA p33190 -> sekarang p33182 di ag). Jadi agent_bt.php PALING utama.
 		for (const cand of [
-			"admin_invoice13.php", "index.php", "agentoverview.php", "menu.php",
-			"home.php", "main.php", "left.php", "menu_kiri.php", "admin_invoice.php",
+			"agent_bt.php", "admin_invoice13.php", "agentoverview.php", "index.php",
+			"menu.php", "home.php", "main.php", "left.php", "menu_kiri.php", "admin_invoice.php",
 		]) {
 			try {
 				const html = await investFetch(cfg, cand);
