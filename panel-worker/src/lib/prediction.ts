@@ -400,11 +400,40 @@ export async function sendPredictionJob(opts: PredJobOptions) {
 				 ON CONFLICT(unique_key) DO UPDATE SET
 				   status = 'PROCESSING', prediction_name = excluded.prediction_name, username = excluded.username,
 				   sent_at = excluded.sent_at, request_id = excluded.request_id,
-				   detail = excluded.detail, content_hash = excluded.content_hash`,
-			).bind(dateKey, scheduleId, predictionName, w, cleanUser, nowText, requestId, await sha256Hex(content), uniqueKey),
+				   detail = excluded.detail, content_hash = excluded.content_hash
+				 WHERE prediction_registry.status <> 'BERHASIL'
+				   AND prediction_registry.request_id <> ?`,
+			).bind(dateKey, scheduleId, predictionName, w, cleanUser, nowText, requestId, await sha256Hex(content), uniqueKey, requestId),
 		);
 	}
 	if (reserveStmts.length) await env.DB.batch(reserveStmts);
+
+	// ATOMIC CLAIM: baca ulang baris yang barusan kita reservasi. Karena D1 men-
+	// serialkan write, kalau ada run lain yang jalan barengan (RUN_LOCK KV gagal
+	// mis. kuota habis) maka request_id di baris itu bukan milik kita -> JANGAN
+	// kirim, tandai "SEDANG DIPROSES". Ini lapis anti-dobel terakhir untuk
+	// closing/prediksi auto yang sempat kekirim 2x.
+	if (reservations.length) {
+		const keys = reservations.map((r) => r.uniqueKey);
+		const ph = keys.map(() => "?").join(",");
+		const claimed = await env.DB.prepare(
+			`SELECT unique_key, request_id, status FROM prediction_registry WHERE unique_key IN (${ph})`,
+		).bind(...keys).all<{ unique_key: string; request_id: string; status: string }>();
+		const owned: Record<string, string> = {};
+		for (const row of claimed.results ?? []) owned[String(row.unique_key)] = String(row.request_id || "") + "|" + String(row.status || "").toUpperCase();
+		for (let i = reservations.length - 1; i >= 0; i--) {
+			const r = reservations[i];
+			const tag = owned[r.uniqueKey] || "";
+			const [rid, st] = tag.split("|");
+			if (st === "BERHASIL") {
+				resultMap[r.website] = { website: r.website, status: "SUDAH DIKIRIM", reason: "Smart Lock: sudah dikirim oleh permintaan lain." };
+				reservations.splice(i, 1);
+			} else if (rid !== requestId) {
+				resultMap[r.website] = { website: r.website, status: "SEDANG DIPROSES", reason: "Permintaan lain sedang memproses website ini." };
+				reservations.splice(i, 1);
+			}
+		}
+	}
 
 	// Kirim Telegram Prediksi per website
 	for (const r of reservations) {
