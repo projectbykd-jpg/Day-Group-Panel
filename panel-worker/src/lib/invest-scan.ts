@@ -50,7 +50,8 @@ function dateKeyTZ(offsetDays = 0): string {
 function parsePasaranOptions(html: string): [string, string][] {
 	const out: [string, string][] = [];
 	const seen = new Set<string>();
-	const re = /<option\b([^>]*)>([^<]*)<\/option>/gi;
+	// Terima <option ...>Teks</option> ATAU <option ...>Teks (tanpa penutup).
+	const re = /<option\b([^>]*)>([^<]*)/gi;
 	let mm: RegExpExecArray | null;
 	while ((mm = re.exec(html))) {
 		const attrs = mm[1] || "";
@@ -155,19 +156,24 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 	// Jadi: coba baca daftar pasaran langsung dari <select> di admin_invoice13.php.
 	let pas: [string, string][] = INVEST_PASARAN;
 	let pasSrc = "default";
+	const discDiag: string[] = [];
 	// Dropdown <select onchange="gantipasar(...)"> bisa ada di beberapa halaman
 	// tergantung varian panel. Coba beberapa kandidat sampai dapat >=20 pasaran.
-	for (const cand of ["admin_invoice13.php", "index.php", "agentoverview.php", "menu.php"]) {
+	for (const cand of [
+		"admin_invoice13.php", "index.php", "agentoverview.php", "menu.php",
+		"home.php", "main.php", "left.php", "menu_kiri.php", "admin_invoice.php",
+	]) {
 		try {
 			const html = await investFetch(cfg, cand);
 			const disc = parsePasaranOptions(html);
+			discDiag.push(cand.replace(".php", "") + ":" + html.length + "b/" + disc.length + "opt");
 			if (disc.length >= 20) {
 				pas = disc;
 				pasSrc = cand.replace(".php", "") + "(" + disc.length + ")";
 				break;
 			}
-		} catch {
-			/* coba kandidat berikutnya */
+		} catch (e) {
+			discDiag.push(cand.replace(".php", "") + ":ERR");
 		}
 	}
 	let cursor = Number(st.cursor || 0);
@@ -358,7 +364,7 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 				"Scan selesai tapi TIDAK ADA data invoice dari situs agen (0 pasaran mengembalikan data). " +
 				"Kemungkinan: sesi PHPSESSID kedaluwarsa, atau situs agen sedang maintenance/error. " +
 				"Perbarui PHPSESSID di Setting lalu scan ulang." +
-				` [Diag: list=${pasSrc}, ${diag.periods}/${pas.length} pasaran ada periode, ${diag.withTotals} periode ada total, ${diag.pages} halaman diambil, ${diag.dateSkip} di-skip tanggal, ${diag.overLimit} lewat batas]` +
+				` [Diag: list=${pasSrc} (${discDiag.join(" ")}), ${diag.periods}/${pas.length} pasaran ada periode, ${diag.withTotals} periode ada total, ${diag.pages} halaman diambil, ${diag.dateSkip} di-skip tanggal, ${diag.overLimit} lewat batas]` +
 				(diag.periods === 0 && probeSnippet ? ` situs balikin: "${probeSnippet}"` : "");
 		}
 	}
