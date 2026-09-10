@@ -23,8 +23,11 @@ import {
 
 const OFFSET_MS = 7 * 60 * 60 * 1000;
 const PUMP_FLAG = "invest:pump:running";
-const USER_SLICE_MS = 45_000; // maks per user per tick
-const PUMP_BUDGET_MS = 55_000; // total per tick
+// Anggaran pendek: pump sekarang dipanggil juga lewat ctx.waitUntil dari tiap
+// polling investGetStatus (tiap ~4 dtk), yang punya batas wall-clock ~30 dtk.
+// Scan maju sedikit-sedikit tapi terus-menerus selama halaman dibuka.
+const USER_SLICE_MS = 22_000; // maks per user per tick
+const PUMP_BUDGET_MS = 25_000; // total per tick
 // Cloudflare membatasi subrequest per invocation (50 di plan Free). fetch ke panel
 // agen + query D1 sama-sama dihitung. Jadi tiap tick hanya boleh ~38 fetch, sisanya
 // disambung tick berikutnya lewat cursor.
@@ -143,6 +146,7 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number)
 		});
 	};
 
+	let scannedThisTick = 0;
 	for (; cursor < pas.length; cursor++) {
 		if (!budgetLeft()) {
 			await pauseAndReturn();
@@ -150,6 +154,16 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number)
 		}
 
 		const [kode, nama] = pas[cursor];
+		// Update progres yang kelihatan (nama pasaran + posisi) setiap 3 pasaran,
+		// supaya user lihat scan benar-benar bergerak.
+		if (scannedThisTick % 3 === 0) {
+			await investSetState(env, user, {
+				state: "running",
+				cursor,
+				message: `Scan pasaran ${cursor + 1}/${pas.length} — ${nama}…`,
+			});
+		}
+		scannedThisTick++;
 		const marketBuffer: RawRow[] = [];
 		const fetchesBefore = fetches;
 		let aborted = false;
@@ -247,22 +261,13 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number)
 			aborted = false;
 		}
 
-		const fetchesThisMarket = fetches - fetchesBefore;
-		if (aborted && fetchesThisMarket < 24) {
-			// Baru mulai pasaran ini -> anggaran tick habis di batas. Sambung pasaran
-			// yang sama di tick berikutnya (cursor tidak maju).
-			await pauseAndReturn();
-			return;
-		}
-		if (aborted) {
-			// Pasaran ini terlalu besar untuk 1 invocation (batas subrequest Free).
-			// Simpan yang sudah didapat (parsial), lalu MAJU supaya tidak stuck selamanya.
-			console.warn(`invest: pasaran ${nama} (idx ${cursor}) parsial — batas subrequest.`);
-		}
 		buffer.push(...marketBuffer);
 		if (buffer.length >= RAW_FLUSH_AT) await flushRaw(env, user, buffer);
 		if (aborted) {
-			// commit progres & lanjut tick berikutnya dari pasaran berikutnya.
+			// Anggaran tick habis di tengah pasaran ini. TIDAK ada checkpoint di dalam
+			// pasaran, jadi kalau tidak maju cursor-nya, tick berikutnya mengulang
+			// pasaran yang sama dari awal -> kalau agen lambat, scan stuck di 0/63
+			// selamanya. Jadi: simpan yang sudah didapat (parsial) lalu MAJU.
 			cursor++;
 			await pauseAndReturn();
 			return;
@@ -391,12 +396,21 @@ export async function investPump(env: Env): Promise<void> {
 	} catch {
 		/* lanjut */
 	}
-	await env.SESS.put(PUMP_FLAG, "1", { expirationTtl: 300 });
+	// TTL pendek: kalau pump sebelumnya crash tanpa sempat menghapus flag, jangan
+	// blokir scan 5 menit — cukup ~1 siklus.
+	try {
+		await env.SESS.put(PUMP_FLAG, "1", { expirationTtl: 75 });
+	} catch {
+		/* kuota KV -> lanjut tanpa lock (lebih baik jalan) */
+	}
 	try {
 		const deadline = Date.now() + PUMP_BUDGET_MS;
+		// Bagi rata anggaran waktu antar user yang antre (biar user ke-2 tidak nunggu
+		// user ke-1 selesai sepenuhnya tiap tick).
+		const perUser = Math.max(10_000, Math.min(USER_SLICE_MS, Math.floor(PUMP_BUDGET_MS / users.length)));
 		for (const user of users) {
 			if (Date.now() >= deadline) break;
-			const slice = Math.min(deadline, Date.now() + USER_SLICE_MS);
+			const slice = Math.min(deadline, Date.now() + perUser);
 			try {
 				await investScanUser(env, user, slice);
 			} catch (e) {

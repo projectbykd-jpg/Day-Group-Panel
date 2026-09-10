@@ -3538,10 +3538,13 @@ Tindakan ini tidak dapat dibatalkan.`,
       const cur   = Number(state && state.cursor) || 0;
 
       const parts = [];
-      if (total) parts.push('pasaran ' + cur + '/' + total + (s === 'running' || s === 'paused' ? ' — sedang scan' : ''));
+      const msg = (state && state.message) || '';
+      // Kalau pesan sudah memuat "pasaran X/Y", jangan tampilkan hitungan terpisah.
+      const msgHasCount = /pasaran\s+\d+\s*\/\s*\d+/i.test(msg);
+      if (total && !msgHasCount) parts.push('pasaran ' + cur + '/' + total + (s === 'running' || s === 'paused' ? ' — sedang scan' : ''));
       const wc = (typeof warnCount === 'number') ? warnCount : (state && state.warningCount);
-      if (typeof wc === 'number') parts.push(wc + ' user lewat batas');
-      if (state && state.message) parts.push(state.message);
+      if (typeof wc === 'number' && wc > 0) parts.push(wc + ' user lewat batas');
+      if (msg) parts.push(msg);
       if (meta) meta.textContent = parts.join('  •  ') || 'Belum ada scan.';
 
       // Progress bar (14/63 -> visual + stripe berjalan biar jelas hidup)

@@ -176,8 +176,13 @@ const ROUTES: Record<string, Handler> = {
 		),
 };
 
+// Aksi Invest yang memicu pump di latar belakang (ctx.waitUntil) — supaya scan
+// langsung bergerak begitu user klik MULAI/LANJUTKAN dan terus maju selama user
+// membuka halaman (polling investGetStatus), tanpa menunggu cron eksternal.
+const INVEST_PUMP_ACTIONS = new Set(["investStartScan", "investContinueScan", "investGetStatus"]);
+
 export default {
-	async fetch(request, env): Promise<Response> {
+	async fetch(request, env, ctx): Promise<Response> {
 		const url = new URL(request.url);
 
 		if (request.method === "OPTIONS" && url.pathname === "/api") {
@@ -196,7 +201,11 @@ export default {
 			const handler = ROUTES[action];
 			if (!handler) return json({ success: false, message: "Aksi tidak dikenal: " + action }, 404);
 			try {
-				return json(await handler(env, body));
+				const out = await handler(env, body);
+				if (INVEST_PUMP_ACTIONS.has(action)) {
+					ctx.waitUntil(investPump(env).catch((e) => console.error("invest pump (waitUntil) error", e)));
+				}
+				return json(out);
 			} catch (e) {
 				return json({ success: false, message: e instanceof Error ? e.message : String(e) }, 500);
 			}
