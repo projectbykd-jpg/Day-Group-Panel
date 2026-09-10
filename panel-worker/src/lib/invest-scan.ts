@@ -100,7 +100,7 @@ async function flushRaw(env: Env, owner: string, buffer: RawRow[]): Promise<void
 	const rows = buffer.splice(0, buffer.length);
 	const stmts = rows.map((r) =>
 		getTurso(env).prepare(
-			`INSERT INTO invest_raw (owner, tanggal, bettor, pasaran, periode, game, line, limit_val)
+			`INSERT OR IGNORE INTO invest_raw (owner, tanggal, bettor, pasaran, periode, game, line, limit_val)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		).bind(owner, r.tanggal, r.bettor, r.pasaran, r.periode, r.game, r.line, r.limitVal),
 	);
@@ -328,7 +328,11 @@ export async function investAggregateUser(env: Env, owner: string): Promise<numb
 		over?: number;
 		error?: string;
 	}
-	const byUser: Record<string, { tgl: Set<string>; pas: Set<string>; hits: Hit[]; excess: number }> = {};
+	// DEDUP: kalau pump sempat jalan dobel (KV lock gagal / cron + poll barengan),
+	// invest_raw bisa punya baris kembar -> hit & excess ke-hitung berkali-kali
+	// ("+520 line lewat batas" dari 1 hit yang sama diulang 25x). Kunci unik hit
+	// = bettor|pasaran|periode|game; ambil `line` terbesar.
+	const byUser: Record<string, { tgl: Set<string>; pas: Set<string>; hitMap: Map<string, Hit>; errs: Hit[] }> = {};
 	for (const r of rows) {
 		const tgl = String(r.tanggal ?? "");
 		const bettor = String(r.bettor ?? "");
@@ -337,28 +341,36 @@ export async function investAggregateUser(env: Env, owner: string): Promise<numb
 		const game = String(r.game ?? "");
 		const line = Number(r.line) || 0;
 		const lim = Number(r.limit_val) || 0;
-		if (!byUser[bettor]) byUser[bettor] = { tgl: new Set(), pas: new Set(), hits: [], excess: 0 };
+		if (!byUser[bettor]) byUser[bettor] = { tgl: new Set(), pas: new Set(), hitMap: new Map(), errs: [] };
 		const u = byUser[bettor];
 		u.tgl.add(tgl);
 		if (bettor === "(ERROR)") {
-			u.hits.push({ tanggal: tgl, pasaran, error: game || "error" });
+			const ek = pasaran + "|" + (game || "error");
+			if (!u.hitMap.has("__e__" + ek)) {
+				u.hitMap.set("__e__" + ek, { tanggal: tgl, pasaran, error: game || "error" });
+			}
 			continue;
 		}
 		u.pas.add(pasaran);
 		const over = line - lim;
-		u.excess += over;
-		u.hits.push({ tanggal: tgl, pasaran, periode: per as string, game, line, limit: lim, over });
+		const key = pasaran + "|" + String(per ?? "") + "|" + game;
+		const prev = u.hitMap.get(key);
+		if (!prev || line > (prev.line || 0)) {
+			u.hitMap.set(key, { tanggal: tgl, pasaran, periode: per as string, game, line, limit: lim, over });
+		}
 	}
 
 	const list = Object.keys(byUser)
 		.map((bettor) => {
 			const u = byUser[bettor];
+			const hits = [...u.hitMap.values()];
+			const excess = hits.reduce((s, h) => s + (h.over || 0), 0);
 			return {
 				user: bettor,
 				dates: [...u.tgl].sort(),
 				markets: [...u.pas].sort(),
-				excess: u.excess,
-				hits: u.hits.sort((a, b) => {
+				excess,
+				hits: hits.sort((a, b) => {
 					const d = a.tanggal < b.tanggal ? -1 : a.tanggal > b.tanggal ? 1 : 0;
 					return d !== 0 ? d : (b.over || 0) - (a.over || 0);
 				}),
