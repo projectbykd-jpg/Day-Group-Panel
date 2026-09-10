@@ -147,6 +147,7 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 	};
 
 	let scannedThisTick = 0;
+	let probeSnippet = "";
 	for (; cursor < pas.length; cursor++) {
 		if (!budgetLeft()) {
 			await pauseAndReturn();
@@ -170,6 +171,12 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 		try {
 			const head0 = await doFetch("admin_invoice13.php?psr=" + kode);
 			const open = parsePeriode(head0);
+			// Diagnostik: kalau pasaran pertama tidak menghasilkan periode sama sekali,
+			// simpan cuplikan body-nya supaya ketahuan situs balikin apa (login page
+			// tak dikenal? "Information"? kosong?). Dipakai di pesan akhir bila 0 data.
+			if (cursor === 0 && !open && !probeSnippet) {
+				probeSnippet = String(head0 || "").replace(/\s+/g, " ").trim().slice(0, 260) || "(body kosong)";
+			}
 			if (open) {
 				for (let i = 0; i < INVEST_PERIODE_LOOKBACK; i++) {
 					if (!budgetLeft()) {
@@ -289,7 +296,8 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 			message =
 				"Scan selesai tapi TIDAK ADA data invoice dari situs agen (0 pasaran mengembalikan data). " +
 				"Kemungkinan: sesi PHPSESSID kedaluwarsa, atau situs agen sedang maintenance/error. " +
-				"Perbarui PHPSESSID di Setting lalu scan ulang.";
+				"Perbarui PHPSESSID di Setting lalu scan ulang." +
+				(probeSnippet ? ` [Diagnostik — situs balikin: "${probeSnippet}"]` : "");
 		}
 	}
 
