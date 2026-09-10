@@ -160,8 +160,12 @@ export async function lapRunMotion(env: Env, token: string, startDate: string, e
 	addPages("wd", totWd, pWd);
 
 	if (extra.length) {
+		// Konkurensi RENDAH (5): dulu 14+ request paralel ke Motion sekaligus ->
+		// server rate-limit/drop -> daftar "create" cuma dapat 1 halaman (100)
+		// padahal ada 763 -> 600+ transaksi paid dicap "TIDAK ADA DI CREATE" palsu.
 		const res = await postJsonBatch(
 			extra.map((e) => ({ url: e.t === "wd" ? urlWd : urlDepo, headers, body: e.body })),
+			5,
 		);
 		fetched += extra.length;
 		res.forEach((pp, i) => {
@@ -171,6 +175,45 @@ export async function lapRunMotion(env: Env, token: string, startDate: string, e
 			else if (extra[i].t === "create") listCreate = listCreate.concat(arr(j.data));
 			else listWd = listWd.concat(wdArr(j.data));
 		});
+	}
+
+	// Jaring pengaman: kalau "create" masih jauh dari total (mis. sebagian
+	// halaman tetap gagal), tarik ulang halaman yang hilang secara berurutan.
+	const createTarget = totCreate || 0;
+	if (createTarget > listCreate.length + 20 && fetched < MOTION_FETCH_BUDGET) {
+		const seen = new Set(listCreate.map((it) => String(it.reference_no || it.invoice_no || "")));
+		for (let p = 1; p < Math.ceil(createTarget / LIMIT) + 1 && fetched < MOTION_FETCH_BUDGET; p++) {
+			if (listCreate.length >= createTarget) break;
+			let txt = "";
+			try {
+				const r = await fetch(urlDepo, {
+					method: "POST",
+					headers: { "content-type": "application/json", ...headers },
+					body: JSON.stringify({ ...pCreate, page: p, start: p * LIMIT }),
+				});
+				txt = await r.text();
+			} catch {
+				continue;
+			}
+			fetched++;
+			let jj: Rec | null = null;
+			try {
+				jj = JSON.parse(txt) as Rec;
+			} catch {
+				continue;
+			}
+			const rows = arr(jj?.data);
+			let added = 0;
+			for (const it of rows) {
+				const k = String(it.reference_no || it.invoice_no || "");
+				if (k && !seen.has(k)) {
+					seen.add(k);
+					listCreate.push(it);
+					added++;
+				}
+			}
+			if (!added) break; // server mengabaikan paginasi / sudah habis
+		}
 	}
 
 	// ---- proses (port persis logika Apps Script) ----

@@ -90,7 +90,9 @@
       --success: #34d399;
       --danger: #fb7185;
     }
-    html { scroll-behavior: smooth; }
+    /* scroll-behavior:smooth di halaman panjang bikin scroll terasa "berat"/nyendat
+       di Chrome — pakai instant. */
+    html { scroll-behavior: auto; }
     button, input, select, textarea { -webkit-tap-highlight-color: transparent; }
     button:disabled { opacity: .58; cursor: not-allowed; filter: grayscale(.15); transform: none !important; }
     .glass-card { background: linear-gradient(160deg, #141d30, #0b1120); border-color: var(--panel-border); box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255,255,255,.05); }
@@ -167,11 +169,9 @@
       max-width: min(92vw, 420px);
       padding: 13px 20px 13px 14px;
       border-radius: 999px;
-      background: rgba(10,16,32,.92);
-      border: 1px solid rgba(255,255,255,.09);
+      background: #0b1220;
+      border: 1px solid rgba(255,255,255,.1);
       box-shadow: 0 20px 45px -12px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.02);
-      backdrop-filter: blur(18px);
-      -webkit-backdrop-filter: blur(18px);
       transition: opacity .25s ease, transform .25s ease;
     }
     .floating-toast.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
@@ -1231,7 +1231,8 @@
     .lap-date-field input{ background:transparent; border:0; outline:0; color:#f1f5f9; font-size:12px; font-weight:700; width:100%; letter-spacing:.02em }
     .lap-quick{ font-size:10px; font-weight:800; padding:8px 11px; border-radius:10px; background:rgba(15,23,42,.6); border:1px solid rgba(255,255,255,.08); color:#94a3b8 }
     .lap-quick:hover{ color:#e2e8f0; border-color:rgba(34,211,238,.3) }
-    .lap-tbl{ border:1px solid rgba(148,163,184,.1); border-radius:14px; overflow:hidden; margin-top:10px; background:rgba(13,20,35,.5) }
+    .lap-tbl{ border:1px solid rgba(148,163,184,.1); border-radius:14px; overflow:hidden; margin-top:10px; background:rgba(13,20,35,.5);
+      content-visibility:auto; contain-intrinsic-size:auto 300px }
     .lap-tbl.open{ border-color:rgba(148,163,184,.16) }
     .lap-tbl-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px; cursor:pointer; font-size:11px; font-weight:800; letter-spacing:.06em; color:#cbd5e1; user-select:none }
     .lap-tbl-head:hover{ background:rgba(255,255,255,.025) }
@@ -1240,7 +1241,9 @@
     .lap-tbl-count{ font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px; background:rgba(255,255,255,.06); color:#cbd5e1 }
     .lap-tbl-copy{ font-size:9px; font-weight:800; padding:5px 9px; border-radius:8px; background:rgba(15,23,42,.7); border:1px solid rgba(255,255,255,.08); color:#94a3b8 }
     .lap-tbl-copy:hover{ color:#e2e8f0 }
-    .lap-tbl-body{ display:none; border-top:1px solid rgba(255,255,255,.06); max-height:460px; overflow-y:auto }
+    /* tanpa nested-scroll: 50 baris/halaman cukup pendek, biar halaman yang
+       scroll (nested overflow container = sumber lag & scroll-trap di Chrome). */
+    .lap-tbl-body{ display:none; border-top:1px solid rgba(255,255,255,.06) }
     .lap-tbl.open .lap-tbl-body{ display:block }
     .lap-chip{ font-size:10px; font-weight:800; padding:5px 10px; border-radius:9px; border:1px solid rgba(255,255,255,.1); background:rgba(15,23,42,.55); color:#94a3b8; cursor:pointer; user-select:none }
     .lap-chip.on{ border-color:rgba(34,211,238,.4); background:rgba(8,145,178,.18); color:#a5f3fc }

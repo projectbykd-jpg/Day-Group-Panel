@@ -551,6 +551,7 @@
         if (el) el.style.display = 'none';
       });
 
+      hideToast();
       const target = document.getElementById(pages[page] || 'main-panel');
       if (target) { target.style.display = 'flex'; if (page !== currentPage) FX.page(target); }
 
@@ -1783,7 +1784,12 @@
       requestAnimationFrame(() => box.classList.add('show'));
 
       clearTimeout(toastHideTimer);
-      toastHideTimer = setTimeout(() => box.classList.remove('show'), 2400);
+      toastHideTimer = setTimeout(() => box.classList.remove('show'), 2600);
+    }
+    function hideToast() {
+      clearTimeout(toastHideTimer);
+      const b = document.getElementById('toast');
+      if (b) b.classList.remove('show');
     }
 
     function getShioLocal(num) {
