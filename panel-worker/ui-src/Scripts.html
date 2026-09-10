@@ -3385,6 +3385,9 @@ Tindakan ini tidak dapat dibatalkan.`,
           investSetVal('investKoderedis', c.KODEREDIS);
           investSetVal('investCookieExtra', c.COOKIE_EXTRA);
           INVEST_NUM_FIELDS.forEach(k => investSetVal('invest_' + k, c[k]));
+          investSetVal('investPasaranRaw', '');
+          const pc = document.getElementById('investPasaranCount');
+          if (pc) pc.textContent = String(c.PASARAN_COUNT || 0);
           if (box) box.textContent = 'Setting terakhir tersimpan di server — tidak perlu diisi ulang selama PHPSESSID belum berubah.';
           // Belum ada sesi tersimpan -> buka form; kalau sudah ada -> sembunyikan.
           const dbox = document.getElementById('investSettingBox');
@@ -3407,6 +3410,7 @@ Tindakan ini tidak dapat dibatalkan.`,
         KODEREDIS: investVal('investKoderedis'),
         COOKIE_EXTRA: investVal('investCookieExtra')
       };
+      if (investVal('investPasaranRaw')) payload.PASARAN_RAW = investVal('investPasaranRaw');
       INVEST_NUM_FIELDS.forEach(k => payload[k] = investVal('invest_' + k));
       if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>MENYIMPAN...'; }
       google.script.run
@@ -3419,6 +3423,10 @@ Tindakan ini tidak dapat dibatalkan.`,
             investSetVal('investKoderedis', c.KODEREDIS);
             investSetVal('investCookieExtra', c.COOKIE_EXTRA);
             INVEST_NUM_FIELDS.forEach(k => investSetVal('invest_' + k, c[k]));
+            investSetVal('investPasaranRaw', '');
+            const pc = document.getElementById('investPasaranCount');
+            if (pc) pc.textContent = String(c.PASARAN_COUNT || 0);
+            if (c.PASARAN_COUNT) toast(c.PASARAN_COUNT + ' pasaran panel tersimpan');
             const dbox = document.getElementById('investSettingBox');
             if (dbox) dbox.open = false;
           } else {

@@ -12,8 +12,34 @@ export const INVEST_DEFAULT_CONFIG = {
 	LIMIT_2D: 20,
 	LIMIT_3D: 250,
 	LIMIT_4D: 1296,
+	// JSON [["p7023","ARIZONA"],...] — daftar pasaran KHUSUS panel ini. Diisi kalau
+	// auto-discovery gagal (dropdown pasaran di-render JavaScript, mis. agwlXX).
+	// Kosong = scanner pakai auto-discovery / list bawaan.
+	PASARAN_JSON: "",
 };
 export type InvestConfig = typeof INVEST_DEFAULT_CONFIG;
+
+/** Ambil pasangan [kode pNNNN, nama] dari HTML <select>/<option> pasaran. */
+export function parsePasaranOptionsHtml(html: string): [string, string][] {
+	const out: [string, string][] = [];
+	const seen = new Set<string>();
+	const re = /<option\b([^>]*)>([^<]*)/gi;
+	let mm: RegExpExecArray | null;
+	while ((mm = re.exec(html))) {
+		const attrs = mm[1] || "";
+		const label = (mm[2] || "").replace(/\s+/g, " ").trim();
+		if (/display\s*:\s*none/i.test(attrs)) continue;
+		const vm = attrs.match(/value=["']([^"']*)["']/i);
+		const val = vm ? vm[1].trim() : "";
+		if (!val || !label || /^pilih/i.test(label)) continue;
+		if (/^pool-|^param|^\d+$/i.test(val)) continue;
+		const cm = val.match(/(?:^|,)\s*(p\d+)\s*$/i);
+		if (!cm || seen.has(cm[1])) continue;
+		seen.add(cm[1]);
+		out.push([cm[1], label]);
+	}
+	return out;
+}
 
 // Konstanta scan (tidak diutak-atik dari panel).
 export const INVEST_TIMEZONE = "Asia/Jakarta";
@@ -80,6 +106,7 @@ export async function investLoadConfig(env: Env, user: string): Promise<InvestCo
 		cfg.LIMIT_2D = Number(row.limit_2d ?? INVEST_DEFAULT_CONFIG.LIMIT_2D);
 		cfg.LIMIT_3D = Number(row.limit_3d ?? INVEST_DEFAULT_CONFIG.LIMIT_3D);
 		cfg.LIMIT_4D = Number(row.limit_4d ?? INVEST_DEFAULT_CONFIG.LIMIT_4D);
+		cfg.PASARAN_JSON = String(row.pasaran_json || "");
 	}
 	cfg.BASE_URL = normalizeInvestBaseUrl(cfg.BASE_URL);
 	return cfg;
@@ -96,14 +123,32 @@ export async function investSaveConfig(env: Env, user: string, data: Record<stri
 	};
 	const baseUrl = normalizeInvestBaseUrl(pick("BASE_URL"));
 
+	// PASARAN: bisa dikirim sbg HTML <select> mentah (PASARAN_RAW) atau JSON siap
+	// (PASARAN_JSON). Parse & simpan sbg JSON bersih; string "-" / "reset" = kosongkan.
+	let pasaranJson = cur.PASARAN_JSON;
+	if (Object.prototype.hasOwnProperty.call(data, "PASARAN_RAW") || Object.prototype.hasOwnProperty.call(data, "PASARAN_JSON")) {
+		const raw = String(data.PASARAN_RAW ?? data.PASARAN_JSON ?? "").trim();
+		if (!raw || /^(-|reset|kosong|clear)$/i.test(raw)) {
+			pasaranJson = "";
+		} else if (raw.startsWith("[")) {
+			try {
+				const arr = JSON.parse(raw);
+				if (Array.isArray(arr) && arr.length >= 5) pasaranJson = JSON.stringify(arr);
+			} catch { /* abaikan JSON rusak */ }
+		} else {
+			const parsed = parsePasaranOptionsHtml(raw);
+			if (parsed.length >= 5) pasaranJson = JSON.stringify(parsed);
+		}
+	}
+
 	await getTurso(env).prepare(
 		`INSERT INTO invest_config
-		   (username, base_url, phpsessid, koderedis, cookie_extra, limit_2d, limit_3d, limit_4d, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		   (username, base_url, phpsessid, koderedis, cookie_extra, limit_2d, limit_3d, limit_4d, pasaran_json, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(username) DO UPDATE SET
 		   base_url = excluded.base_url, phpsessid = excluded.phpsessid, koderedis = excluded.koderedis,
 		   cookie_extra = excluded.cookie_extra, limit_2d = excluded.limit_2d, limit_3d = excluded.limit_3d,
-		   limit_4d = excluded.limit_4d, updated_at = excluded.updated_at`,
+		   limit_4d = excluded.limit_4d, pasaran_json = excluded.pasaran_json, updated_at = excluded.updated_at`,
 	)
 		.bind(
 			user,
@@ -114,6 +159,7 @@ export async function investSaveConfig(env: Env, user: string, data: Record<stri
 			num("LIMIT_2D"),
 			num("LIMIT_3D"),
 			num("LIMIT_4D"),
+			pasaranJson,
 			tsNow(),
 		)
 		.run();
@@ -323,5 +369,13 @@ export function investConfigForClient(cfg: InvestConfig) {
 		LIMIT_2D: cfg.LIMIT_2D,
 		LIMIT_3D: cfg.LIMIT_3D,
 		LIMIT_4D: cfg.LIMIT_4D,
+		PASARAN_COUNT: (() => {
+			try {
+				const a = JSON.parse(cfg.PASARAN_JSON || "[]");
+				return Array.isArray(a) ? a.length : 0;
+			} catch {
+				return 0;
+			}
+		})(),
 	};
 }

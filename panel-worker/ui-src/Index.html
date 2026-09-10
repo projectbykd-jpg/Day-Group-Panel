@@ -643,6 +643,10 @@
                 <div class="invest-field"><label>Limit 2D</label><input id="invest_LIMIT_2D" type="number" class="invest-input"></div>
                 <div class="invest-field"><label>Limit 3D</label><input id="invest_LIMIT_3D" type="number" class="invest-input"></div>
                 <div class="invest-field"><label>Limit 4D</label><input id="invest_LIMIT_4D" type="number" class="invest-input"></div>
+                <div class="invest-field" style="grid-column:1/-1">
+                  <label>Daftar pasaran panel (isi kalau scan "0 data" — <span id="investPasaranCount" class="text-emerald-400 font-bold">0</span> tersimpan)</label>
+                  <textarea id="investPasaranRaw" class="invest-input" placeholder="Buka panel agen -> klik kanan dropdown 'Pilih Pasar' -> Inspect -> copy blok <select>...</select> lalu tempel di sini. Ketik - untuk mengosongkan."></textarea>
+                </div>
               </div>
               <div class="invest-actions">
                 <button id="investSaveBtn" onclick="saveInvestConfig()" class="invest-btn invest-btn-save"><i class="fa-solid fa-floppy-disk"></i>SIMPAN SETTING</button>

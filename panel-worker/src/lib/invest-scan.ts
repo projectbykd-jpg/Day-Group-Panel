@@ -157,23 +157,38 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 	let pas: [string, string][] = INVEST_PASARAN;
 	let pasSrc = "default";
 	const discDiag: string[] = [];
-	// Dropdown <select onchange="gantipasar(...)"> bisa ada di beberapa halaman
-	// tergantung varian panel. Coba beberapa kandidat sampai dapat >=20 pasaran.
-	for (const cand of [
-		"admin_invoice13.php", "index.php", "agentoverview.php", "menu.php",
-		"home.php", "main.php", "left.php", "menu_kiri.php", "admin_invoice.php",
-	]) {
+	// 1) Daftar pasaran TERSIMPAN (di-set manual dari Setting utk panel yg dropdown-
+	//    nya di-render JS spt agwlXX). Prioritas tertinggi.
+	if (cfg.PASARAN_JSON) {
 		try {
-			const html = await investFetch(cfg, cand);
-			const disc = parsePasaranOptions(html);
-			discDiag.push(cand.replace(".php", "") + ":" + html.length + "b/" + disc.length + "opt");
-			if (disc.length >= 20) {
-				pas = disc;
-				pasSrc = cand.replace(".php", "") + "(" + disc.length + ")";
-				break;
+			const arr = JSON.parse(cfg.PASARAN_JSON);
+			if (Array.isArray(arr) && arr.length >= 5) {
+				pas = arr.filter((x) => Array.isArray(x) && x[0] && x[1]).map((x) => [String(x[0]), String(x[1])] as [string, string]);
+				pasSrc = "tersimpan(" + pas.length + ")";
 			}
-		} catch (e) {
-			discDiag.push(cand.replace(".php", "") + ":ERR");
+		} catch {
+			/* JSON rusak -> lanjut auto-discovery */
+		}
+	}
+	// 2) Auto-discovery dari <select> di halaman panel (kalau belum ada list tersimpan).
+	//    Dropdown bisa ada di beberapa halaman tergantung varian panel.
+	if (pasSrc === "default") {
+		for (const cand of [
+			"admin_invoice13.php", "index.php", "agentoverview.php", "menu.php",
+			"home.php", "main.php", "left.php", "menu_kiri.php", "admin_invoice.php",
+		]) {
+			try {
+				const html = await investFetch(cfg, cand);
+				const disc = parsePasaranOptions(html);
+				discDiag.push(cand.replace(".php", "") + ":" + html.length + "b/" + disc.length + "opt");
+				if (disc.length >= 20) {
+					pas = disc;
+					pasSrc = cand.replace(".php", "") + "(" + disc.length + ")";
+					break;
+				}
+			} catch (e) {
+				discDiag.push(cand.replace(".php", "") + ":ERR");
+			}
 		}
 	}
 	let cursor = Number(st.cursor || 0);
