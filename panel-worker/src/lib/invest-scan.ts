@@ -246,14 +246,24 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 		const fetchesBefore = fetches;
 		let aborted = false;
 		try {
-			const head0 = await doFetch("admin_invoice13.php?psr=" + encodeURIComponent(kode));
-			const open = parsePeriode(head0);
+			let head0 = await doFetch("admin_invoice13.php?psr=" + encodeURIComponent(kode));
+			let open = parsePeriode(head0);
+			// agwlXX di belakang Cloudflare kadang balas template TANPA periode di
+			// percobaan pertama. Coba ulang 1x (jeda kecil) sebelum menyerah.
+			if (!open && budgetLeft()) {
+				await new Promise((r) => setTimeout(r, 600));
+				head0 = await doFetch("admin_invoice13.php?psr=" + encodeURIComponent(kode));
+				open = parsePeriode(head0);
+			}
 			// Diagnostik: kalau pasaran pertama tidak menghasilkan periode sama sekali,
 			// simpan cuplikan body-nya supaya ketahuan situs balikin apa (login page
 			// tak dikenal? "Information"? kosong?). Dipakai di pesan akhir bila 0 data.
-			if (!open && probeSnippet.split("||").length < 2) {
+			if (!open && probeSnippet.split(" || ").length < 2) {
+				const flat = String(head0 || "").replace(/\s+/g, " ").trim();
+				// Fokus ke area input periode + status, bukan cuma awal <style>.
+				const around = flat.match(/.{0,40}periode.{0,120}/i);
 				probeSnippet += (probeSnippet ? " || " : "") +
-					nama + ":" + String(head0 || "").replace(/\s+/g, " ").trim().slice(0, 180);
+					nama + `(len${flat.length}):` + (around ? around[0] : flat.slice(0, 200));
 			}
 			if (open) diag.periods++;
 			if (open) {
