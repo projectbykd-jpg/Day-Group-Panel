@@ -24,12 +24,15 @@
           return localStorage.getItem('dg_fx') !== 'off';
         } catch (e) { return !!window.anime; }
       },
-      // baris/kartu muncul dengan efek naik + skala, di-stagger
+      // baris/kartu muncul dengan efek naik + skala, di-stagger.
+      // PENTING: begitu selesai, inline transform/opacity DIBERSIHKAN — kalau
+      // dibiarkan, ratusan <tr> memegang layer compositor sendiri -> scroll berat.
       reveal(nodes, opt) {
         opt = opt || {};
         const list = (nodes && nodes.length != null) ? Array.from(nodes) : (nodes ? [nodes] : []);
         if (!list.length) return;
-        if (!FX.on) { list.forEach(n => { n.style.opacity = ''; n.style.transform = ''; }); return; }
+        const clear = () => list.forEach(n => { n.style.opacity = ''; n.style.transform = ''; n.style.willChange = ''; });
+        if (!FX.on) { clear(); return; }
         anime.remove(list);
         anime({
           targets: list,
@@ -38,7 +41,8 @@
           scale: [opt.scale != null ? opt.scale : 0.985, 1],
           duration: opt.duration || 460,
           delay: anime.stagger(opt.step || 42, { start: opt.start || 0 }),
-          easing: opt.easing || 'cubicBezier(.2,.8,.2,1)'
+          easing: opt.easing || 'cubicBezier(.2,.8,.2,1)',
+          complete: clear
         });
       },
       // kartu-kartu utama pada sebuah halaman
@@ -762,7 +766,7 @@
       if (!wrap || !body) return;
       wrap.classList.toggle('open', st.open);
       const cnt = document.getElementById('lapTblCount_' + id);
-      if (!st.open) { body.innerHTML = ''; return; }
+      if (!st.open) { body.innerHTML = ''; st._revealed = false; return; }
       const list = lapTblFiltered(id);
       if (cnt) cnt.textContent = list.length + (st.q ? '/' + st.rows.length : '');
       const totalP = Math.max(1, Math.ceil(list.length / LAP_PAGE_SIZE));
@@ -788,8 +792,12 @@
           <thead class="bg-slate-900/60 text-slate-400 text-[9px] uppercase sticky top-0"><tr>${head}</tr></thead>
           <tbody>${rowsHtml}</tbody></table></div>${st.footer || ''}${pager}`;
       if (keepFocus) { const si = document.getElementById('lapSearch_' + id); if (si) { si.focus(); si.setSelectionRange(si.value.length, si.value.length); } }
-      // baris tabel muncul di-stagger (dibatasi 24 baris pertama biar ringan)
-      if (pageRows.length) FX.reveal(Array.from(body.querySelectorAll('tbody tr')).slice(0, 24), { y: 8, step: 14, duration: 340, scale: 1 });
+      // Animasi baris HANYA saat tabel pertama kali dibuka — bukan tiap ketik
+      // di search / ganti halaman (dulu bikin lag saat mengetik).
+      if (pageRows.length && !st._revealed && !keepFocus) {
+        st._revealed = true;
+        FX.reveal(Array.from(body.querySelectorAll('tbody tr')).slice(0, 18), { y: 8, step: 12, duration: 300, scale: 1 });
+      }
     }
     // dipanggil sesudah host.innerHTML dipasang: render body tiap tabel
     function lapTblMountAll() {

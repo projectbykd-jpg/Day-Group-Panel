@@ -52,7 +52,11 @@
     .sidebar-nav, .admin-tab, .floating-toast, .header-stat, .status-legend,
     .panel-section-title, .closing-eyebrow, #live-clock, #live-date { user-select: none; }
 
-    .glass-card { background: rgba(15, 23, 42, 0.72); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, 0.06); box-shadow: var(--shadow-md); }
+    /* TANPA backdrop-filter: kartu ini besar & sticky (header, sidebar, kartu
+       Laporan Harian). backdrop-filter di elemen sticky = browser me-render ulang
+       blur tiap frame saat scroll -> lag berat / tab nge-freeze di halaman panjang.
+       Latarnya dibuat lebih pekat supaya tetap terlihat "kaca". */
+    .glass-card { background: rgba(13, 20, 36, 0.92); border: 1px solid rgba(255, 255, 255, 0.06); box-shadow: var(--shadow-md); }
     .glass-card:hover { border-color: rgba(255, 255, 255, 0.12); box-shadow: var(--shadow-lg); }
 
     /* Blur ganda (glass-inner di dalam glass-card) sangat mahal untuk GPU dan efeknya
@@ -89,8 +93,8 @@
     html { scroll-behavior: smooth; }
     button, input, select, textarea { -webkit-tap-highlight-color: transparent; }
     button:disabled { opacity: .58; cursor: not-allowed; filter: grayscale(.15); transform: none !important; }
-    .glass-card { background: linear-gradient(160deg, rgba(20,29,48,.86), rgba(9,14,26,.8)); border-color: var(--panel-border); box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255,255,255,.05); }
-    .glass-inner { background: linear-gradient(160deg, rgba(31,42,61,.5), rgba(16,23,38,.38)); border-color: rgba(148,163,184,.1); }
+    .glass-card { background: linear-gradient(160deg, #141d30, #0b1120); border-color: var(--panel-border); box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255,255,255,.05); }
+    .glass-inner { background: linear-gradient(160deg, rgba(34,45,66,.85), rgba(19,27,44,.8)); border-color: rgba(148,163,184,.1); }
     .glass-card::before { content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none; background:radial-gradient(120% 80% at 0% 0%, rgba(255,255,255,.04), transparent 42%); }
     .glass-card > * { position: relative; z-index: 1; }
     .panel-section-title { display:flex; align-items:center; gap:.65rem; font-size:.72rem; font-weight:800; letter-spacing:.08em; color:#cbd5e1; }
