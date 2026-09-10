@@ -20,6 +20,7 @@ import {
 	buildClosingPredictionMessage,
 	validatePredictionContext,
 	sendPredictionJob,
+	readPredictionRegistryForDate,
 } from "../lib/prediction";
 import { listActiveSessions } from "../lib/session";
 
@@ -165,10 +166,53 @@ export async function runAutoPostRouter(env: Env, opts: { force?: boolean; windo
 		}
 	}
 
-	const runSlot = async (guardKey: string, job: () => Promise<{ counters?: { success?: number; already?: number; failed?: number }; pendingWebsites?: string[] }>) => {
+	// GUARD ANDALAN = prediction_registry (D1), bukan KV. KV cuma fast-path.
+	// Alasan: kuota KV write Free 1000/hari; kalau jebol, SESS.put(guard) gagal
+	// diam-diam -> slot tidak pernah terkunci -> router menjalankan slot yang sama
+	// tiap menit sepanjang window (spam log "DUPLIKAT" / risiko dobel).
+	// registry di-cache 1x per run.
+	let _reg: Record<string, { status: string }> | null = null;
+	const registryAllDone = async (scheduleId: string): Promise<boolean> => {
+		if (!_reg) {
+			try {
+				_reg = (await readPredictionRegistryForDate(env, dateKey)) as Record<string, { status: string }>;
+			} catch {
+				_reg = {};
+			}
+		}
+		const sid = scheduleId.toUpperCase();
+		return websites.every((w) => {
+			const e = _reg![sid + "||" + w.toUpperCase()];
+			return e && String(e.status).toUpperCase() === "BERHASIL";
+		});
+	};
+	const kvGet = async (k: string): Promise<string | null> => {
+		try {
+			return await env.SESS.get(k);
+		} catch {
+			return null;
+		}
+	};
+	const kvPut = async (k: string, ttl: number) => {
+		try {
+			await env.SESS.put(k, "1", { expirationTtl: ttl });
+		} catch {
+			/* kuota KV -> abaikan, registry yang jadi andalan */
+		}
+	};
+
+	const runSlot = async (
+		guardKey: string,
+		scheduleId: string,
+		job: () => Promise<{ counters?: { success?: number; already?: number; failed?: number }; pendingWebsites?: string[] }>,
+	) => {
 		if (!opts.force) {
-			const g = await env.SESS.get(guardKey);
-			if (g) return;
+			if (await kvGet(guardKey)) return;
+			// cek D1: semua website slot ini sudah BERHASIL hari ini? -> kunci & keluar.
+			if (await registryAllDone(scheduleId)) {
+				await kvPut(guardKey, GUARD_TTL);
+				return;
+			}
 		}
 		let res;
 		try {
@@ -183,18 +227,21 @@ export async function runAutoPostRouter(env: Env, opts: { force?: boolean; windo
 		summary.failed += Number(res?.counters?.failed || 0);
 		const hadFailure = !res || !res.counters || (res.pendingWebsites || []).length > 0;
 		if (!hadFailure) {
-			await env.SESS.put(guardKey, "1", { expirationTtl: GUARD_TTL });
+			await kvPut(guardKey, GUARD_TTL);
 			return;
 		}
-		// Masih ada yang gagal: coba lagi tick berikutnya, TAPI batasi 3x supaya tidak
-		// spam kirim/log tiap menit sepanjang window catch-up.
+		// Masih ada yang gagal: coba lagi tick berikutnya, TAPI batasi 3x.
 		const attKey = guardKey + ":att";
-		const att = Number((await env.SESS.get(attKey)) || 0) + 1;
-		if (att >= 3) {
-			await env.SESS.put(guardKey, "1", { expirationTtl: GUARD_TTL });
-			await env.SESS.delete(attKey);
-		} else {
-			await env.SESS.put(attKey, String(att), { expirationTtl: GUARD_TTL });
+		const att = Number((await kvGet(attKey)) || 0) + 1;
+		try {
+			if (att >= 3) {
+				await kvPut(guardKey, GUARD_TTL);
+				await env.SESS.delete(attKey);
+			} else {
+				await env.SESS.put(attKey, String(att), { expirationTtl: GUARD_TTL });
+			}
+		} catch {
+			/* kuota KV -> abaikan; registry tetap mencegah dobel di tick berikutnya */
 		}
 	};
 
@@ -202,7 +249,7 @@ export async function runAutoPostRouter(env: Env, opts: { force?: boolean; windo
 		const [hh, mm] = JADWAL_PREDIKSI_CONFIG[index].jam.split(":").map(Number);
 		if (!slotDue(nowMinutes, hh * 60 + mm, opts.windowMinutes)) continue;
 		const scheduleId = predictionScheduleId(index);
-		await runSlot(`autopost:${dateKey}:${scheduleId}`, async () => {
+		await runSlot(`autopost:${dateKey}:${scheduleId}`, scheduleId, async () => {
 			const config = JADWAL_PREDIKSI_CONFIG[index];
 			const contents = await getOrCreateDailyPredictionContents(env, index, websites);
 			return sendPredictionJob({
@@ -223,7 +270,7 @@ export async function runAutoPostRouter(env: Env, opts: { force?: boolean; windo
 	for (const slot of CLOSING_PREDICTION_SLOTS) {
 		const [hh, mm] = slot.split(":").map(Number);
 		if (!slotDue(nowMinutes, hh * 60 + mm, opts.windowMinutes)) continue;
-		await runSlot(`autopost:${dateKey}:${closingScheduleId(slot)}`, () =>
+		await runSlot(`autopost:${dateKey}:${closingScheduleId(slot)}`, closingScheduleId(slot), () =>
 			sendPredictionJob({
 				env,
 				username: "AUTO",
