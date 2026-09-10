@@ -148,6 +148,8 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 
 	let scannedThisTick = 0;
 	let probeSnippet = "";
+	// Diagnostik ringkas — kenapa 0 data?
+	const diag = { periods: 0, withTotals: 0, pages: 0, dateSkip: 0, overLimit: 0 };
 	for (; cursor < pas.length; cursor++) {
 		if (!budgetLeft()) {
 			await pauseAndReturn();
@@ -174,9 +176,10 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 			// Diagnostik: kalau pasaran pertama tidak menghasilkan periode sama sekali,
 			// simpan cuplikan body-nya supaya ketahuan situs balikin apa (login page
 			// tak dikenal? "Information"? kosong?). Dipakai di pesan akhir bila 0 data.
-			if (cursor === 0 && !open && !probeSnippet) {
+			if (!open && !probeSnippet) {
 				probeSnippet = String(head0 || "").replace(/\s+/g, " ").trim().slice(0, 260) || "(body kosong)";
 			}
+			if (open) diag.periods++;
 			if (open) {
 				for (let i = 0; i < INVEST_PERIODE_LOOKBACK; i++) {
 					if (!budgetLeft()) {
@@ -188,12 +191,14 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 					const totals = parseTotals(head);
 					const maxG = maxGame(totals);
 					if (totals[maxG] === 0) continue;
+					diag.withTotals++;
 
 					const page1 = await doFetch(framePath(per, maxG, 0, INVEST_PAGE_SIZE));
+					diag.pages++;
 					const pdate = firstDate(page1);
 					if (pdate) {
 						if (pdate < yesterday) break;
-						if (!wanted[pdate]) continue;
+						if (!wanted[pdate]) { diag.dateSkip++; continue; }
 					}
 
 					for (const g of INVEST_GAMES) {
@@ -211,6 +216,7 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 							}
 							const html =
 								pageNo === 0 && g === maxG ? page1 : await doFetch(framePath(per, g, start, INVEST_PAGE_SIZE));
+							if (!(pageNo === 0 && g === maxG)) diag.pages++;
 							pageNo++;
 							const got = eatRows(html, seen, counts);
 							if (got === 0) break;
@@ -219,6 +225,7 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 						}
 						for (const uu of Object.keys(counts)) {
 							if (counts[uu] > limits[g]) {
+								diag.overLimit++;
 								marketBuffer.push({
 									tanggal: pdate || today,
 									bettor: uu,
@@ -297,7 +304,8 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 				"Scan selesai tapi TIDAK ADA data invoice dari situs agen (0 pasaran mengembalikan data). " +
 				"Kemungkinan: sesi PHPSESSID kedaluwarsa, atau situs agen sedang maintenance/error. " +
 				"Perbarui PHPSESSID di Setting lalu scan ulang." +
-				(probeSnippet ? ` [Diagnostik — situs balikin: "${probeSnippet}"]` : "");
+				` [Diag: ${diag.periods}/${pas.length} pasaran ada periode, ${diag.withTotals} periode ada total, ${diag.pages} halaman diambil, ${diag.dateSkip} di-skip tanggal, ${diag.overLimit} lewat batas]` +
+				(diag.periods === 0 && probeSnippet ? ` situs balikin: "${probeSnippet}"` : "");
 		}
 	}
 
