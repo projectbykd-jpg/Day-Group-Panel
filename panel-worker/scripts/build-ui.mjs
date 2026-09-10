@@ -67,6 +67,13 @@ const ARG_MAP = {
 	lapRunAdmin: ["token", "startDate", "endDate"],
 	lapMozartImport: ["token", "startDate", "endDate", "depositRows", "withdrawRows", "accountsRaw", "panelsRaw"],
 	lapAdminStatus: ["token", "jobId"],
+	botNewsStatus: ["token"],
+	botNewsSaveConfig: ["token", "data"],
+	botNewsAddSource: ["token", "data"],
+	botNewsToggleSource: ["token", "data"],
+	botNewsDeleteSource: ["token", "data"],
+	botNewsRunNow: ["token"],
+	botNewsSkip: ["token", "data"],
 };
 
 const shim = `<script>

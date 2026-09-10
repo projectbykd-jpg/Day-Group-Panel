@@ -610,6 +610,11 @@
         loadInvestConfig();
       }
 
+      if (page === 'bot') {
+        loadBotNews();
+        return; // BOT: jangan sentuh header summary / live poll (endpoint ditolak)
+      }
+
       // Header sudah dipoll oleh live-poll; muat manual hanya kalau belum pernah terisi.
       if (!headerSummaryLoadedOnce) loadHeaderSummary();
 
@@ -3770,5 +3775,83 @@ Tindakan ini tidak dapat dibatalkan.`,
         })
         .withFailureHandler(() => {})
         .investGetWarnings(currentSessionToken);
+    }
+
+    /* ========================= BOT · NEWS ========================= */
+    function botEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
+
+    function applyBotNews(snap){
+      if (!snap || !snap.success) return;
+      const c = snap.config || {};
+      const set = (id,v)=>{ const el=document.getElementById(id); if(el){ if(el.type==='checkbox') el.checked=!!v; else el.value=(v==null?'':v); } };
+      set('botEnabled', c.enabled); set('botAttribution', c.attribution);
+      set('botPerRun', c.per_run); set('botDailyCap', c.daily_cap);
+      set('botModel', c.gemini_model); set('botStyle', c.rewrite_style);
+      set('botBlogId', c.blog_id);
+      const hint = document.getElementById('botCredHint');
+      if (hint) hint.textContent = (c.has_gemini_key?'Gemini key OK':'Gemini key BELUM ada') + ' · ' + (c.has_blogger?'Blogger OK':'Blogger BELUM tersambung');
+
+      const bs = snap.byStatus || {};
+      const stat = document.getElementById('botNewsStat');
+      if (stat) stat.innerHTML = [
+        ['Diposting hari ini', snap.postedToday||0],
+        ['Antre (new)', bs.new||0],
+        ['Total diposting', bs.posted||0],
+        ['Error', bs.error||0]
+      ].map(x=>`<div class="mini-card"><div class="text-[10px] text-slate-400 font-semibold">${x[0]}</div><div class="text-xl font-black mt-1 text-slate-50">${x[1]}</div></div>`).join('');
+
+      const sl = document.getElementById('botSourceList');
+      if (sl) sl.innerHTML = (snap.sources||[]).map(s=>`
+        <div class="flex items-center gap-2 glass-inner rounded-xl px-3 py-2">
+          <span class="text-[9px] font-bold px-2 py-0.5 rounded-full ${s.active?'bg-emerald-500/15 text-emerald-300':'bg-slate-500/15 text-slate-400'}">${s.active?'ON':'OFF'}</span>
+          <div class="flex-1 min-w-0"><div class="text-xs text-slate-100 font-semibold truncate">${botEsc(s.name)} <span class="text-slate-500">(${botEsc(s.kind)})</span></div><div class="text-[10px] text-slate-500 truncate">${botEsc(s.url)}</div></div>
+          <button onclick="toggleBotSource(${s.id},${s.active?0:1})" class="text-[10px] text-cyan-300 font-bold">${s.active?'Matikan':'Nyalakan'}</button>
+          <button onclick="deleteBotSource(${s.id})" class="text-[10px] text-rose-300 font-bold">Hapus</button>
+        </div>`).join('') || '<div class="text-[11px] text-slate-500">Belum ada sumber.</div>';
+
+      const al = document.getElementById('botArticleList');
+      if (al) al.innerHTML = (snap.recent||[]).map(a=>{
+        const badge = {posted:'bg-emerald-500/15 text-emerald-300',new:'bg-cyan-500/15 text-cyan-300',error:'bg-rose-500/15 text-rose-300',skipped:'bg-slate-500/15 text-slate-400'}[a.status]||'bg-slate-500/15 text-slate-300';
+        return `<div class="glass-inner rounded-xl px-3 py-2">
+          <div class="flex items-center gap-2">
+            <span class="text-[9px] font-bold px-2 py-0.5 rounded-full ${badge}">${botEsc(a.status)}</span>
+            <span class="text-[10px] text-slate-500">${botEsc(a.source)}</span>
+            ${a.status==='new'||a.status==='error'?`<button onclick="skipBotArticle(${a.id})" class="text-[10px] text-slate-400 ml-auto">skip</button>`:''}
+          </div>
+          <div class="text-xs text-slate-100 mt-1">${botEsc(a.title)}</div>
+          <div class="text-[10px] mt-1 flex gap-3">
+            <a href="${botEsc(a.url)}" target="_blank" class="text-slate-500 hover:text-slate-300">sumber</a>
+            ${a.post_url?`<a href="${botEsc(a.post_url)}" target="_blank" class="text-emerald-400">hasil post</a>`:''}
+            ${a.error?`<span class="text-rose-400 truncate">${botEsc(a.error)}</span>`:''}
+          </div>
+        </div>`;
+      }).join('') || '<div class="text-[11px] text-slate-500">Belum ada artikel.</div>';
+    }
+
+    function loadBotNews(){
+      google.script.run.withSuccessHandler(applyBotNews).withFailureHandler(e=>toast('BOT: '+((e&&e.message)||e))).botNewsStatus(currentSessionToken);
+    }
+    function saveBotNewsConfig(){
+      const g=id=>{const el=document.getElementById(id);return !el?'':(el.type==='checkbox'?(el.checked?'1':'0'):String(el.value||'').trim());};
+      const data={enabled:g('botEnabled'),attribution:g('botAttribution'),per_run:g('botPerRun'),daily_cap:g('botDailyCap'),gemini_model:g('botModel'),rewrite_style:g('botStyle'),blogger_blog_id:g('botBlogId')};
+      const key=g('botGeminiKey'); if(key) data.gemini_key=key;
+      google.script.run.withSuccessHandler(s=>{toast('Konfigurasi BOT tersimpan');const el=document.getElementById('botGeminiKey');if(el)el.value='';applyBotNews(s);}).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsSaveConfig(currentSessionToken,data);
+    }
+    function addBotSource(){
+      const data={name:document.getElementById('botSrcName').value.trim(),kind:document.getElementById('botSrcKind').value,url:document.getElementById('botSrcUrl').value.trim()};
+      if(!data.name||!data.url){toast('Isi nama & URL feed');return;}
+      google.script.run.withSuccessHandler(s=>{toast('Sumber ditambah');document.getElementById('botSrcName').value='';document.getElementById('botSrcUrl').value='';applyBotNews(s);}).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsAddSource(currentSessionToken,data);
+    }
+    function toggleBotSource(id,active){ google.script.run.withSuccessHandler(applyBotNews).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsToggleSource(currentSessionToken,{id:id,active:String(active)}); }
+    function deleteBotSource(id){ if(!confirm('Hapus sumber ini?'))return; google.script.run.withSuccessHandler(applyBotNews).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsDeleteSource(currentSessionToken,{id:id}); }
+    function skipBotArticle(id){ google.script.run.withSuccessHandler(applyBotNews).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsSkip(currentSessionToken,{id:id}); }
+    function botNewsRun(){
+      toast('Memproses 1 artikel...');
+      google.script.run.withSuccessHandler(r=>{
+        if(r&&r.postUrl) toast('Terbit: '+r.title);
+        else if(r&&r.error) toast('Error: '+r.error);
+        else toast('Tidak ada artikel baru untuk diproses');
+        if(r&&r.snapshot) applyBotNews(r.snapshot); else loadBotNews();
+      }).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsRunNow(currentSessionToken);
     }
   </script>

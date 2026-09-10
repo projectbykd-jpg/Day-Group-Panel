@@ -55,6 +55,16 @@ import {
 	lapRunMozart,
 	lapSaveConfig,
 } from "./api/lap";
+import {
+	botNewsAddSource,
+	botNewsDeleteSource,
+	botNewsRunNow,
+	botNewsSaveConfig,
+	botNewsSkip,
+	botNewsStatus,
+	botNewsToggleSource,
+} from "./api/bot";
+import { botNewsRun } from "./lib/bot-news";
 
 type Handler = (env: Env, body: Record<string, unknown>) => Promise<unknown>;
 const s = (v: unknown) => String(v ?? "");
@@ -163,6 +173,16 @@ const ROUTES: Record<string, Handler> = {
 			b.panelsRaw ?? [],
 		),
 	lapAdminStatus: (env, b) => lapAdminStatus(env, s(b.token), s(b.jobId)),
+
+	// role BOT — modul NEWS
+	botNewsStatus: (env, b) => botNewsStatus(env, s(b.token)),
+	botNewsSaveConfig: (env, b) => botNewsSaveConfig(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
+	botNewsAddSource: (env, b) => botNewsAddSource(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
+	botNewsToggleSource: (env, b) => botNewsToggleSource(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
+	botNewsDeleteSource: (env, b) => botNewsDeleteSource(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
+	botNewsRunNow: (env, b) => botNewsRunNow(env, s(b.token)),
+	botNewsSkip: (env, b) => botNewsSkip(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
+
 	// dipanggil GitHub Actions (auth via job key, bukan sesi)
 	lapJobStart: (env, b) => lapJobStart(env, s(b.jobId), s(b.key)),
 	lapJobResult: (env, b) =>
@@ -313,6 +333,9 @@ export default {
 				if (job === "invest" || job === "all") {
 					await investPump(env);
 					out.invest = "pumped";
+				}
+				if (job === "news" || job === "all") {
+					out.news = await botNewsRun(env);
 				}
 			} catch (e) {
 				out.ok = false;
