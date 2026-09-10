@@ -359,6 +359,13 @@ export async function botNewsSnapshot(env: Env) {
 		(await getTurso(env)
 			.prepare(`SELECT id, source, title, status, url, post_url, error, found_at, posted_at FROM news_article ORDER BY id DESC LIMIT 40`)
 			.all()).results ?? [];
+	const history =
+		(await getTurso(env)
+			.prepare(
+				`SELECT id, source, title, url, post_url, posted_at
+				 FROM news_article WHERE status='posted' ORDER BY posted_at DESC, id DESC LIMIT 200`,
+			)
+			.all()).results ?? [];
 	const byStatus: Record<string, number> = {};
 	for (const r of counts) byStatus[String(r.status)] = Number(r.c);
 	return {
@@ -378,5 +385,6 @@ export async function botNewsSnapshot(env: Env) {
 		byStatus,
 		sources,
 		recent,
+		history,
 	};
 }

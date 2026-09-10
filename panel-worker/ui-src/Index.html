@@ -745,11 +745,20 @@
             </div>
           </div>
 
-          <!-- LOG ARTIKEL -->
+          <!-- RIWAYAT POSTING -->
           <div class="mini-card">
-            <div class="text-xs font-bold text-slate-200 mb-3"><i class="fa-solid fa-newspaper text-emerald-400 mr-2"></i>ARTIKEL TERBARU</div>
-            <div id="botArticleList" class="flex flex-col gap-2 text-xs"></div>
+            <div class="flex items-center justify-between mb-3">
+              <div class="text-xs font-bold text-slate-200"><i class="fa-solid fa-clock-rotate-left text-emerald-400 mr-2"></i>RIWAYAT POSTING <span id="botHistCount" class="text-slate-500"></span></div>
+              <input id="botHistSearch" oninput="renderBotHistory()" class="glass-inner rounded-lg px-2 py-1 text-[11px] text-slate-100" placeholder="cari judul...">
+            </div>
+            <div id="botHistoryList" class="flex flex-col gap-1.5 text-xs max-h-[420px] overflow-y-auto"></div>
           </div>
+
+          <!-- LOG ARTIKEL (semua status) -->
+          <details class="mini-card">
+            <summary class="cursor-pointer text-xs font-bold text-slate-200"><i class="fa-solid fa-newspaper text-emerald-400 mr-2"></i>LOG ARTIKEL (semua status)</summary>
+            <div id="botArticleList" class="flex flex-col gap-2 text-xs mt-3"></div>
+          </details>
         </div>
       </div>
     </div>

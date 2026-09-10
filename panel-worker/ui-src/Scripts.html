@@ -3780,9 +3780,33 @@ Tindakan ini tidak dapat dibatalkan.`,
     /* ========================= BOT · NEWS ========================= */
     function botEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
 
+    let botHistoryCache = [];
+    function renderBotHistory(){
+      const box = document.getElementById('botHistoryList');
+      const cnt = document.getElementById('botHistCount');
+      if (!box) return;
+      const q = (document.getElementById('botHistSearch')||{}).value || '';
+      const ql = q.toLowerCase();
+      const rows = botHistoryCache.filter(h => !ql || String(h.title||'').toLowerCase().includes(ql));
+      if (cnt) cnt.textContent = '(' + botHistoryCache.length + (q ? ' · tampil ' + rows.length : '') + ')';
+      box.innerHTML = rows.map(h => {
+        const t = String(h.posted_at||'').slice(0,16).replace('T',' ');
+        return `<div class="flex items-start gap-2 border-b border-white/5 pb-1.5">
+          <span class="text-[9px] text-slate-500 whitespace-nowrap mt-0.5">${botEsc(t)}</span>
+          <div class="flex-1 min-w-0">
+            <a href="${botEsc(h.post_url)}" target="_blank" class="text-slate-100 hover:text-emerald-300 block truncate">${botEsc(h.title)}</a>
+            <span class="text-[9px] text-slate-500">${botEsc(h.source)}</span> ·
+            <a href="${botEsc(h.url)}" target="_blank" class="text-[9px] text-slate-500 hover:text-slate-300">sumber asli</a>
+          </div>
+        </div>`;
+      }).join('') || '<div class="text-[11px] text-slate-500">Belum ada postingan.</div>';
+    }
+
     function applyBotNews(snap){
       if (!snap || !snap.success) return;
       const c = snap.config || {};
+      botHistoryCache = snap.history || [];
+      renderBotHistory();
       const set = (id,v)=>{ const el=document.getElementById(id); if(el){ if(el.type==='checkbox') el.checked=!!v; else el.value=(v==null?'':v); } };
       set('botEnabled', c.enabled); set('botAttribution', c.attribution);
       set('botPerRun', c.per_run); set('botDailyCap', c.daily_cap);
