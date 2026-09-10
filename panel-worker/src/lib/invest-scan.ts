@@ -110,7 +110,7 @@ async function flushRaw(env: Env, owner: string, buffer: RawRow[]): Promise<void
 // ---------------------------------------------------------------------------
 // Scan 1 user dari cursor sampai selesai / deadline / sesi mati.
 // ---------------------------------------------------------------------------
-export async function investScanUser(env: Env, user: string, deadlineMs: number): Promise<void> {
+export async function investScanUser(env: Env, user: string, deadlineMs: number, maxFetches = FETCH_BUDGET_PER_TICK): Promise<void> {
 	let st = await investGetState(env, user);
 	if (st.state !== "running") return;
 
@@ -135,7 +135,7 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number)
 		fetches++;
 		return investFetch(cfg, path);
 	};
-	const budgetLeft = () => Date.now() < deadlineMs && fetches < FETCH_BUDGET_PER_TICK;
+	const budgetLeft = () => Date.now() < deadlineMs && fetches < maxFetches;
 
 	const pauseAndReturn = async () => {
 		await flushRaw(env, user, buffer);
@@ -381,50 +381,55 @@ export async function investAggregateUser(env: Env, owner: string): Promise<numb
 }
 
 // ---------------------------------------------------------------------------
-// Pump — dipanggil dari Cron Trigger scheduled()
+// Pump PER USER — lock per-user, jadi scan tiap user JALAN SENDIRI-SENDIRI
+// (user B tidak perlu menunggu scan user A selesai). Dipicu dari:
+//  - ctx.waitUntil tiap polling investGetStatus milik user itu
+//  - cron (investPump) untuk semua user 'running' — mis. saat halaman ditutup
 // ---------------------------------------------------------------------------
-export async function investPump(env: Env): Promise<void> {
-	// PENTING: cron memanggil ini tiap menit. Cek dulu ke D1 (murah, kuota 100k/hari)
-	// apakah ADA user yang scan-nya 'running'. Kalau tidak ada -> keluar SEBELUM
-	// menyentuh KV. Dulu setiap tick menulis+hapus PUMP_FLAG (2 write KV/menit =
-	// ~2880/hari) sehingga jebol limit Free 1000 write/hari -> semua SESS.put gagal,
-	// termasuk pembuatan sesi saat login ("Terjadi kesalahan saat login.").
-	const users = await investRunningUsers(env);
-	if (!users.length) return;
+export async function investPumpUser(env: Env, user: string, sliceMs = USER_SLICE_MS, maxFetches = FETCH_BUDGET_PER_TICK): Promise<void> {
+	if (!user) return;
+	const st = await investGetState(env, user);
+	if (st.state !== "running") return;
+
+	const lock = "invest:pump:" + user;
 	try {
-		if (await env.SESS.get(PUMP_FLAG)) return;
+		if (await env.SESS.get(lock)) return; // pump user ini masih jalan
 	} catch {
-		/* lanjut */
-	}
-	// TTL pendek: kalau pump sebelumnya crash tanpa sempat menghapus flag, jangan
-	// blokir scan 5 menit — cukup ~1 siklus.
-	try {
-		await env.SESS.put(PUMP_FLAG, "1", { expirationTtl: 75 });
-	} catch {
-		/* kuota KV -> lanjut tanpa lock (lebih baik jalan) */
+		/* lanjut tanpa lock */
 	}
 	try {
-		const deadline = Date.now() + PUMP_BUDGET_MS;
-		// Bagi rata anggaran waktu antar user yang antre (biar user ke-2 tidak nunggu
-		// user ke-1 selesai sepenuhnya tiap tick).
-		const perUser = Math.max(10_000, Math.min(USER_SLICE_MS, Math.floor(PUMP_BUDGET_MS / users.length)));
-		for (const user of users) {
-			if (Date.now() >= deadline) break;
-			const slice = Math.min(deadline, Date.now() + perUser);
-			try {
-				await investScanUser(env, user, slice);
-			} catch (e) {
-				await investSetState(env, user, {
-					state: "paused",
-					message: "Sempat error (" + (e instanceof Error ? e.message : String(e)) + "). Klik LANJUTKAN SCAN.",
-				});
-			}
-		}
+		await env.SESS.put(lock, "1", { expirationTtl: 60 });
+	} catch {
+		/* kuota KV -> lanjut */
+	}
+	try {
+		await investScanUser(env, user, Date.now() + sliceMs, maxFetches);
+	} catch (e) {
+		await investSetState(env, user, {
+			state: "paused",
+			message: "Sempat error (" + (e instanceof Error ? e.message : String(e)) + "). Klik LANJUTKAN SCAN.",
+		});
 	} finally {
 		try {
-			await env.SESS.delete(PUMP_FLAG);
+			await env.SESS.delete(lock);
 		} catch {
 			/* abaikan */
 		}
+	}
+}
+
+// Dipanggil cron (halaman user ditutup): pump SEMUA user 'running', BERURUTAN,
+// slice kecil per user + batas subrequest total (limit CF Free 50/invocation).
+// Kalau user sedang aktif membuka halaman, lock per-user milik polling-nya yang
+// menang -> cron skip user itu.
+export async function investPump(env: Env): Promise<void> {
+	const users = await investRunningUsers(env);
+	if (!users.length) return;
+	const deadline = Date.now() + PUMP_BUDGET_MS;
+	const perUserFetch = Math.max(8, Math.floor(FETCH_BUDGET_PER_TICK / users.length));
+	const perUserMs = Math.max(6_000, Math.floor(PUMP_BUDGET_MS / users.length));
+	for (const u of users) {
+		if (Date.now() >= deadline) break;
+		await investPumpUser(env, u, Math.min(perUserMs, deadline - Date.now()), perUserFetch);
 	}
 }

@@ -2,7 +2,7 @@
 // Semua panggilan frontend lama google.script.run.<fn>(...) dipetakan ke
 // POST /api  body: { "action": "<fn>", ...args }
 import { CORS_HEADERS, json } from "./lib/respond";
-import { migrateKvSessionsOnce, pruneExpiredSessions } from "./lib/session";
+import { loadSession, migrateKvSessionsOnce, pruneExpiredSessions } from "./lib/session";
 import { getTurso } from "./lib/turso";
 import { checkLogin, logout, resumeSession } from "./api/auth";
 import { getBootstrapData, getDashboard } from "./api/dashboard";
@@ -43,7 +43,7 @@ import {
 	investStartScan,
 	investTestSession,
 } from "./api/invest";
-import { investPump } from "./lib/invest-scan";
+import { investPump, investPumpUser } from "./lib/invest-scan";
 import {
 	lapAdminStatus,
 	lapGetConfig,
@@ -203,7 +203,14 @@ export default {
 			try {
 				const out = await handler(env, body);
 				if (INVEST_PUMP_ACTIONS.has(action)) {
-					ctx.waitUntil(investPump(env).catch((e) => console.error("invest pump (waitUntil) error", e)));
+					// Pump scan user INI di latar belakang (lock per-user) -> scan-nya
+					// jalan sendiri, tidak antre di belakang user lain.
+					ctx.waitUntil(
+						(async () => {
+							const rec = await loadSession(env, s(body.token));
+							if (rec?.username) await investPumpUser(env, rec.username);
+						})().catch((e) => console.error("invest pump (waitUntil) error", e)),
+					);
 				}
 				return json(out);
 			} catch (e) {
