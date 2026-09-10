@@ -5,9 +5,20 @@ import { getDashboardData, normalizeDashOptions } from "../lib/dash";
 export async function getBootstrapData(env: Env, token: string) {
 	let session;
 	try {
-		session = await requireSession(env, token, { ignoreMaintenance: true });
+		session = await requireSession(env, token, { ignoreMaintenance: true, allowBot: true });
 	} catch (e) {
 		return { success: false, message: e instanceof Error ? e.message : String(e) };
+	}
+
+	// Role BOT: tidak punya akses dashboard — cukup kembalikan profil supaya
+	// sesi tetap hidup saat refresh; frontend akan buka halaman BOT.
+	if (session.profile.role === "BOT") {
+		return {
+			success: true as const,
+			profile: publicProfile(session.profile, String(token ?? ""), session.maintenance),
+			dashboard: null,
+			errors: {},
+		};
 	}
 
 	const out: {
