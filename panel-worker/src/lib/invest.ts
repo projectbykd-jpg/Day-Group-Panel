@@ -226,7 +226,10 @@ export function investIsLoginPage(location: string, body: string): boolean {
 		/name=["']entered_login["']/i.test(body) ||
 		/name=["']vb_login_md5password["']/i.test(body) ||
 		/class="submit-button"\s+value="LOGIN"/i.test(body) ||
-		/<form[^>]+action=["'][^"']*login/i.test(body)
+		/<form[^>]+action=["'][^"']*login/i.test(body) ||
+		// Sesi agen mati -> admin_invoice13.php balikin halaman "pilih pasaran"
+		// dgn placeholder PHP mentah (?psr=$sar) & tanpa data periode sama sekali.
+		(/psr=\$sar/.test(body) && !/periode/i.test(body))
 	) {
 		return true;
 	}
