@@ -124,9 +124,26 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 	try {
 		const idxHtml = await investFetch(cfg, "admin_invoice13.php");
 		const disc: [string, string][] = [];
-		const re = /<option[^>]+value=["']?(p\d+)["']?[^>]*>([^<]+)</gi;
+		// Dua format value <option> yang dipakai panel suksesbogil:
+		//  - lama (ag.suksesbogil.com):  value="p33190"          teks: ARIZONA
+		//  - baru (agwl12.suksesbogil.com): value="ARIZONA,p7023" teks: ARIZONA
+		// Ambil value MENTAH sebagai kode (dipakai apa adanya di ?psr=), skip opsi
+		// hidden / placeholder / param teknis (pool-xx / kosong).
+		const re = /<option\b([^>]*)>([^<]*)<\/option>/gi;
 		let mm: RegExpExecArray | null;
-		while ((mm = re.exec(idxHtml))) disc.push([mm[1], mm[2].replace(/\s+/g, " ").trim()]);
+		while ((mm = re.exec(idxHtml))) {
+			const attrs = mm[1] || "";
+			const label = (mm[2] || "").replace(/\s+/g, " ").trim();
+			if (/display\s*:\s*none/i.test(attrs)) continue;
+			const vm = attrs.match(/value=["']([^"']*)["']/i);
+			const val = vm ? vm[1].trim() : "";
+			if (!val || !label) continue;
+			if (/^pilih/i.test(label)) continue;
+			if (/^pool-|^param|^\d+$/i.test(val)) continue;
+			// harus mengandung kode pNNNN entah sendirian atau "NAMA,pNNNN"
+			if (!/(?:^|,)\s*p\d+\s*$/i.test(val) && !/^p\d+$/i.test(val)) continue;
+			disc.push([val, label]);
+		}
 		if (disc.length >= 20) {
 			pas = disc;
 			pasSrc = "panel(" + disc.length + ")";
@@ -189,7 +206,7 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 		const fetchesBefore = fetches;
 		let aborted = false;
 		try {
-			const head0 = await doFetch("admin_invoice13.php?psr=" + kode);
+			const head0 = await doFetch("admin_invoice13.php?psr=" + encodeURIComponent(kode));
 			const open = parsePeriode(head0);
 			// Diagnostik: kalau pasaran pertama tidak menghasilkan periode sama sekali,
 			// simpan cuplikan body-nya supaya ketahuan situs balikin apa (login page
@@ -205,7 +222,7 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 						break;
 					}
 					const per = open - i;
-					const head = i === 0 ? head0 : await doFetch("admin_invoice13.php?psr=" + kode + "&periode=" + per + "&tombol=2D");
+					const head = i === 0 ? head0 : await doFetch("admin_invoice13.php?psr=" + encodeURIComponent(kode) + "&periode=" + per + "&tombol=2D");
 					const totals = parseTotals(head);
 					const maxG = maxGame(totals);
 					if (totals[maxG] === 0) continue;
