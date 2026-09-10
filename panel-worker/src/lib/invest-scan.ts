@@ -13,6 +13,7 @@ import {
 	INVEST_PERIODE_LOOKBACK,
 	InvestConfig,
 	InvestSessionExpired,
+	InvestSiteDown,
 	investFetch,
 	investGetState,
 	investLoadConfig,
@@ -223,6 +224,16 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number)
 				});
 				return;
 			}
+			if (e instanceof InvestSiteDown) {
+				// Situs agen down / maintenance -> tidak ada gunanya lanjut 63 pasaran.
+				await flushRaw(env, user, buffer);
+				await investSetState(env, user, {
+					state: "paused",
+					cursor,
+					message: `${e.message} Klik LANJUTKAN SCAN saat situs sudah normal.`,
+				});
+				return;
+			}
 			marketBuffer.length = 0;
 			marketBuffer.push({
 				tanggal: today,
@@ -260,15 +271,32 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number)
 
 	await flushRaw(env, user, buffer);
 	const n = await investAggregateUser(env, user);
+
+	// 0 hasil + invest_raw benar-benar kosong = situs tidak mengembalikan data
+	// invoice apa pun (bukan "memang tidak ada yang lewat batas"). Beri pesan jelas.
+	let message = `Scan selesai — ${n} user lewat batas.`;
+	if (n === 0) {
+		const raw = await getTurso(env)
+			.prepare(`SELECT COUNT(*) AS c FROM invest_raw WHERE owner = ?`)
+			.bind(user)
+			.first<{ c: number }>();
+		if (!Number(raw?.c || 0)) {
+			message =
+				"Scan selesai tapi TIDAK ADA data invoice dari situs agen (0 pasaran mengembalikan data). " +
+				"Kemungkinan: sesi PHPSESSID kedaluwarsa, atau situs agen sedang maintenance/error. " +
+				"Perbarui PHPSESSID di Setting lalu scan ulang.";
+		}
+	}
+
 	await investSetState(env, user, {
 		state: "done",
 		cursor: pas.length,
 		finishedAt: tsNow(),
-		message: `Scan selesai — ${n} user lewat batas.`,
+		message,
 		warningCount: n,
 	});
 	try {
-		await logActivity(env, user, "INVEST SCAN SELESAI", `${n} user lewat batas invest.`, "BERHASIL", "");
+		await logActivity(env, user, "INVEST SCAN SELESAI", message, n === 0 ? "INFO" : "BERHASIL", "");
 	} catch {
 		/* abaikan */
 	}

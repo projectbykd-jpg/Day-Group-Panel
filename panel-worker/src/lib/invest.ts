@@ -229,6 +229,29 @@ export class InvestSessionExpired extends Error {
 	}
 }
 
+// Situs agen sedang maintenance / error server (bukan sesi kedaluwarsa).
+// Halaman ini balas 200 dengan konten error, bukan redirect login.
+export class InvestSiteDown extends Error {
+	constructor(msg: string) {
+		super(msg);
+		this.name = "InvestSiteDown";
+	}
+}
+
+export function investSiteDownReason(body: string): string | null {
+	const b = String(body || "");
+	if (b.length < 4000 && /images\/maintenance\.jpg|sedang (?:dalam )?(?:maintenance|perbaikan)|under maintenance/i.test(b)) {
+		return "Situs agen sedang MAINTENANCE.";
+	}
+	if (b.length < 2000 && /Error Connected to server|Sorry for inconvinience|Press Ctrl\+F5 to retry/i.test(b)) {
+		return "Situs agen error koneksi ke server (coba lagi beberapa menit).";
+	}
+	if (b.length < 3000 && /<b>Information<\/b>/i.test(b) && !/periode/i.test(b) && !/admin_invoice/i.test(b)) {
+		return "Situs agen menampilkan halaman 'Information' — akun mungkin tidak punya akses / dibatasi.";
+	}
+	return null;
+}
+
 export async function investFetch(cfg: InvestConfig, path: string): Promise<string> {
 	if (!cfg.PHPSESSID && !cfg.COOKIE_EXTRA) {
 		throw new Error("PHPSESSID kosong — isi & simpan dulu di menu INVEST.");
@@ -240,6 +263,8 @@ export async function investFetch(cfg: InvestConfig, path: string): Promise<stri
 	});
 	const body = await res.text();
 	if (investIsLoginPage(res.headers.get("location") || "", body)) throw new InvestSessionExpired();
+	const down = investSiteDownReason(body);
+	if (down) throw new InvestSiteDown(down);
 	return body;
 }
 
