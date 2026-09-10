@@ -27,7 +27,7 @@ export async function isAutoPostEnabled(env: Env): Promise<boolean> {
 	return String(await getSetting(env, "autopost_enabled") || "TRUE").toUpperCase().trim() !== "FALSE";
 }
 
-const ROLES = ["ADMIN", "OPERATOR", "VIEWER"];
+const ROLES = ["ADMIN", "OPERATOR", "VIEWER", "BOT"];
 const STATUSES = ["AKTIF", "NONAKTIF", "TERKUNCI"];
 
 function toWebsitesJson(input: unknown): string {

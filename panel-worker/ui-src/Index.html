@@ -131,6 +131,10 @@
           <button onclick="switchPage('admin')" id="nav-admin" class="nav-extra admin-only sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-3 rounded-xl font-bold text-xs cursor-pointer nav-solo">
             <i class="fa-solid fa-shield-halved text-amber-400 text-sm shrink-0"></i><span class="tracking-wider">Admin</span>
           </button>
+          <!-- 5. BOT (hanya role BOT) -->
+          <button onclick="switchPage('bot')" id="nav-bot" class="bot-only sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-3 rounded-xl font-bold text-xs cursor-pointer nav-solo" style="display:none">
+            <i class="fa-solid fa-robot text-emerald-400 text-sm shrink-0"></i><span class="tracking-wider">BOT</span>
+          </button>
         </div>
       </div>
 
@@ -511,7 +515,7 @@
               <div><div class="font-extrabold text-base">Kelola Users</div><div class="text-xs text-slate-400 mt-1">Tambah, edit, nonaktifkan, atau hapus akun. Perubahan langsung tersimpan ke sheet Users.</div></div>
               <div class="flex gap-2"><button onclick="loadUsers(true)" class="glass-inner px-4 py-3 rounded-2xl text-xs font-bold"><i class="fa-solid fa-rotate mr-2"></i>REFRESH</button><button onclick="openUserModal()" class="bg-gradient-to-r from-cyan-400 to-blue-600 text-slate-950 px-4 py-3 rounded-2xl text-xs font-extrabold"><i class="fa-solid fa-user-plus mr-2"></i>TAMBAH USER</button></div>
             </div>
-            <div class="flex flex-col sm:flex-row gap-3"><input id="userSearch" oninput="filterUserRows()" class="glass-inner rounded-2xl px-4 py-3 text-xs flex-1" placeholder="Cari username, nama, website, role..."><select id="userRoleFilter" onchange="filterUserRows()" class="glass-inner rounded-2xl px-4 py-3 text-xs"><option value="">Semua Role</option><option>ADMIN</option><option>OPERATOR</option><option>VIEWER</option></select><select id="userStatusFilter" onchange="filterUserRows()" class="glass-inner rounded-2xl px-4 py-3 text-xs"><option value="">Semua Status</option><option>AKTIF</option><option>NONAKTIF</option><option>TERKUNCI</option></select></div>
+            <div class="flex flex-col sm:flex-row gap-3"><input id="userSearch" oninput="filterUserRows()" class="glass-inner rounded-2xl px-4 py-3 text-xs flex-1" placeholder="Cari username, nama, website, role..."><select id="userRoleFilter" onchange="filterUserRows()" class="glass-inner rounded-2xl px-4 py-3 text-xs"><option value="">Semua Role</option><option>ADMIN</option><option>OPERATOR</option><option>VIEWER</option><option>BOT</option></select><select id="userStatusFilter" onchange="filterUserRows()" class="glass-inner rounded-2xl px-4 py-3 text-xs"><option value="">Semua Status</option><option>AKTIF</option><option>NONAKTIF</option><option>TERKUNCI</option></select></div>
             <div id="userManageStatus" class="text-xs text-slate-400">Memuat daftar user...</div>
             <div class="admin-users-table-wrap"><table class="admin-users-table"><thead><tr><th>Username</th><th>Nama</th><th>Website</th><th>Role</th><th>Status</th><th>Telegram</th><th>LinkTree</th><th>Panel-Z</th><th>Login Terakhir</th><th>Aksi</th></tr></thead><tbody id="userTableBody"></tbody></table></div>
           </div>
@@ -690,6 +694,25 @@
 
       <!-- VIEW: LAPORAN HARIAN (placeholder — modul di-port dari PANEL AUTO) -->
       <div id="lap-page" style="display:none" class="flex flex-col gap-5 fade-in"></div>
+
+      <!-- VIEW: BOT (role BOT — fitur NEWS: scalping berita -> posting ke Blogger) -->
+      <div id="bot-page" style="display:none" class="flex flex-col gap-5 fade-in">
+        <div class="glass-card rounded-[2rem] p-6 flex flex-col gap-4">
+          <div class="flex items-center gap-3">
+            <div class="w-11 h-11 rounded-2xl bg-emerald-500/15 flex items-center justify-center"><i class="fa-solid fa-robot text-emerald-400"></i></div>
+            <div>
+              <div class="text-lg font-black text-slate-50">BOT · NEWS</div>
+              <div class="text-[11px] text-slate-400">Scalping artikel berita &amp; auto-posting ke Blogger sendiri.</div>
+            </div>
+          </div>
+          <div class="glass-inner rounded-2xl p-5 text-center text-slate-400 text-xs leading-relaxed">
+            <i class="fa-solid fa-screwdriver-wrench text-emerald-400/70 text-2xl mb-2 block"></i>
+            Modul NEWS belum aktif. Kerangka Role BOT sudah terpasang &mdash; akun ber-role
+            <b class="text-emerald-300">BOT</b> hanya bisa membuka halaman ini, tidak bisa
+            mengakses menu Result / Prediksi / Invest / Laporan / Admin.
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -704,7 +727,7 @@
         <label class="text-xs text-slate-400">Password<input id="editPassword" type="text" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1" autocomplete="new-password" placeholder="Kosongkan jika tidak diubah"></label>
         <label class="text-xs text-slate-400 md:col-span-2">Website<input id="editWebsite" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1" placeholder="Contoh: HUGO,FOLA"></label>
         <label class="text-xs text-slate-400">Nama Pengguna<input id="editDisplayName" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1"></label>
-        <label class="text-xs text-slate-400">Role<select id="editRole" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1"><option>OPERATOR</option><option>ADMIN</option><option>VIEWER</option></select></label>
+        <label class="text-xs text-slate-400">Role<select id="editRole" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1"><option>OPERATOR</option><option>ADMIN</option><option>VIEWER</option><option>BOT</option></select></label>
         <label class="text-xs text-slate-400">Status Akun<select id="editStatus" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1"><option>AKTIF</option><option>NONAKTIF</option><option>TERKUNCI</option></select></label>
         <label class="text-xs text-slate-400">Session Timeout (menit)<input id="editTimeout" type="number" min="5" max="1440" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1" value="60"></label>
         <label class="text-xs text-slate-400 md:col-span-2">Catatan Admin<textarea id="editNote" rows="2" class="glass-inner rounded-2xl px-4 py-3 text-white w-full mt-1"></textarea></label>

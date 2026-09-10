@@ -11,7 +11,7 @@ export async function logClientActivity(
 	content: string,
 ) {
 	try {
-		const session = await requireSession(env, token, { ignoreMaintenance: true });
+		const session = await requireSession(env, token, { ignoreMaintenance: true, allowBot: true });
 		await logActivity(
 			env,
 			session.username,

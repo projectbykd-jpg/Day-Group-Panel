@@ -362,10 +362,12 @@
       applyWebsiteTheme(res.websites || []);
       // switchPage('home') sudah memanggil loadHeaderSummary() di bagian akhirnya,
       // jadi tidak perlu dipanggil lagi di sini (dulu jadi 2x panggil server).
-      applyProfileUI(); restoreDraft(); resetSessionTimer(); switchPage('home');
+      const botOnly = res && res.role === 'BOT';
+      applyProfileUI(); restoreDraft(); resetSessionTimer();
+      switchPage(botOnly ? 'bot' : 'home');
       // Kunci maintenance dievaluasi begitu panel terbuka (login / resume sesi).
       if (res && res.maintenance) setMaintenanceLock(res.maintenance.enabled, res.maintenance.message);
-      startLivePolling();
+      if (!botOnly) startLivePolling();
     }
 
     /* ===== MODE MAINTENANCE — overlay otomatis untuk NON-ADMIN =====
@@ -509,13 +511,14 @@
     }
 
     const LAP_PAGES = ['lap-admin','lap-motion','lap-mozart','lap-setting'];
-    const NAV_KEYS = ['home','prediction','activity','admin','invest'].concat(LAP_PAGES);
+    const NAV_KEYS = ['home','prediction','activity','admin','invest','bot'].concat(LAP_PAGES);
     const HEADER_KICKER = {
       home: 'DAY-GROUP PANEL · RESULT HARI INI',
       prediction: 'DAY-GROUP PANEL · PREDIKSI & KATA PENUTUP',
       invest: 'DAY-GROUP PANEL · AUTOCHECK INVEST',
       activity: 'DAY-GROUP PANEL · RIWAYAT AKTIVITAS',
       admin: 'DAY-GROUP PANEL · ADMIN CONTROL CENTER',
+      bot: 'DAY-GROUP PANEL · BOT',
       'lap-admin': 'LAPORAN HARIAN · LAP ADMIN',
       'lap-motion': 'LAPORAN HARIAN · LAP MOTION',
       'lap-mozart': 'LAPORAN HARIAN · LAP MOZART',
@@ -543,10 +546,10 @@
     function switchPage(page) {
       const pages = {
         home:'main-panel', prediction:'prediction-page', activity:'activity-page',
-        admin:'admin-page', invest:'invest-page',
+        admin:'admin-page', invest:'invest-page', bot:'bot-page',
         'lap-admin':'lap-page', 'lap-motion':'lap-page', 'lap-mozart':'lap-page', 'lap-setting':'lap-page'
       };
-      ['main-panel','prediction-page','activity-page','admin-page','invest-page','lap-page'].forEach(id => {
+      ['main-panel','prediction-page','activity-page','admin-page','invest-page','bot-page','lap-page'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
       });
@@ -2543,7 +2546,25 @@
 
     function applyProfileUI() {
       const isAdmin = !!(currentProfile && currentProfile.role === 'ADMIN');
+      const isBot = !!(currentProfile && currentProfile.role === 'BOT');
+
+      // Role BOT: terisolasi total — sembunyikan SEMUA menu lama, hanya menu
+      // ber-atribut data-bot-ok yang tampil. Paksa landing ke halaman BOT.
+      if (isBot) {
+        document.querySelectorAll('.sidebar-nav').forEach(el => {
+          el.style.display = el.classList.contains('bot-only') ? 'flex' : 'none';
+        });
+        document.querySelectorAll('.nav-group').forEach(g => {
+          g.style.display = g.querySelector('.sidebar-nav.bot-only') ? '' : 'none';
+        });
+        const mw = document.getElementById('market-wrapper');
+        if (mw) mw.style.display = 'none';
+        if (currentPage !== 'bot') switchPage('bot');
+        return;
+      }
+
       document.querySelectorAll('.nav-extra').forEach(el => el.style.display = 'flex');
+      document.querySelectorAll('.bot-only').forEach(el => el.style.display = 'none');
       document.querySelectorAll('.admin-only').forEach(el => el.style.display = isAdmin ? 'flex' : 'none');
       restoreNavGroups();
       document.querySelectorAll('.activity-admin-only').forEach(el => el.style.display = isAdmin ? '' : 'none');

@@ -92,7 +92,7 @@ export interface Session {
 export async function requireSession(
 	env: Env,
 	token: string,
-	opts: { admin?: boolean; ignoreMaintenance?: boolean } = {},
+	opts: { admin?: boolean; ignoreMaintenance?: boolean; allowBot?: boolean } = {},
 ): Promise<Session> {
 	const rec = await loadSession(env, token);
 	if (!rec) throw new Error("Sesi tidak valid atau telah berakhir. Silakan login kembali.");
@@ -105,12 +105,17 @@ export async function requireSession(
 		throw new Error(maintenance.message);
 	}
 	if (opts.admin && p.role !== "ADMIN") throw new Error("Akses ditolak. Hanya ADMIN yang diizinkan.");
+	// Role BOT TERISOLASI: hanya boleh endpoint yang eksplisit mengizinkan
+	// (opts.allowBot). Semua handler lama otomatis menolak BOT.
+	if (p.role === "BOT" && !opts.allowBot) {
+		throw new Error("Akun BOT hanya bisa mengakses fitur BOT.");
+	}
 	return { token: String(token), username: p.username, profile: p, maintenance };
 }
 
 export async function resumeSession(env: Env, token: string) {
 	try {
-		const s = await requireSession(env, token, { ignoreMaintenance: true });
+		const s = await requireSession(env, token, { ignoreMaintenance: true, allowBot: true });
 		return publicProfile(s.profile, String(token ?? ""), s.maintenance);
 	} catch (e) {
 		return { success: false, message: e instanceof Error ? e.message : String(e) };
