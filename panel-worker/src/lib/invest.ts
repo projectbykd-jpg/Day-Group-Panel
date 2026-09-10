@@ -201,8 +201,19 @@ export async function investGetWarningsList(env: Env, user: string) {
 // ---------------------------------------------------------------------------
 // HTTP ke panel agen
 // ---------------------------------------------------------------------------
+// Deteksi: field ini berisi HEADER cookie lengkap (mis. user salah tempel
+// "PHPSESSID=...; lastuser=...; ..." ke kolom KODEREDIS / COOKIE_EXTRA).
+function looksLikeFullCookie(v: string): boolean {
+	const s = String(v || "");
+	return /\bPHPSESSID=/i.test(s) || (s.includes("=") && s.includes(";"));
+}
+
 export function investCookieHeader(cfg: InvestConfig): string {
-	if (cfg.COOKIE_EXTRA) return cfg.COOKIE_EXTRA;
+	// Prioritas: cookie mentah lengkap kalau diisi.
+	if (cfg.COOKIE_EXTRA && looksLikeFullCookie(cfg.COOKIE_EXTRA)) return cfg.COOKIE_EXTRA.trim();
+	if (cfg.COOKIE_EXTRA) return cfg.COOKIE_EXTRA.trim();
+	// Toleransi: kalau KODEREDIS ternyata berisi header cookie lengkap, pakai itu.
+	if (cfg.KODEREDIS && looksLikeFullCookie(cfg.KODEREDIS)) return cfg.KODEREDIS.trim();
 	let c = "PHPSESSID=" + cfg.PHPSESSID;
 	if (cfg.KODEREDIS) c += "; koderedis=" + cfg.KODEREDIS;
 	return c;
