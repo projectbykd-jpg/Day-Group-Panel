@@ -42,14 +42,22 @@ function dateKeyTZ(offsetDays = 0): string {
 }
 
 function parsePeriode(html: string): number | null {
-	const m = html.match(/name=["']?periode["']?[^>]*value=["'](\d+)["']/i);
+	// Format panel "ag": <input name=periode value="2266">
+	let m = html.match(/name=["']?periode["']?[^>]*value=["'](\d+)["']/i);
+	// Format panel "agwlXX": judul "... Periode : 36 - ARIZONA"
+	if (!m) m = html.match(/Periode\s*:\s*(\d+)\s*-/i);
+	if (!m) m = html.match(/periode[^0-9<]{0,15}value\s*=\s*["'](\d+)["']/i);
 	return m ? parseInt(m[1], 10) : null;
 }
 function parseTotals(html: string): Record<string, number> {
 	const t: Record<string, number> = { "2D": 0, "3D": 0, "4D": 0 };
 	for (const g of ["2D", "3D", "4D"]) {
-		const m = html.match(new RegExp('value ="' + g + '">&nbsp;:&nbsp;(\\d+)'));
-		if (m) t[g] = parseInt(m[1], 10);
+		// Format panel "ag": value ="2D">&nbsp;:&nbsp;N
+		let m = html.match(new RegExp('value ="' + g + '">&nbsp;:&nbsp;(\\d+)'));
+		// Format panel "agwlXX": <...>2D</...> : N  (kotak berlabel)
+		if (!m) m = html.match(new RegExp('(?:^|>)\\s*' + g + '\\s*<\\/[a-zA-Z]+>\\s*:?\\s*(?:<[^>]*>\\s*)?(\\d[\\d.,]*)', "i"));
+		if (!m) m = html.match(new RegExp('\\b' + g + '\\b[^0-9:]{0,25}:\\s*(?:<[^>]*>\\s*)?(\\d[\\d.,]*)', "i"));
+		if (m) t[g] = parseInt(m[1].replace(/[.,]/g, ""), 10) || 0;
 	}
 	return t;
 }
@@ -140,9 +148,11 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 			if (!val || !label) continue;
 			if (/^pilih/i.test(label)) continue;
 			if (/^pool-|^param|^\d+$/i.test(val)) continue;
-			// harus mengandung kode pNNNN entah sendirian atau "NAMA,pNNNN"
-			if (!/(?:^|,)\s*p\d+\s*$/i.test(val) && !/^p\d+$/i.test(val)) continue;
-			disc.push([val, label]);
+			// Ambil kode pNNNN — bisa berdiri sendiri ("p7023") atau dgn prefix
+			// nama ("ARIZONA,p7023"). admin_invoice13.php?psr=p7023 yang dipakai.
+			const cm = val.match(/(?:^|,)\s*(p\d+)\s*$/i);
+			if (!cm) continue;
+			disc.push([cm[1], label]);
 		}
 		if (disc.length >= 20) {
 			pas = disc;
