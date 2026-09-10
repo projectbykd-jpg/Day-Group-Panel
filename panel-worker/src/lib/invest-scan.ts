@@ -115,7 +115,25 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 	if (st.state !== "running") return;
 
 	const cfg = await investLoadConfig(env, user);
-	const pas = INVEST_PASARAN;
+	// Tiap instalasi panel agen (ag / agwl12 / dst) punya ID pasaran (pNNNN)
+	// SENDIRI. List hardcoded INVEST_PASARAN hanya cocok utk ag.suksesbogil.com —
+	// panel lain balikin halaman "pilih pasaran" krn kode tidak dikenal.
+	// Jadi: coba baca daftar pasaran langsung dari <select> di admin_invoice13.php.
+	let pas: [string, string][] = INVEST_PASARAN;
+	let pasSrc = "default";
+	try {
+		const idxHtml = await investFetch(cfg, "admin_invoice13.php");
+		const disc: [string, string][] = [];
+		const re = /<option[^>]+value=["']?(p\d+)["']?[^>]*>([^<]+)</gi;
+		let mm: RegExpExecArray | null;
+		while ((mm = re.exec(idxHtml))) disc.push([mm[1], mm[2].replace(/\s+/g, " ").trim()]);
+		if (disc.length >= 20) {
+			pas = disc;
+			pasSrc = "panel(" + disc.length + ")";
+		}
+	} catch {
+		/* biarkan pakai list default */
+	}
 	let cursor = Number(st.cursor || 0);
 
 	const today = dateKeyTZ(0);
@@ -304,7 +322,7 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 				"Scan selesai tapi TIDAK ADA data invoice dari situs agen (0 pasaran mengembalikan data). " +
 				"Kemungkinan: sesi PHPSESSID kedaluwarsa, atau situs agen sedang maintenance/error. " +
 				"Perbarui PHPSESSID di Setting lalu scan ulang." +
-				` [Diag: ${diag.periods}/${pas.length} pasaran ada periode, ${diag.withTotals} periode ada total, ${diag.pages} halaman diambil, ${diag.dateSkip} di-skip tanggal, ${diag.overLimit} lewat batas]` +
+				` [Diag: list=${pasSrc}, ${diag.periods}/${pas.length} pasaran ada periode, ${diag.withTotals} periode ada total, ${diag.pages} halaman diambil, ${diag.dateSkip} di-skip tanggal, ${diag.overLimit} lewat batas]` +
 				(diag.periods === 0 && probeSnippet ? ` situs balikin: "${probeSnippet}"` : "");
 		}
 	}
