@@ -3810,6 +3810,8 @@ Tindakan ini tidak dapat dibatalkan.`,
       const set = (id,v)=>{ const el=document.getElementById(id); if(el){ if(el.type==='checkbox') el.checked=!!v; else el.value=(v==null?'':v); } };
       set('botEnabled', c.enabled); set('botAttribution', c.attribution);
       set('botPerRun', c.per_run); set('botDailyCap', c.daily_cap);
+      set('botParaMin', c.para_min); set('botParaMax', c.para_max);
+      set('botLabels', c.post_labels); set('botPromoUrl', c.promo_url); set('botPromoText', c.promo_text);
       set('botModel', c.gemini_model); set('botStyle', c.rewrite_style);
       set('botBlogId', c.blog_id);
       const hint = document.getElementById('botCredHint');
@@ -3857,7 +3859,7 @@ Tindakan ini tidak dapat dibatalkan.`,
     }
     function saveBotNewsConfig(){
       const g=id=>{const el=document.getElementById(id);return !el?'':(el.type==='checkbox'?(el.checked?'1':'0'):String(el.value||'').trim());};
-      const data={enabled:g('botEnabled'),attribution:g('botAttribution'),per_run:g('botPerRun'),daily_cap:g('botDailyCap'),gemini_model:g('botModel'),rewrite_style:g('botStyle'),blogger_blog_id:g('botBlogId')};
+      const data={enabled:g('botEnabled'),attribution:g('botAttribution'),per_run:g('botPerRun'),daily_cap:g('botDailyCap'),para_min:g('botParaMin'),para_max:g('botParaMax'),post_labels:g('botLabels'),promo_url:g('botPromoUrl'),promo_text:g('botPromoText'),gemini_model:g('botModel'),rewrite_style:g('botStyle'),blogger_blog_id:g('botBlogId')};
       const key=g('botGeminiKey'); if(key) data.gemini_key=key;
       google.script.run.withSuccessHandler(s=>{toast('Konfigurasi BOT tersimpan');const el=document.getElementById('botGeminiKey');if(el)el.value='';applyBotNews(s);}).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsSaveConfig(currentSessionToken,data);
     }

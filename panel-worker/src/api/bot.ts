@@ -22,7 +22,10 @@ export async function botNewsStatus(env: Env, token: string) {
 export async function botNewsSaveConfig(env: Env, token: string, data: Record<string, unknown>) {
 	const s = await gate(env, token);
 	const patch: Record<string, string> = {};
-	const allow = ["enabled", "per_run", "daily_cap", "attribution", "rewrite_style", "gemini_model", "gemini_key", "blogger_blog_id"];
+	const allow = [
+		"enabled", "per_run", "daily_cap", "attribution", "rewrite_style", "gemini_model", "gemini_key",
+		"blogger_blog_id", "para_min", "para_max", "promo_url", "promo_text", "post_labels",
+	];
 	for (const k of allow) {
 		if (Object.prototype.hasOwnProperty.call(data, k)) {
 			let v = String((data as any)[k] ?? "").trim();

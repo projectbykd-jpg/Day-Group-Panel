@@ -26,6 +26,9 @@ export async function botCfgSet(env: Env, patch: Record<string, string>): Promis
 	if (stmts.length) await getTurso(env).batch(stmts);
 }
 
+const escHtml = (s: string) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const escAttr = (s: string) => escHtml(s).replace(/"/g, "&quot;");
+
 async function sha256Hex(s: string): Promise<string> {
 	const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
 	return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -159,18 +162,23 @@ interface Rewritten {
 
 export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: { title: string; excerpt: string; source: string; url: string }): Promise<Rewritten> {
 	const key = cfg.gemini_key;
-	const model = cfg.gemini_model || "gemini-flash-latest";
+	const model = cfg.gemini_model || "gemini-3-flash-preview";
 	if (!key) throw new Error("gemini_key belum diisi di konfigurasi BOT.");
-	const style = cfg.rewrite_style || "Tulis ulang jadi artikel berbahasa Indonesia yang mengalir, 3-5 paragraf.";
+	const style = cfg.rewrite_style || "Tulis ulang jadi artikel berbahasa Indonesia yang mengalir, gaya jurnalistik ringan.";
+	const pMin = Math.max(1, Number(cfg.para_min || "5"));
+	const pMax = Math.max(pMin, Number(cfg.para_max || "10"));
+	const paraTarget = pMin + Math.floor(Math.random() * (pMax - pMin + 1));
 	const prompt =
 		`${style}\n\n` +
-		`Berdasarkan ringkasan berikut, tulis artikel BARU (jangan menyalin kalimat asli, jangan mengarang fakta/angka yang tidak ada di ringkasan). ` +
+		`Berdasarkan ringkasan berikut, tulis artikel BARU sepanjang ${paraTarget} paragraf ` +
+		`(jangan menyalin kalimat asli, jangan mengarang fakta/angka yang tidak ada di ringkasan; ` +
+		`boleh menambah konteks umum, latar belakang, dan analisis ringan agar artikel penuh). ` +
 		`Balas HANYA JSON valid tanpa markdown: {"title": "...", "body_html": "<p>...</p><p>...</p>"}.\n\n` +
 		`JUDUL ASLI: ${art.title}\n` +
 		`RINGKASAN: ${art.excerpt || "(tidak ada, tulis ringkas dari judul saja)"}\n` +
 		`SUMBER: ${art.source}`;
 	// Model utama sering 503 (high demand) -> coba beberapa model berurutan.
-	const models = [...new Set([model, "gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-2.5-flash-lite"])];
+	const models = [...new Set([model, "gemini-3-flash-preview", "gemini-flash-latest", "gemini-flash-lite-latest"])];
 	let j: any = null;
 	let lastErr = "";
 	for (const mdl of models) {
@@ -182,16 +190,26 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 					headers: { "Content-Type": "application/json", "X-goog-api-key": key },
 					body: JSON.stringify({
 						contents: [{ parts: [{ text: prompt }] }],
-						generationConfig: { temperature: 0.85, maxOutputTokens: 2048, responseMimeType: "application/json" },
+						generationConfig: {
+							temperature: 0.85,
+							maxOutputTokens: 8192,
+							responseMimeType: "application/json",
+							thinkingConfig: { thinkingBudget: 0 },
+						},
 					}),
 				},
 			);
 			const body = (await r.json()) as any;
-			if (r.ok && body?.candidates?.length) {
+			const hasText = !!body?.candidates?.[0]?.content?.parts?.some((p: any) => p.text);
+			if (r.ok && hasText) {
 				j = body;
 				break;
 			}
-			lastErr = "HTTP " + r.status + " " + JSON.stringify(body?.error || body).slice(0, 200);
+			lastErr =
+				"HTTP " + r.status + " " +
+				(body?.candidates?.[0]?.finishReason
+					? "finishReason=" + body.candidates[0].finishReason
+					: JSON.stringify(body?.error || body).slice(0, 200));
 			if (r.status === 503 || r.status === 429) {
 				await new Promise((res) => setTimeout(res, 1200));
 				continue;
@@ -288,15 +306,39 @@ export async function newsProcessOne(env: Env): Promise<{ done: boolean; title?:
 			url: String(row.url),
 		});
 		let content = rw.html;
+
+		// Blok promo (disisipkan setelah paragraf ke-2 kalau bisa, biar natural).
+		const promoUrl = (cfg.promo_url || "").trim();
+		if (promoUrl) {
+			const promoText = (cfg.promo_text || "Butuh aplikasi premium termurah? Kunjungi LapakStore88").trim();
+			const promo =
+				`\n<div style="border:1px solid #e2e2e2;border-radius:10px;padding:14px 16px;margin:20px 0;background:#fafafa">` +
+				`<p style="margin:0;font-size:14px">🛒 <strong>${escHtml(promoText)}</strong> &mdash; ` +
+				`<a href="${escAttr(promoUrl)}" rel="noopener" target="_blank"><strong>Kunjungi Toko &raquo;</strong></a></p></div>`;
+			const parts = content.split(/(<\/p>)/i);
+			if (parts.length >= 6) {
+				parts.splice(4, 0, promo); // setelah </p> ke-2
+				content = parts.join("");
+			} else {
+				content += promo;
+			}
+		}
+
 		if (String(cfg.attribution || "1") === "1") {
 			content +=
 				`\n<p style="font-size:13px;color:#666;margin-top:24px">Sumber: ` +
-				`<a href="${String(row.url).replace(/"/g, "&quot;")}" rel="nofollow noopener" target="_blank">${String(row.source)}</a></p>`;
+				`<a href="${escAttr(String(row.url))}" rel="nofollow noopener" target="_blank">${escHtml(String(row.source))}</a></p>`;
 		}
 		if (row.image_url) {
-			content = `<p><img src="${String(row.image_url).replace(/"/g, "&quot;")}" alt="" style="max-width:100%"></p>\n` + content;
+			content = `<p><img src="${escAttr(String(row.image_url))}" alt="" style="max-width:100%"></p>\n` + content;
 		}
-		const postUrl = await bloggerCreatePost(env, cfg, { title: rw.title, content, labels: [String(row.source)] });
+
+		// Label: sumber + label wajib dari config (mis. "LapakStore88").
+		const labels = [String(row.source)];
+		for (const l of String(cfg.post_labels || "").split(",").map((x) => x.trim()).filter(Boolean)) {
+			if (!labels.includes(l)) labels.push(l);
+		}
+		const postUrl = await bloggerCreatePost(env, cfg, { title: rw.title, content, labels });
 		await getTurso(env)
 			.prepare(`UPDATE news_article SET status='posted', rewritten_html=?, post_url=?, posted_at=?, error='' WHERE id=?`)
 			.bind(content, postUrl, tsNow(), id)
@@ -376,6 +418,11 @@ export async function botNewsSnapshot(env: Env) {
 			daily_cap: Number(cfg.daily_cap || "8"),
 			attribution: String(cfg.attribution || "1") === "1",
 			rewrite_style: cfg.rewrite_style || "",
+			para_min: Number(cfg.para_min || "5"),
+			para_max: Number(cfg.para_max || "10"),
+			promo_url: cfg.promo_url || "",
+			promo_text: cfg.promo_text || "",
+			post_labels: cfg.post_labels || "",
 			gemini_model: cfg.gemini_model || "gemini-flash-latest",
 			has_gemini_key: !!cfg.gemini_key,
 			has_blogger: !!(cfg.blogger_refresh_token && cfg.blogger_blog_id),
