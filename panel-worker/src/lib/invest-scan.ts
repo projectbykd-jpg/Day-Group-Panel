@@ -41,6 +41,32 @@ function dateKeyTZ(offsetDays = 0): string {
 	return new Date(Date.now() + OFFSET_MS + offsetDays * 864e5).toISOString().slice(0, 10);
 }
 
+/**
+ * Baca daftar pasaran dari <option> di dropdown "Pilih Pasar".
+ *  - panel "ag":     <option value="p33190">ARIZONA</option>
+ *  - panel "agwlXX": <option value="ARIZONA,p7023">ARIZONA</option>
+ * Ambil kode pNNNN, buang opsi hidden / param teknis (pool- / param).
+ */
+function parsePasaranOptions(html: string): [string, string][] {
+	const out: [string, string][] = [];
+	const seen = new Set<string>();
+	const re = /<option\b([^>]*)>([^<]*)<\/option>/gi;
+	let mm: RegExpExecArray | null;
+	while ((mm = re.exec(html))) {
+		const attrs = mm[1] || "";
+		const label = (mm[2] || "").replace(/\s+/g, " ").trim();
+		if (/display\s*:\s*none/i.test(attrs)) continue;
+		const vm = attrs.match(/value=["']([^"']*)["']/i);
+		const val = vm ? vm[1].trim() : "";
+		if (!val || !label || /^pilih/i.test(label)) continue;
+		if (/^pool-|^param|^\d+$/i.test(val)) continue;
+		const cm = val.match(/(?:^|,)\s*(p\d+)\s*$/i);
+		if (!cm || seen.has(cm[1])) continue;
+		seen.add(cm[1]);
+		out.push([cm[1], label]);
+	}
+	return out;
+}
 function parsePeriode(html: string): number | null {
 	// Format panel "ag": <input name=periode value="2266">
 	let m = html.match(/name=["']?periode["']?[^>]*value=["'](\d+)["']/i);
@@ -129,37 +155,20 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 	// Jadi: coba baca daftar pasaran langsung dari <select> di admin_invoice13.php.
 	let pas: [string, string][] = INVEST_PASARAN;
 	let pasSrc = "default";
-	try {
-		const idxHtml = await investFetch(cfg, "admin_invoice13.php");
-		const disc: [string, string][] = [];
-		// Dua format value <option> yang dipakai panel suksesbogil:
-		//  - lama (ag.suksesbogil.com):  value="p33190"          teks: ARIZONA
-		//  - baru (agwl12.suksesbogil.com): value="ARIZONA,p7023" teks: ARIZONA
-		// Ambil value MENTAH sebagai kode (dipakai apa adanya di ?psr=), skip opsi
-		// hidden / placeholder / param teknis (pool-xx / kosong).
-		const re = /<option\b([^>]*)>([^<]*)<\/option>/gi;
-		let mm: RegExpExecArray | null;
-		while ((mm = re.exec(idxHtml))) {
-			const attrs = mm[1] || "";
-			const label = (mm[2] || "").replace(/\s+/g, " ").trim();
-			if (/display\s*:\s*none/i.test(attrs)) continue;
-			const vm = attrs.match(/value=["']([^"']*)["']/i);
-			const val = vm ? vm[1].trim() : "";
-			if (!val || !label) continue;
-			if (/^pilih/i.test(label)) continue;
-			if (/^pool-|^param|^\d+$/i.test(val)) continue;
-			// Ambil kode pNNNN — bisa berdiri sendiri ("p7023") atau dgn prefix
-			// nama ("ARIZONA,p7023"). admin_invoice13.php?psr=p7023 yang dipakai.
-			const cm = val.match(/(?:^|,)\s*(p\d+)\s*$/i);
-			if (!cm) continue;
-			disc.push([cm[1], label]);
+	// Dropdown <select onchange="gantipasar(...)"> bisa ada di beberapa halaman
+	// tergantung varian panel. Coba beberapa kandidat sampai dapat >=20 pasaran.
+	for (const cand of ["admin_invoice13.php", "index.php", "agentoverview.php", "menu.php"]) {
+		try {
+			const html = await investFetch(cfg, cand);
+			const disc = parsePasaranOptions(html);
+			if (disc.length >= 20) {
+				pas = disc;
+				pasSrc = cand.replace(".php", "") + "(" + disc.length + ")";
+				break;
+			}
+		} catch {
+			/* coba kandidat berikutnya */
 		}
-		if (disc.length >= 20) {
-			pas = disc;
-			pasSrc = "panel(" + disc.length + ")";
-		}
-	} catch {
-		/* biarkan pakai list default */
 	}
 	let cursor = Number(st.cursor || 0);
 
