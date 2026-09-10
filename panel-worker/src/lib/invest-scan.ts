@@ -251,8 +251,9 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 			// Diagnostik: kalau pasaran pertama tidak menghasilkan periode sama sekali,
 			// simpan cuplikan body-nya supaya ketahuan situs balikin apa (login page
 			// tak dikenal? "Information"? kosong?). Dipakai di pesan akhir bila 0 data.
-			if (!open && !probeSnippet) {
-				probeSnippet = String(head0 || "").replace(/\s+/g, " ").trim().slice(0, 260) || "(body kosong)";
+			if (!open && probeSnippet.split("||").length < 2) {
+				probeSnippet += (probeSnippet ? " || " : "") +
+					nama + ":" + String(head0 || "").replace(/\s+/g, " ").trim().slice(0, 180);
 			}
 			if (open) diag.periods++;
 			if (open) {
@@ -380,7 +381,7 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 				"Kemungkinan: sesi PHPSESSID kedaluwarsa, atau situs agen sedang maintenance/error. " +
 				"Perbarui PHPSESSID di Setting lalu scan ulang." +
 				` [Diag: list=${pasSrc} (${discDiag.join(" ")}), ${diag.periods}/${pas.length} pasaran ada periode, ${diag.withTotals} periode ada total, ${diag.pages} halaman diambil, ${diag.dateSkip} di-skip tanggal, ${diag.overLimit} lewat batas]` +
-				(diag.periods === 0 && probeSnippet ? ` situs balikin: "${probeSnippet}"` : "");
+				(diag.periods < pas.length && probeSnippet ? ` situs balikin: "${probeSnippet}"` : "");
 		}
 	}
 

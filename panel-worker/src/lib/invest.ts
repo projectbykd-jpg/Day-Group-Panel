@@ -309,13 +309,35 @@ export function investSiteDownReason(body: string): string | null {
 	return null;
 }
 
+// Header ala browser sungguhan. Panel agwlXX ada di belakang Cloudflare dgn
+// Bot Fight Mode — subrequest Worker yang cuma kirim UA + Cookie sering di-
+// challenge (balas 200 halaman kosong tanpa "periode"). Melengkapi header
+// fingerprint bikin lolos seperti fetch dari browser.
+export function investBrowserHeaders(cfg: InvestConfig): Record<string, string> {
+	return {
+		Cookie: investCookieHeader(cfg),
+		"User-Agent": INVEST_UA,
+		Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+		"Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+		"Accept-Encoding": "gzip, deflate, br",
+		Referer: cfg.BASE_URL,
+		"Upgrade-Insecure-Requests": "1",
+		"Sec-Fetch-Dest": "document",
+		"Sec-Fetch-Mode": "navigate",
+		"Sec-Fetch-Site": "same-origin",
+		"sec-ch-ua": '"Chromium";v="128", "Not(A:Brand";v="24", "Google Chrome";v="128"',
+		"sec-ch-ua-mobile": "?0",
+		"sec-ch-ua-platform": '"Windows"',
+	};
+}
+
 export async function investFetch(cfg: InvestConfig, path: string): Promise<string> {
 	if (!cfg.PHPSESSID && !cfg.COOKIE_EXTRA) {
 		throw new Error("PHPSESSID kosong — isi & simpan dulu di menu INVEST.");
 	}
 	const res = await fetch(cfg.BASE_URL + path, {
 		method: "GET",
-		headers: { Cookie: investCookieHeader(cfg), "User-Agent": INVEST_UA },
+		headers: investBrowserHeaders(cfg),
 		redirect: "manual",
 	});
 	const body = await res.text();
@@ -338,7 +360,7 @@ export async function investBatchGet(
 			chunk.map((p) =>
 				fetch(cfg.BASE_URL + p, {
 					method: "GET",
-					headers: { Cookie: investCookieHeader(cfg), "User-Agent": INVEST_UA },
+					headers: investBrowserHeaders(cfg),
 					redirect: "manual",
 				}),
 			),
