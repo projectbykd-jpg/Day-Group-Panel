@@ -378,6 +378,13 @@ export async function newsProcessOne(env: Env): Promise<{ done: boolean; title?:
 		return { done: true, title: rw.title, postUrl };
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
+		// "User location is not supported" = Cloudflare edge yg kebagian request ini
+		// kena geo-block Gemini, sifatnya per-titik-edge & sementara (edge lain masih
+		// jalan). JANGAN tandai error permanen -> biarkan 'new' supaya tick berikutnya
+		// (kemungkinan lewat edge lain) otomatis coba lagi, tidak nyangkut butuh skip manual.
+		if (/location is not supported/i.test(msg)) {
+			return { done: true, error: msg + " (akan dicoba lagi otomatis)" };
+		}
 		await getTurso(env).prepare(`UPDATE news_article SET status='error', error=? WHERE id=?`).bind(msg.slice(0, 400), id).run();
 		return { done: true, error: msg };
 	}
@@ -410,6 +417,9 @@ export async function botNewsRun(env: Env): Promise<{ pulled: number; posted: nu
 		const r = await newsProcessOne(env);
 		if (!r.done) break; // tidak ada artikel 'new'
 		if (r.postUrl) posted++;
+		// Geo-block sementara di edge ini -> hentikan tick, jangan ulang artikel yang
+		// sama berkali-kali (edge-nya sama sepanjang 1 invocation).
+		if (r.error && /location is not supported/i.test(r.error)) break;
 	}
 	return {
 		pulled: pull.added,

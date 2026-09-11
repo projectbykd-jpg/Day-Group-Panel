@@ -28,10 +28,14 @@ const PUMP_FLAG = "invest:pump:running";
 // Scan maju sedikit-sedikit tapi terus-menerus selama halaman dibuka.
 const USER_SLICE_MS = 22_000; // maks per user per tick
 const PUMP_BUDGET_MS = 25_000; // total per tick
-// Cloudflare membatasi subrequest per invocation (50 di plan Free). fetch ke panel
-// agen + query D1 sama-sama dihitung. Jadi tiap tick hanya boleh ~38 fetch, sisanya
-// disambung tick berikutnya lewat cursor.
-const FETCH_BUDGET_PER_TICK = 42;
+// Cloudflare membatasi 50 subrequest per invocation (plan Free) — fetch ke panel
+// agen MAUPUN query Turso/D1 (investGetState/investSetState/flushRaw/dst) SAMA-SAMA
+// terhitung. 42 kemarin nyaris pas 50 -> begitu 1 pasaran butuh banyak halaman
+// (mis. SYDNEY), invocation KENA "Too many subrequests" -> exception platform yang
+// TIDAK lewat try/catch kita -> tidak sempat cursor++/simpan state -> scan macet
+// permanen di pasaran itu (bukan error yang kelihatan di UI). Turunkan jauh di bawah
+// 50 supaya selalu ada sisa utk overhead Turso (~8-10 request/tick).
+const FETCH_BUDGET_PER_TICK = 28;
 const RAW_FLUSH_AT = 300;
 
 const ROW_RE_SRC =
@@ -192,6 +196,20 @@ export async function investScanUser(env: Env, user: string, deadlineMs: number,
 				}
 			} catch (e) {
 				discDiag.push(cand.replace(".php", "") + ":ERR");
+			}
+		}
+		// PENTING: simpan hasil discovery ke invest_config supaya tick BERIKUTNYA
+		// langsung pakai jalur "tersimpan" (0 fetch tambahan) alih-alih mengulang
+		// sampai 10 fetch discovery TIAP tick -> itu yang bikin scan seret/macet
+		// (anggaran wall-clock habis buat discovery, market tidak sempat diproses).
+		if (pasSrc !== "default") {
+			try {
+				await getTurso(env)
+					.prepare(`UPDATE invest_config SET pasaran_json = ? WHERE username = ?`)
+					.bind(JSON.stringify(pas), user)
+					.run();
+			} catch {
+				/* gagal simpan -> tidak fatal, discovery diulang tick berikutnya */
 			}
 		}
 	}
