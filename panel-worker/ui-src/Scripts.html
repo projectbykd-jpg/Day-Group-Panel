@@ -3802,6 +3802,26 @@ Tindakan ini tidak dapat dibatalkan.`,
       }).join('') || '<div class="text-[11px] text-slate-500">Belum ada postingan.</div>';
     }
 
+    function renderBotAutoBar(on){
+      const bar = document.getElementById('botAutoBar');
+      const dot = document.getElementById('botAutoDot');
+      const state = document.getElementById('botAutoState');
+      const label = document.getElementById('botAutoLabel');
+      const sw = document.getElementById('botEnabledSwitch');
+      if (sw) sw.classList.toggle('on', on);
+      if (dot) dot.className = 'w-2.5 h-2.5 rounded-full shrink-0 ' + (on ? 'bg-emerald-400' : 'bg-slate-500');
+      if (state) { state.textContent = on ? 'AKTIF' : 'NONAKTIF'; state.className = on ? 'text-emerald-400' : 'text-slate-500'; }
+      if (label) { label.textContent = on ? 'ON' : 'OFF'; label.className = 'text-[11px] font-bold ' + (on ? 'text-emerald-400' : 'text-slate-500'); }
+      if (bar) bar.style.borderColor = on ? 'rgba(52,211,153,.35)' : 'transparent';
+    }
+    function toggleBotAutoPost(){
+      const cb = document.getElementById('botEnabled');
+      const next = !(cb && cb.checked);
+      if (cb) cb.checked = next;
+      renderBotAutoBar(next);
+      toast(next ? 'Mengaktifkan auto-post…' : 'Mematikan auto-post…');
+      saveBotNewsConfig();
+    }
     function applyBotNews(snap){
       if (!snap || !snap.success) return;
       const c = snap.config || {};
@@ -3809,6 +3829,7 @@ Tindakan ini tidak dapat dibatalkan.`,
       renderBotHistory();
       const set = (id,v)=>{ const el=document.getElementById(id); if(el){ if(el.type==='checkbox') el.checked=!!v; else el.value=(v==null?'':v); } };
       set('botEnabled', c.enabled); set('botAttribution', c.attribution);
+      renderBotAutoBar(!!c.enabled);
       set('botPerRun', c.per_run); set('botDailyCap', c.daily_cap);
       set('botParaMin', c.para_min); set('botParaMax', c.para_max);
       set('botLabels', c.post_labels); set('botPromoUrl', c.promo_url); set('botPromoText', c.promo_text);

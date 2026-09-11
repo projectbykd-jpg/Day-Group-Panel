@@ -718,13 +718,28 @@
             </div>
           </div>
 
+          <!-- STATUS AUTO-POST — kontrol utama, tidak perlu buka Konfigurasi -->
+          <div id="botAutoBar" class="mini-card flex items-center justify-between gap-4 flex-wrap border-2 border-transparent transition-colors">
+            <div class="flex items-center gap-3">
+              <span id="botAutoDot" class="w-2.5 h-2.5 rounded-full bg-slate-500 shrink-0"></span>
+              <div>
+                <div class="text-xs font-black tracking-wide text-slate-100">AUTO-POST <span id="botAutoState">NONAKTIF</span></div>
+                <div class="text-[10px] text-slate-500">Kalau AKTIF, cron otomatis tulis-ulang &amp; posting berita tanpa perlu klik apa pun.</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <span id="botAutoLabel" class="text-[11px] font-bold text-slate-400">OFF</span>
+              <div id="botEnabledSwitch" class="switch" onclick="toggleBotAutoPost()" title="Nyalakan/matikan auto-post"></div>
+            </div>
+          </div>
+
           <div id="botNewsStat" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
 
           <!-- KONFIGURASI -->
           <details class="mini-card">
-            <summary class="cursor-pointer text-xs font-bold text-slate-200"><i class="fa-solid fa-sliders text-emerald-400 mr-2"></i>KONFIGURASI</summary>
+            <summary class="cursor-pointer text-xs font-bold text-slate-200"><i class="fa-solid fa-sliders text-emerald-400 mr-2"></i>KONFIGURASI LANJUTAN</summary>
             <div class="mt-4 grid sm:grid-cols-2 gap-3">
-              <label class="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" id="botEnabled"> Aktifkan auto-post (cron)</label>
+              <input type="checkbox" id="botEnabled" class="hidden">
               <label class="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" id="botAttribution"> Cantumkan sumber + backlink</label>
               <label class="text-xs text-slate-400">Artikel per proses cron<input id="botPerRun" type="number" min="1" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs"></label>
               <label class="text-xs text-slate-400">Batas artikel / hari<input id="botDailyCap" type="number" min="1" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs"></label>
