@@ -1,5 +1,9 @@
 // Anti-duplikat kirim result — tabel sent_registry (port getRegistryEntry_ / saveOrUpdateSentRegistry_).
+// Di Turso (bukan D1): setiap kirim result (operator manual/auto) baca+tulis
+// tabel ini -> paling sering dipanggil di seluruh app, growth tak terbatas
+// tanpa pruning. Dipindah spy tidak makan kuota rows-read/write harian D1.
 import { tsNow } from "./time";
+import { getTurso } from "./turso";
 
 export interface RegEntry {
 	hash: string;
@@ -18,7 +22,7 @@ export async function getRegistryEntry(
 	hash: string,
 ): Promise<RegEntry | null> {
 	const w = String(website ?? "").trim().toUpperCase();
-	const r = await env.DB.prepare(`SELECT * FROM sent_registry WHERE hash = ? AND website = ?`)
+	const r = await getTurso(env).prepare(`SELECT * FROM sent_registry WHERE hash = ? AND website = ?`)
 		.bind(hash, w)
 		.first<Record<string, unknown>>();
 	if (!r) return null;
@@ -44,7 +48,7 @@ export async function upsertRegistry(
 	content: string,
 ): Promise<void> {
 	const w = String(website ?? "").trim().toUpperCase();
-	await env.DB.prepare(
+	await getTurso(env).prepare(
 		`INSERT INTO sent_registry
 		   (hash, website, sent_at, username, market, telegram, linktree, panelz, content)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
