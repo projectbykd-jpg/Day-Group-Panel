@@ -111,6 +111,22 @@ async function resolveGnews(link: string): Promise<string> {
 	}
 }
 
+/** Ambil <meta property="og:image"> dari halaman artikel — fallback saat feed (mis. Google News) tidak kirim gambar. */
+async function fetchOgImage(pageUrl: string): Promise<string> {
+	try {
+		const r = await fetch(pageUrl, { headers: { "User-Agent": UA } });
+		if (!r.ok) return "";
+		const html = await r.text();
+		const m =
+			html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
+			html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
+			html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
+		return m ? decodeEntities(m[1]) : "";
+	} catch {
+		return "";
+	}
+}
+
 async function fetchFeed(kind: string, url: string): Promise<FeedItem[]> {
 	const r = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/rss+xml,application/xml,text/xml,*/*" } });
 	if (!r.ok) throw new Error(`feed ${url} -> HTTP ${r.status}`);
@@ -383,8 +399,17 @@ export async function newsProcessOne(env: Env): Promise<{ done: boolean; title?:
 				`\n<p style="font-size:13px;color:#666;margin-top:24px">Sumber: ` +
 				`<a href="${escAttr(String(row.url))}" rel="nofollow noopener" target="_blank">${escHtml(String(row.source))}</a></p>`;
 		}
-		if (row.image_url) {
-			content = `<p><img src="${escAttr(String(row.image_url))}" alt="" style="max-width:100%"></p>\n` + content;
+		// Feed Google News (dipakai Kompas/Tribunnews) tidak menyertakan gambar
+		// sama sekali -> post-nya tampil tanpa thumbnail di daftar Blogger. Kalau
+		// image_url kosong, coba ambil <meta og:image> dari halaman artikel asli
+		// (1 fetch tambahan, cuma dipanggil di sini per-artikel yang DIPROSES,
+		// bukan saat pull massal -> anggaran subrequest masih aman).
+		let imageUrl = String(row.image_url || "");
+		if (!imageUrl) {
+			imageUrl = await fetchOgImage(String(row.url));
+		}
+		if (imageUrl) {
+			content = `<p><img src="${escAttr(imageUrl)}" alt="" style="max-width:100%"></p>\n` + content;
 		}
 
 		// Label: sumber + label wajib dari config (mis. "LapakStore88").
