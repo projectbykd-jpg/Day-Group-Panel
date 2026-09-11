@@ -121,33 +121,60 @@ async function fetchFeed(kind: string, url: string): Promise<FeedItem[]> {
 // ---------------------------------------------------------------------------
 // Tarik feed -> simpan artikel baru (status "new")
 // ---------------------------------------------------------------------------
-export async function newsPullSources(env: Env, perSource = 12): Promise<{ added: number; scanned: number }> {
+export async function newsPullSources(env: Env, perSource = 6): Promise<{ added: number; scanned: number }> {
 	const srcs =
 		(await getTurso(env).prepare(`SELECT id, name, kind, url FROM news_source WHERE active = 1`).all<{ id: number; name: string; kind: string; url: string }>())
 			.results ?? [];
-	let added = 0;
+	// Cloudflare Free: 50 subrequest/invocation, TERHITUNG jg query Turso — dan
+	// botNewsRun masih lanjut newsProcessOne (fetch Gemini+Blogger) sesudah ini
+	// dalam invocation yang SAMA. Batasi total fetch eksternal (feed + resolve
+	// gnews) di sini, dan tulis hasil lewat batch (bukan 1 query per artikel) —
+	// dulu 10 sumber x 12 item x 1 query = ratusan subrequest -> "Too many
+	// subrequests" -> exception tak tertangkap -> auto-post diam tanpa error.
+	const EXTERNAL_FETCH_BUDGET = 14;
+	let extFetches = 0;
 	let scanned = 0;
+	const rows: { source: string; url: string; hash: string; title: string; excerpt: string; image: string }[] = [];
+	const seenHash = new Set<string>();
+
 	for (const s of srcs) {
+		if (extFetches >= EXTERNAL_FETCH_BUDGET) break;
 		try {
+			extFetches++;
 			const items = (await fetchFeed(s.kind, s.url)).slice(0, perSource);
 			for (const it of items) {
+				if (extFetches >= EXTERNAL_FETCH_BUDGET) break;
 				scanned++;
-				const realUrl = s.kind === "gnews" ? await resolveGnews(it.url) : it.url;
+				let realUrl = it.url;
+				if (s.kind === "gnews") {
+					extFetches++;
+					realUrl = await resolveGnews(it.url);
+				}
 				if (!/^https?:\/\//i.test(realUrl)) continue;
 				const h = await sha256Hex(realUrl.split("#")[0]);
-				const res = await getTurso(env)
-					.prepare(
-						`INSERT OR IGNORE INTO news_article
-						   (source, url, url_hash, title, excerpt, image_url, status, found_at)
-						 VALUES (?, ?, ?, ?, ?, ?, 'new', ?)`,
-					)
-					.bind(s.name, realUrl, h, it.title, it.excerpt, it.image || "", tsNow())
-					.run();
-				if (res.meta.changes > 0) added++;
+				if (seenHash.has(h)) continue;
+				seenHash.add(h);
+				rows.push({ source: s.name, url: realUrl, hash: h, title: it.title, excerpt: it.excerpt, image: it.image || "" });
 			}
 		} catch (e) {
 			console.error("newsPullSources", s.name, e instanceof Error ? e.message : e);
 		}
+	}
+
+	let added = 0;
+	const now = tsNow();
+	const stmts = rows.map((r) =>
+		getTurso(env)
+			.prepare(
+				`INSERT OR IGNORE INTO news_article
+				   (source, url, url_hash, title, excerpt, image_url, status, found_at)
+				 VALUES (?, ?, ?, ?, ?, ?, 'new', ?)`,
+			)
+			.bind(r.source, r.url, r.hash, r.title, r.excerpt, r.image, now),
+	);
+	for (let i = 0; i < stmts.length; i += 25) {
+		const res = await getTurso(env).batch(stmts.slice(i, i + 25));
+		added += res.filter((r) => r.meta.changes > 0).length;
 	}
 	return { added, scanned };
 }
@@ -178,6 +205,9 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 		`RINGKASAN: ${art.excerpt || "(tidak ada, tulis ringkas dari judul saja)"}\n` +
 		`SUMBER: ${art.source}`;
 	// Model utama sering 503 (high demand) -> coba beberapa model berurutan.
+	// SATU percobaan per model (bukan 2x) -> tiap fetch Gemini adalah 1 subrequest
+	// Cloudflare; loop lama (sampai 2 attempt x 4 model = 8 fetch) ikut andil bikin
+	// invocation kena "Too many subrequests" (limit 50/invocation Free plan).
 	const models = [...new Set([model, "gemini-3-flash-preview", "gemini-flash-latest", "gemini-flash-lite-latest"])];
 	let j: any = null;
 	let lastErr = "";
@@ -192,36 +222,28 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 			responseMimeType: "application/json",
 		};
 		if (supportsThinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
-		for (let attempt = 0; attempt < 2; attempt++) {
-			const r = await fetch(
-				`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(mdl)}:generateContent`,
-				{
-					method: "POST",
-					headers: { "Content-Type": "application/json", "X-goog-api-key": key },
-					body: JSON.stringify({
-						contents: [{ parts: [{ text: prompt }] }],
-						generationConfig,
-					}),
-				},
-			);
-			const body = (await r.json()) as any;
-			const hasText = !!body?.candidates?.[0]?.content?.parts?.some((p: any) => p.text);
-			if (r.ok && hasText) {
-				j = body;
-				break;
-			}
-			lastErr =
-				"HTTP " + r.status + " " +
-				(body?.candidates?.[0]?.finishReason
-					? "finishReason=" + body.candidates[0].finishReason
-					: JSON.stringify(body?.error || body).slice(0, 200));
-			if (r.status === 503 || r.status === 429) {
-				await new Promise((res) => setTimeout(res, 1200));
-				continue;
-			}
-			break; // error non-transient -> ganti model
+		const r = await fetch(
+			`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(mdl)}:generateContent`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", "X-goog-api-key": key },
+				body: JSON.stringify({
+					contents: [{ parts: [{ text: prompt }] }],
+					generationConfig,
+				}),
+			},
+		);
+		const body = (await r.json()) as any;
+		const hasText = !!body?.candidates?.[0]?.content?.parts?.some((p: any) => p.text);
+		if (r.ok && hasText) {
+			j = body;
+			break;
 		}
-		if (j) break;
+		lastErr =
+			"HTTP " + r.status + " " +
+			(body?.candidates?.[0]?.finishReason
+				? "finishReason=" + body.candidates[0].finishReason
+				: JSON.stringify(body?.error || body).slice(0, 200));
 	}
 	if (!j) throw new Error("Gemini gagal semua model: " + lastErr);
 	let text: string = j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "";
