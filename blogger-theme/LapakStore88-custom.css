@@ -1,0 +1,142 @@
+/* =======================================================================
+   LapakStore88 — Custom Style (untuk tema bawaan Blogger: Contempo/Notable/Soho)
+   Cara pasang:
+   Blogger -> Tema -> tombol titik-tiga -> "Sesuaikan"
+   -> menu kiri "Lanjutan" -> scroll bawah "Tambahkan CSS"
+   -> tempel SEMUA isi file ini -> "TERAPKAN KE BLOG".
+   Tidak perlu upload XML. Aman, bisa di-undo kapan saja.
+   ======================================================================= */
+
+:root{
+  --ls-brand:#0b7a4b;
+  --ls-brand-ink:#095c39;
+  --ls-accent:#ff5a1f;
+  --ls-ink:#12151c;
+  --ls-soft:#5b6472;
+  --ls-line:#e7e9ee;
+  --ls-bg-soft:#f6f7f9;
+}
+
+/* ---------- tipografi global ---------- */
+body,.post-body,.widget{
+  font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif !important;
+  color:var(--ls-ink);
+  -webkit-font-smoothing:antialiased;
+}
+body{font-size:16px;line-height:1.65}
+
+/* ---------- header / judul blog ---------- */
+.header-widget,.Header{background:#fff !important}
+.header-bar,.centered-top-container{border-bottom:1px solid var(--ls-line)}
+.Header h1,.Header .title,h1.title a{
+  font-weight:800 !important;letter-spacing:-.02em;color:var(--ls-ink) !important;
+}
+.Header .description{color:var(--ls-soft) !important;font-weight:500}
+
+/* tombol/link navigasi tab */
+.tabs-widget .tabs li a,.tabs .widget li a,.PageList li a{
+  font-weight:600 !important;font-size:14px !important;color:var(--ls-soft) !important;
+}
+.tabs-widget .tabs li a:hover,.PageList li a:hover{color:var(--ls-brand) !important}
+.tabs-widget .tabs li.selected a{color:var(--ls-brand) !important;border-color:var(--ls-brand) !important}
+
+/* ---------- daftar postingan (beranda) ---------- */
+.blog-posts{gap:26px !important}
+.post-outer,.post{
+  border:1px solid var(--ls-line) !important;
+  border-radius:14px !important;
+  overflow:hidden;
+  background:#fff;
+  box-shadow:none !important;
+  transition:box-shadow .2s ease,transform .2s ease;
+  margin-bottom:24px !important;
+}
+.post-outer:hover,.post:hover{
+  box-shadow:0 14px 40px -18px rgba(10,20,40,.28) !important;
+  transform:translateY(-2px);
+}
+.post .snippet-thumbnail img,.post-outer .snippet-thumbnail img{border-radius:10px}
+.snippet-thumbnail{border-radius:12px;overflow:hidden}
+
+/* judul artikel di daftar */
+.index-post .post-title,.blog-post .post-title,h3.post-title,h2.post-title{
+  font-family:Newsreader,Georgia,"Times New Roman",serif !important;
+  font-weight:600 !important;
+  letter-spacing:-.01em;
+  line-height:1.25 !important;
+  font-size:22px !important;
+}
+.post-title a{color:var(--ls-ink) !important}
+.post-title a:hover{color:var(--ls-brand) !important}
+.post-snippet,.snippet-item{color:var(--ls-soft) !important;font-size:14.5px !important}
+.post-footer,.post-timestamp,.byline{color:var(--ls-soft) !important;font-size:12px !important}
+
+/* label / kategori kecil */
+.post-labels a,.byline.post-labels a{
+  background:var(--ls-bg-soft);border:1px solid var(--ls-line);border-radius:999px;
+  padding:4px 11px !important;font-size:12px !important;font-weight:600;color:var(--ls-soft) !important;
+}
+.post-labels a:hover{border-color:var(--ls-brand);color:var(--ls-brand) !important}
+
+/* ---------- halaman artikel tunggal ---------- */
+.item-view .post-title,.item-content h1.post-title{
+  font-family:Newsreader,Georgia,serif !important;
+  font-weight:600 !important;
+  font-size:38px !important;
+  line-height:1.15 !important;
+  letter-spacing:-.02em;
+}
+@media (max-width:640px){.item-view .post-title{font-size:28px !important}}
+
+.item-view .post-body,.post-body.entry-content{
+  font-size:17.5px !important;
+  line-height:1.85 !important;
+}
+.post-body p{margin:0 0 1.2em}
+.post-body h2{font-family:Newsreader,serif !important;font-size:26px !important;margin:1.6em 0 .5em}
+.post-body h3{font-size:20px !important;margin:1.4em 0 .4em}
+.post-body img{border-radius:12px;margin:1.4em auto}
+.post-body a{color:var(--ls-brand-ink) !important;text-decoration:underline;text-underline-offset:2px}
+.post-body blockquote{
+  border-left:3px solid var(--ls-brand);padding-left:20px;margin:1.4em 0;
+  color:var(--ls-soft);font-style:italic;
+}
+
+/* kotak promo yang disisipkan bot (border-left oranye) — perhalus */
+.post-body div[style*="border-left:4px solid #ff5a1f"],
+.post-body div[style*="border-left: 4px solid #ff5a1f"]{
+  border:1px solid var(--ls-line) !important;
+  border-left:4px solid var(--ls-accent) !important;
+  border-radius:12px !important;background:var(--ls-bg-soft) !important;
+  padding:16px 18px !important;
+}
+
+/* ---------- widget sidebar ---------- */
+.sidebar .widget,.sidebar_bottom .widget{
+  border:1px solid var(--ls-line);border-radius:14px;padding:18px;background:#fff;margin-bottom:22px;
+}
+.sidebar h2,.sidebar .title,.widget h2{
+  font-size:13px !important;font-weight:800 !important;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ls-ink) !important;
+}
+.PopularPosts .item-title a:hover,.sidebar li a:hover{color:var(--ls-brand) !important}
+
+/* ---------- tombol & pager ---------- */
+.blog-pager a,.blog-pager span,#blog-pager a{
+  border:1px solid var(--ls-line) !important;border-radius:999px !important;
+  padding:9px 18px !important;font-weight:600;font-size:13px;color:var(--ls-ink) !important;
+  background:#fff !important;
+}
+.blog-pager a:hover{border-color:var(--ls-brand) !important;color:var(--ls-brand) !important}
+.button,.CustomSearch input.search-action,.jump-link a{
+  background:var(--ls-brand) !important;color:#fff !important;border-radius:999px !important;
+}
+
+/* ---------- footer ---------- */
+.footer-outer,footer{background:var(--ls-bg-soft) !important;border-top:1px solid var(--ls-line)}
+.footer .widget h2{color:var(--ls-ink) !important}
+
+/* ---------- rapikan bawaan Blogger ---------- */
+.navbar,#navbar-iframe{display:none !important;height:0 !important;visibility:hidden}
+.post-outer{padding:0}
+.item-view .post-outer{border:0 !important;box-shadow:none !important}
