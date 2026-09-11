@@ -182,6 +182,16 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 	let j: any = null;
 	let lastErr = "";
 	for (const mdl of models) {
+		// thinkingConfig cuma didukung sebagian model (mis. gemini-3-flash-preview).
+		// gemini-flash-lite-latest & sebagian lain balas 400 INVALID_ARGUMENT kalau
+		// field ini disertakan -> kirim HANYA utk model yg namanya mengandung "3".
+		const supportsThinking = /gemini-3/i.test(mdl);
+		const generationConfig: Record<string, unknown> = {
+			temperature: 0.85,
+			maxOutputTokens: 8192,
+			responseMimeType: "application/json",
+		};
+		if (supportsThinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
 		for (let attempt = 0; attempt < 2; attempt++) {
 			const r = await fetch(
 				`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(mdl)}:generateContent`,
@@ -190,12 +200,7 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 					headers: { "Content-Type": "application/json", "X-goog-api-key": key },
 					body: JSON.stringify({
 						contents: [{ parts: [{ text: prompt }] }],
-						generationConfig: {
-							temperature: 0.85,
-							maxOutputTokens: 8192,
-							responseMimeType: "application/json",
-							thinkingConfig: { thinkingBudget: 0 },
-						},
+						generationConfig,
 					}),
 				},
 			);
