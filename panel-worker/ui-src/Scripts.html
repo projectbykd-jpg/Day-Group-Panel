@@ -3874,11 +3874,14 @@ Tindakan ini tidak dapat dibatalkan.`,
     function botNewsRun(){
       const countEl = document.getElementById('botRunCount');
       const count = countEl ? Number(countEl.value || 1) : 1;
-      toast('Memproses ' + count + ' artikel...');
+      showActionPopup('LOADING', 'Memproses Berita', `Menulis ulang & posting ${count} artikel ke Blogger...`, 'fa-robot');
       google.script.run.withSuccessHandler(r=>{
+        closeActionPopup();
         if (r && r.message) toast(r.message);
         else toast('Tidak ada artikel baru untuk diproses');
         if(r&&r.snapshot) applyBotNews(r.snapshot); else loadBotNews();
-      }).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsRunNow(currentSessionToken, count);
+      }).withFailureHandler(e=>{
+        showActionPopup('ERROR', 'Proses Gagal', (e&&e.message)||String(e), 'fa-triangle-exclamation');
+      }).botNewsRunNow(currentSessionToken, count);
     }
   </script>
