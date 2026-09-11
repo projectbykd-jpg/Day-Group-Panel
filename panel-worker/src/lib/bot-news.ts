@@ -201,6 +201,7 @@ export async function newsPullSources(env: Env, perSource = 6): Promise<{ added:
 interface Rewritten {
 	title: string;
 	html: string;
+	metaDescription: string;
 }
 
 export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: { title: string; excerpt: string; source: string; url: string }): Promise<Rewritten> {
@@ -216,7 +217,9 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 		`Berdasarkan ringkasan berikut, tulis artikel BARU sepanjang ${paraTarget} paragraf ` +
 		`(jangan menyalin kalimat asli, jangan mengarang fakta/angka yang tidak ada di ringkasan; ` +
 		`boleh menambah konteks umum, latar belakang, dan analisis ringan agar artikel penuh). ` +
-		`Balas HANYA JSON valid tanpa markdown: {"title": "...", "body_html": "<p>...</p><p>...</p>"}.\n\n` +
+		`Sertakan juga "meta_description": ringkasan 1 kalimat (maks 155 karakter) utk cuplikan hasil pencarian Google — ` +
+		`bukan copy kalimat pertama artikel, tapi rangkuman inti isi artikel. ` +
+		`Balas HANYA JSON valid tanpa markdown: {"title": "...", "meta_description": "...", "body_html": "<p>...</p><p>...</p>"}.\n\n` +
 		`JUDUL ASLI: ${art.title}\n` +
 		`RINGKASAN: ${art.excerpt || "(tidak ada, tulis ringkas dari judul saja)"}\n` +
 		`SUMBER: ${art.source}`;
@@ -267,6 +270,7 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 
 	let title = "";
 	let html = "";
+	let metaDescription = "";
 
 	// 1) coba parse JSON apa adanya
 	const tryParse = (s: string): boolean => {
@@ -275,6 +279,7 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 			if (p && (p.body_html || p.html)) {
 				title = String(p.title || "").trim();
 				html = String(p.body_html || p.html || "").trim();
+				metaDescription = String(p.meta_description || "").trim();
 				return true;
 			}
 		} catch {
@@ -292,10 +297,12 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 	if (!html) {
 		const tm = text.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/);
 		const bm = text.match(/"body_html"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+		const dm = text.match(/"meta_description"\s*:\s*"((?:[^"\\]|\\.)*)"/);
 		if (bm) {
 			const unesc = (x: string) => x.replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\\\/g, "\\");
 			html = unesc(bm[1]).trim();
 			if (tm) title = unesc(tm[1]).trim();
+			if (dm) metaDescription = unesc(dm[1]).trim();
 		}
 	}
 	// 4) benar-benar bukan JSON: anggap teks polos = body (bersihkan sisa JSON kalau ada)
@@ -311,7 +318,11 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 		throw new Error("Gemini balas format tidak bisa dibaca (bukan artikel).");
 	}
 	if (!title) title = art.title;
-	return { title: title.slice(0, 180), html };
+	if (!metaDescription) {
+		// fallback: potong dari teks polos hasil rewrite (tanpa tag HTML)
+		metaDescription = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 155);
+	}
+	return { title: title.slice(0, 180), html, metaDescription: metaDescription.slice(0, 155) };
 }
 
 // ---------------------------------------------------------------------------
@@ -343,7 +354,7 @@ export async function bloggerAccessToken(env: Env, cfg: Record<string, string>):
 export async function bloggerCreatePost(
 	env: Env,
 	cfg: Record<string, string>,
-	post: { title: string; content: string; labels?: string[] },
+	post: { title: string; content: string; labels?: string[]; searchDescription?: string },
 ): Promise<string> {
 	const token = await bloggerAccessToken(env, cfg);
 	const blogId = cfg.blogger_blog_id;
@@ -351,11 +362,57 @@ export async function bloggerCreatePost(
 	const r = await fetch(`https://www.googleapis.com/blogger/v3/blogs/${encodeURIComponent(blogId)}/posts/`, {
 		method: "POST",
 		headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-		body: JSON.stringify({ kind: "blogger#post", title: post.title, content: post.content, labels: post.labels || [] }),
+		body: JSON.stringify({
+			kind: "blogger#post",
+			title: post.title,
+			content: post.content,
+			labels: post.labels || [],
+			// Field ini yang tampil sebagai cuplikan di hasil pencarian Google
+			// (SEO meta description) -- tanpa ini Google ambil cuplikan asal dari isi.
+			searchDescription: (post.searchDescription || "").slice(0, 155),
+		}),
 	});
 	const j = (await r.json()) as any;
 	if (!r.ok || !j.url) throw new Error("Blogger post gagal: " + JSON.stringify(j).slice(0, 300));
 	return String(j.url);
+}
+
+// ---------------------------------------------------------------------------
+// Facebook Page — auto-share tiap artikel yang terbit di Blogger
+// ---------------------------------------------------------------------------
+function buildFbCaption(title: string, metaDescription: string, postUrl: string): string {
+	const lines = [`📰 ${title}`];
+	if (metaDescription) lines.push("", metaDescription);
+	lines.push("", `🔗 Baca selengkapnya: ${postUrl}`);
+	return lines.join("\n").slice(0, 1900); // batas wajar caption FB
+}
+
+/** Posting ke Facebook Page (foto+caption kalau ada gambar, teks+link kalau tidak). Gagal = non-fatal, dicatat saja. */
+export async function fbPostToPage(
+	cfg: Record<string, string>,
+	post: { title: string; metaDescription: string; postUrl: string; imageUrl?: string },
+): Promise<string | null> {
+	const pageId = cfg.fb_page_id;
+	const token = cfg.fb_page_token;
+	if (!pageId || !token) return null; // belum disetel -> lewati diam-diam
+	const caption = buildFbCaption(post.title, post.metaDescription, post.postUrl);
+	const endpoint = post.imageUrl
+		? `https://graph.facebook.com/v21.0/${encodeURIComponent(pageId)}/photos`
+		: `https://graph.facebook.com/v21.0/${encodeURIComponent(pageId)}/feed`;
+	const body = new URLSearchParams({ access_token: token });
+	if (post.imageUrl) {
+		body.set("url", post.imageUrl);
+		body.set("caption", caption);
+	} else {
+		body.set("message", caption);
+		body.set("link", post.postUrl);
+	}
+	const r = await fetch(endpoint, { method: "POST", body });
+	const j = (await r.json()) as any;
+	if (!r.ok || (!j.id && !j.post_id)) {
+		throw new Error("Facebook post gagal: " + JSON.stringify(j?.error || j).slice(0, 300));
+	}
+	return String(j.post_id || j.id);
 }
 
 // ---------------------------------------------------------------------------
@@ -417,11 +474,22 @@ export async function newsProcessOne(env: Env): Promise<{ done: boolean; title?:
 		for (const l of String(cfg.post_labels || "").split(",").map((x) => x.trim()).filter(Boolean)) {
 			if (!labels.includes(l)) labels.push(l);
 		}
-		const postUrl = await bloggerCreatePost(env, cfg, { title: rw.title, content, labels });
+		const postUrl = await bloggerCreatePost(env, cfg, { title: rw.title, content, labels, searchDescription: rw.metaDescription });
 		await getTurso(env)
 			.prepare(`UPDATE news_article SET status='posted', rewritten_html=?, post_url=?, posted_at=?, error='' WHERE id=?`)
 			.bind(content, postUrl, tsNow(), id)
 			.run();
+
+		// Auto-share ke Facebook Page — GAGAL DI SINI TIDAK BOLEH membatalkan
+		// posting Blogger yang sudah berhasil (non-fatal, dicatat saja).
+		if (String(cfg.fb_enabled || "0") === "1") {
+			try {
+				await fbPostToPage(cfg, { title: rw.title, metaDescription: rw.metaDescription, postUrl, imageUrl });
+			} catch (e) {
+				console.error("fbPostToPage gagal:", e instanceof Error ? e.message : e);
+			}
+		}
+
 		return { done: true, title: rw.title, postUrl };
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
@@ -429,7 +497,10 @@ export async function newsProcessOne(env: Env): Promise<{ done: boolean; title?:
 		// kena geo-block Gemini, sifatnya per-titik-edge & sementara (edge lain masih
 		// jalan). JANGAN tandai error permanen -> biarkan 'new' supaya tick berikutnya
 		// (kemungkinan lewat edge lain) otomatis coba lagi, tidak nyangkut butuh skip manual.
-		if (/location is not supported/i.test(msg)) {
+		// Sama dgn geo-block Gemini: rate limit Blogger (429 rateLimitExceeded/
+		// RESOURCE_EXHAUSTED) sifatnya SEMENTARA (reda dlm hitungan menit) -- JANGAN
+		// tandai error permanen, biar dicoba lagi otomatis tick berikutnya.
+		if (/location is not supported/i.test(msg) || /rateLimitExceeded|RESOURCE_EXHAUSTED|user-?Rate ?Limit/i.test(msg)) {
 			return { done: true, error: msg + " (akan dicoba lagi otomatis)" };
 		}
 		await getTurso(env).prepare(`UPDATE news_article SET status='error', error=? WHERE id=?`).bind(msg.slice(0, 400), id).run();
@@ -487,7 +558,7 @@ export async function botNewsRun(
 		}
 		// Geo-block sementara di edge ini -> hentikan tick, jangan ulang artikel yang
 		// sama berkali-kali (edge-nya sama sepanjang 1 invocation).
-		if (r.error && /location is not supported/i.test(r.error)) break;
+		if (r.error && /location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED/i.test(r.error)) break;
 	}
 	return {
 		pulled: pull.added,
@@ -537,6 +608,9 @@ export async function botNewsSnapshot(env: Env) {
 			has_gemini_key: !!cfg.gemini_key,
 			has_blogger: !!(cfg.blogger_refresh_token && cfg.blogger_blog_id),
 			blog_id: cfg.blogger_blog_id || "",
+			fb_enabled: String(cfg.fb_enabled || "0") === "1",
+			fb_page_id: cfg.fb_page_id || "",
+			has_facebook: !!(cfg.fb_page_id && cfg.fb_page_token),
 		},
 		postedToday: await postedToday(env),
 		byStatus,

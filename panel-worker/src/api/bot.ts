@@ -25,11 +25,13 @@ export async function botNewsSaveConfig(env: Env, token: string, data: Record<st
 	const allow = [
 		"enabled", "per_run", "daily_cap", "attribution", "rewrite_style", "gemini_model", "gemini_key",
 		"blogger_blog_id", "para_min", "para_max", "promo_url", "promo_text", "post_labels",
+		"fb_enabled", "fb_page_id", "fb_page_token",
 	];
 	for (const k of allow) {
 		if (Object.prototype.hasOwnProperty.call(data, k)) {
 			let v = String((data as any)[k] ?? "").trim();
-			if (k === "enabled" || k === "attribution") v = v === "1" || v === "true" ? "1" : "0";
+			if (k === "enabled" || k === "attribution" || k === "fb_enabled") v = v === "1" || v === "true" ? "1" : "0";
+			if ((k === "fb_page_token") && !v) continue; // kosongkan input token TIDAK menghapus yg tersimpan
 			patch[k] = v;
 		}
 	}
