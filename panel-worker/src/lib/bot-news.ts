@@ -421,14 +421,24 @@ async function postedToday(env: Env): Promise<number> {
 }
 
 /** Entry cron: /__cron?job=news */
-export async function botNewsRun(env: Env): Promise<{ pulled: number; posted: number; capped: boolean; message: string }> {
+// Batas keras utk sekali panggil (tombol "Proses Sekarang" manual TERMASUK):
+// tiap artikel makan ~4-8 subrequest (Gemini + Blogger + Turso). Cloudflare Free
+// cuma kasih 50 subrequest/invocation -- lihat catatan di newsPullSources.
+const MAX_RUN_COUNT = 5;
+
+export async function botNewsRun(
+	env: Env,
+	opts: { force?: boolean; count?: number } = {},
+): Promise<{ pulled: number; posted: number; capped: boolean; message: string }> {
 	const cfg = await botCfg(env);
-	if (String(cfg.enabled || "0") !== "1") {
+	if (!opts.force && String(cfg.enabled || "0") !== "1") {
 		return { pulled: 0, posted: 0, capped: false, message: "BOT NEWS dimatikan (enabled=0)." };
 	}
 	const pull = await newsPullSources(env);
 	const cap = Number(cfg.daily_cap || "8");
-	const perRun = Math.max(1, Number(cfg.per_run || "2"));
+	const perRun = opts.count
+		? Math.max(1, Math.min(MAX_RUN_COUNT, Math.floor(opts.count)))
+		: Math.max(1, Number(cfg.per_run || "2"));
 	let posted = 0;
 	let capped = false;
 	for (let i = 0; i < perRun; i++) {

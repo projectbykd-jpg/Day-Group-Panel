@@ -707,7 +707,13 @@
               </div>
             </div>
             <div class="flex items-center gap-2">
-              <button onclick="botNewsRun()" class="btn-primary text-xs font-bold px-4 py-2.5 rounded-xl"><i class="fa-solid fa-bolt mr-1"></i>PROSES 1 SEKARANG</button>
+              <select id="botRunCount" class="glass-inner rounded-xl px-3 py-2.5 text-slate-100 text-xs font-bold">
+                <option value="1">1 artikel</option>
+                <option value="2">2 artikel</option>
+                <option value="3">3 artikel</option>
+                <option value="5">5 artikel</option>
+              </select>
+              <button onclick="botNewsRun()" class="btn-primary text-xs font-bold px-4 py-2.5 rounded-xl"><i class="fa-solid fa-bolt mr-1"></i>PROSES SEKARANG</button>
               <button onclick="loadBotNews()" class="btn-secondary text-xs font-bold px-4 py-2.5 rounded-xl"><i class="fa-solid fa-rotate mr-1"></i>REFRESH</button>
             </div>
           </div>

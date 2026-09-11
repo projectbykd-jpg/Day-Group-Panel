@@ -3,7 +3,7 @@ import { requireSession } from "./auth";
 import { logActivity } from "../lib/activity";
 import { getTurso } from "../lib/turso";
 import { tsNow } from "../lib/time";
-import { botCfgSet, botNewsRun, botNewsSnapshot, newsProcessOne, newsPullSources } from "../lib/bot-news";
+import { botCfgSet, botNewsRun, botNewsSnapshot } from "../lib/bot-news";
 
 async function gate(env: Env, token: string) {
 	// BOT & ADMIN sama-sama boleh; OPERATOR/VIEWER ditolak.
@@ -70,20 +70,21 @@ export async function botNewsDeleteSource(env: Env, token: string, data: Record<
 	return botNewsSnapshot(env);
 }
 
-export async function botNewsRunNow(env: Env, token: string) {
+export async function botNewsRunNow(env: Env, token: string, count?: number) {
 	const s = await gate(env, token);
 	// Abaikan flag enabled untuk run manual, tapi tetap hormati batas harian.
-	const pull = await newsPullSources(env);
-	const r = await newsProcessOne(env);
+	// count dibatasi di botNewsRun (maks 5x sekali klik) -> jaga anggaran
+	// subrequest Cloudflare (Gemini+Blogger+Turso per artikel).
+	const r = await botNewsRun(env, { force: true, count: count ? Number(count) : 1 });
 	await logActivity(
 		env,
 		s.username,
 		"BOT NEWS RUN",
-		`Manual: feed +${pull.added}, ${r.postUrl ? "posted " + r.postUrl : r.error ? "error: " + r.error : "tidak ada artikel baru"}`,
-		r.error ? "SEBAGIAN" : "BERHASIL",
+		`Manual: feed +${r.pulled}, diposting ${r.posted}${r.capped ? " (batas harian tercapai)" : ""}`,
+		"BERHASIL",
 		"",
 	);
-	return { success: true, pulled: pull.added, ...r, snapshot: await botNewsSnapshot(env) };
+	return { success: true, ...r, snapshot: await botNewsSnapshot(env) };
 }
 
 export async function botNewsSkip(env: Env, token: string, data: Record<string, unknown>) {

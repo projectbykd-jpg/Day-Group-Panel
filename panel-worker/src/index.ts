@@ -180,7 +180,7 @@ const ROUTES: Record<string, Handler> = {
 	botNewsAddSource: (env, b) => botNewsAddSource(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
 	botNewsToggleSource: (env, b) => botNewsToggleSource(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
 	botNewsDeleteSource: (env, b) => botNewsDeleteSource(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
-	botNewsRunNow: (env, b) => botNewsRunNow(env, s(b.token)),
+	botNewsRunNow: (env, b) => botNewsRunNow(env, s(b.token), b.count != null ? Number(b.count) : undefined),
 	botNewsSkip: (env, b) => botNewsSkip(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
 
 	// dipanggil GitHub Actions (auth via job key, bukan sesi)

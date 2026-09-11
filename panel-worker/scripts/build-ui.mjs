@@ -72,7 +72,7 @@ const ARG_MAP = {
 	botNewsAddSource: ["token", "data"],
 	botNewsToggleSource: ["token", "data"],
 	botNewsDeleteSource: ["token", "data"],
-	botNewsRunNow: ["token"],
+	botNewsRunNow: ["token", "count"],
 	botNewsSkip: ["token", "data"],
 };
 

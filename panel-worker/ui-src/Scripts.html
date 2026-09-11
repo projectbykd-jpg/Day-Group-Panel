@@ -3872,12 +3872,13 @@ Tindakan ini tidak dapat dibatalkan.`,
     function deleteBotSource(id){ if(!confirm('Hapus sumber ini?'))return; google.script.run.withSuccessHandler(applyBotNews).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsDeleteSource(currentSessionToken,{id:id}); }
     function skipBotArticle(id){ google.script.run.withSuccessHandler(applyBotNews).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsSkip(currentSessionToken,{id:id}); }
     function botNewsRun(){
-      toast('Memproses 1 artikel...');
+      const countEl = document.getElementById('botRunCount');
+      const count = countEl ? Number(countEl.value || 1) : 1;
+      toast('Memproses ' + count + ' artikel...');
       google.script.run.withSuccessHandler(r=>{
-        if(r&&r.postUrl) toast('Terbit: '+r.title);
-        else if(r&&r.error) toast('Error: '+r.error);
+        if (r && r.message) toast(r.message);
         else toast('Tidak ada artikel baru untuk diproses');
         if(r&&r.snapshot) applyBotNews(r.snapshot); else loadBotNews();
-      }).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsRunNow(currentSessionToken);
+      }).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsRunNow(currentSessionToken, count);
     }
   </script>
