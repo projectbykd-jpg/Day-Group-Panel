@@ -364,7 +364,7 @@
       // jadi tidak perlu dipanggil lagi di sini (dulu jadi 2x panggil server).
       const botOnly = res && res.role === 'BOT';
       applyProfileUI(); restoreDraft(); resetSessionTimer();
-      switchPage(botOnly ? 'bot' : 'home');
+      switchPage(botOnly ? 'bot-dashboard' : 'home');
       // Kunci maintenance dievaluasi begitu panel terbuka (login / resume sesi).
       if (res && res.maintenance) setMaintenanceLock(res.maintenance.enabled, res.maintenance.message);
       if (!botOnly) startLivePolling();
@@ -511,18 +511,22 @@
     }
 
     const LAP_PAGES = ['lap-admin','lap-motion','lap-mozart','lap-setting'];
-    const NAV_KEYS = ['home','prediction','activity','admin','invest','bot'].concat(LAP_PAGES);
+    const BOT_PAGES = ['bot-dashboard','bot-sources','bot-history','bot-config'];
+    const NAV_KEYS = ['home','prediction','activity','admin','invest'].concat(LAP_PAGES).concat(BOT_PAGES);
     const HEADER_KICKER = {
       home: 'DAY-GROUP PANEL · RESULT HARI INI',
       prediction: 'DAY-GROUP PANEL · PREDIKSI & KATA PENUTUP',
       invest: 'DAY-GROUP PANEL · AUTOCHECK INVEST',
       activity: 'DAY-GROUP PANEL · RIWAYAT AKTIVITAS',
       admin: 'DAY-GROUP PANEL · ADMIN CONTROL CENTER',
-      bot: 'DAY-GROUP PANEL · BOT',
       'lap-admin': 'LAPORAN HARIAN · LAP ADMIN',
       'lap-motion': 'LAPORAN HARIAN · LAP MOTION',
       'lap-mozart': 'LAPORAN HARIAN · LAP MOZART',
-      'lap-setting': 'LAPORAN HARIAN · KREDENSIAL & SETTING'
+      'lap-setting': 'LAPORAN HARIAN · KREDENSIAL & SETTING',
+      'bot-dashboard': 'BOT · NEWS DASHBOARD',
+      'bot-sources': 'BOT · SUMBER BERITA',
+      'bot-history': 'BOT · RIWAYAT POSTING',
+      'bot-config': 'BOT · KONFIGURASI LANJUTAN'
     };
 
     function toggleNavGroup(name) {
@@ -546,8 +550,9 @@
     function switchPage(page) {
       const pages = {
         home:'main-panel', prediction:'prediction-page', activity:'activity-page',
-        admin:'admin-page', invest:'invest-page', bot:'bot-page',
-        'lap-admin':'lap-page', 'lap-motion':'lap-page', 'lap-mozart':'lap-page', 'lap-setting':'lap-page'
+        admin:'admin-page', invest:'invest-page',
+        'lap-admin':'lap-page', 'lap-motion':'lap-page', 'lap-mozart':'lap-page', 'lap-setting':'lap-page',
+        'bot-dashboard':'bot-page', 'bot-sources':'bot-page', 'bot-history':'bot-page', 'bot-config':'bot-page'
       };
       ['main-panel','prediction-page','activity-page','admin-page','invest-page','bot-page','lap-page'].forEach(id => {
         const el = document.getElementById(id);
@@ -570,6 +575,7 @@
       if (kicker) kicker.textContent = HEADER_KICKER[page] || 'DAY-GROUP PANEL';
 
       if (LAP_PAGES.includes(page)) renderLapPage(page);
+      if (BOT_PAGES.includes(page)) renderBotSubpage(page);
 
       if (page !== 'invest') stopInvestPolling();
 
@@ -610,9 +616,8 @@
         loadInvestConfig();
       }
 
-      if (page === 'bot') {
-        loadBotNews();
-        return; // BOT: jangan sentuh header summary / live poll (endpoint ditolak)
+      if (BOT_PAGES.includes(page)) {
+        return; // BOT: jangan sentuh header summary / live poll (endpoint ditolak) -- data dimuat oleh renderBotSubpage
       }
 
       // Header sudah dipoll oleh live-poll; muat manual hanya kalau belum pernah terisi.
@@ -2564,7 +2569,7 @@
         });
         const mw = document.getElementById('market-wrapper');
         if (mw) mw.style.display = 'none';
-        if (currentPage !== 'bot') switchPage('bot');
+        if (!BOT_PAGES.includes(currentPage)) switchPage('bot-dashboard');
         return;
       }
 
@@ -3802,8 +3807,15 @@ Tindakan ini tidak dapat dibatalkan.`,
       }).join('') || '<div class="text-[11px] text-slate-500">Belum ada postingan.</div>';
     }
 
+    function renderBotSubpage(page){
+      BOT_PAGES.forEach(p => {
+        const el = document.getElementById('bot-sec-' + p.replace('bot-', ''));
+        if (el) el.style.display = (p === page) ? 'flex' : 'none';
+      });
+      loadBotNews();
+    }
     function renderBotAutoBar(on){
-      const bar = document.getElementById('botAutoBar');
+      const bar = document.getElementById('botAutoChip');
       const dot = document.getElementById('botAutoDot');
       const state = document.getElementById('botAutoState');
       const label = document.getElementById('botAutoLabel');
