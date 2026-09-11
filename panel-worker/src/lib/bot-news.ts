@@ -434,21 +434,32 @@ export async function botNewsRun(
 	if (!opts.force && String(cfg.enabled || "0") !== "1") {
 		return { pulled: 0, posted: 0, capped: false, message: "BOT NEWS dimatikan (enabled=0)." };
 	}
-	const pull = await newsPullSources(env);
-	const cap = Number(cfg.daily_cap || "8");
 	const perRun = opts.count
 		? Math.max(1, Math.min(MAX_RUN_COUNT, Math.floor(opts.count)))
 		: Math.max(1, Number(cfg.per_run || "2"));
+
+	// newsPullSources sendiri makan ~17 subrequest (feed+resolve+batch insert).
+	// Kalau antrean 'new' sudah cukup (backlog), lewati pull -> hemat anggaran
+	// buat proses artikel (masih kena limit 50/invocation kalau ditambah).
+	const queued = await getTurso(env).prepare(`SELECT COUNT(*) AS c FROM news_article WHERE status = 'new'`).first<{ c: number }>();
+	const pull = Number(queued?.c ?? 0) >= perRun * 3 ? { added: 0, scanned: 0 } : await newsPullSources(env);
+
+	const cap = Number(cfg.daily_cap || "8");
+	// Query 1x, lalu update di memori -> bukan 1 query/iterasi (hemat subrequest).
+	let postedSoFar = await postedToday(env);
 	let posted = 0;
 	let capped = false;
 	for (let i = 0; i < perRun; i++) {
-		if ((await postedToday(env)) >= cap) {
+		if (postedSoFar >= cap) {
 			capped = true;
 			break;
 		}
 		const r = await newsProcessOne(env);
 		if (!r.done) break; // tidak ada artikel 'new'
-		if (r.postUrl) posted++;
+		if (r.postUrl) {
+			posted++;
+			postedSoFar++;
+		}
 		// Geo-block sementara di edge ini -> hentikan tick, jangan ulang artikel yang
 		// sama berkali-kali (edge-nya sama sepanjang 1 invocation).
 		if (r.error && /location is not supported/i.test(r.error)) break;
