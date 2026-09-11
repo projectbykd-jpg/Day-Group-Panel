@@ -219,28 +219,55 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 		if (j) break;
 	}
 	if (!j) throw new Error("Gemini gagal semua model: " + lastErr);
-	const text: string = j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "";
-	let title = art.title;
+	let text: string = j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "";
+	text = text.replace(/^﻿/, "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+
+	let title = "";
 	let html = "";
-	const jsonM = text.match(/\{[\s\S]*\}/);
-	if (jsonM) {
+
+	// 1) coba parse JSON apa adanya
+	const tryParse = (s: string): boolean => {
 		try {
-			const parsed = JSON.parse(jsonM[0]);
-			title = String(parsed.title || art.title).trim();
-			html = String(parsed.body_html || parsed.html || "").trim();
+			const p = JSON.parse(s);
+			if (p && (p.body_html || p.html)) {
+				title = String(p.title || "").trim();
+				html = String(p.body_html || p.html || "").trim();
+				return true;
+			}
 		} catch {
-			/* fallthrough */
+			/* noop */
+		}
+		return false;
+	};
+	const jsonM = text.match(/\{[\s\S]*\}/);
+	if (!tryParse(text) && jsonM) {
+		// 2) perbaiki masalah umum: newline mentah di dalam string JSON
+		const repaired = jsonM[0].replace(/([^\\])\n/g, "$1\\n").replace(/\r/g, "");
+		tryParse(repaired);
+	}
+	// 3) kalau JSON tetap gagal, ekstrak field pakai regex (JANGAN buang mentah JSON)
+	if (!html) {
+		const tm = text.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+		const bm = text.match(/"body_html"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+		if (bm) {
+			const unesc = (x: string) => x.replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+			html = unesc(bm[1]).trim();
+			if (tm) title = unesc(tm[1]).trim();
 		}
 	}
-	if (!html) {
-		// fallback: perlakukan seluruh teks sebagai body
+	// 4) benar-benar bukan JSON: anggap teks polos = body (bersihkan sisa JSON kalau ada)
+	if (!html && text && !/^[\s{[]*["{]?\s*"?title"?\s*:/.test(text)) {
 		html = text
 			.split(/\n{2,}/)
 			.map((p) => `<p>${p.replace(/<[^>]+>/g, "").trim()}</p>`)
 			.filter((p) => p !== "<p></p>")
 			.join("\n");
 	}
-	if (!html) throw new Error("Gemini balas kosong.");
+
+	if (!html || /^\s*\{[\s\S]*"body_html"/.test(html)) {
+		throw new Error("Gemini balas format tidak bisa dibaca (bukan artikel).");
+	}
+	if (!title) title = art.title;
 	return { title: title.slice(0, 180), html };
 }
 
