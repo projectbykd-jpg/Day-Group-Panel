@@ -56,6 +56,7 @@ import {
 	lapSaveConfig,
 } from "./api/lap";
 import {
+	botFbRunNow,
 	botNewsAddSource,
 	botNewsDeleteSource,
 	botNewsRunNow,
@@ -64,7 +65,7 @@ import {
 	botNewsStatus,
 	botNewsToggleSource,
 } from "./api/bot";
-import { botNewsRun } from "./lib/bot-news";
+import { botNewsRun, fbDirectRun } from "./lib/bot-news";
 
 type Handler = (env: Env, body: Record<string, unknown>) => Promise<unknown>;
 const s = (v: unknown) => String(v ?? "");
@@ -181,6 +182,7 @@ const ROUTES: Record<string, Handler> = {
 	botNewsToggleSource: (env, b) => botNewsToggleSource(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
 	botNewsDeleteSource: (env, b) => botNewsDeleteSource(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
 	botNewsRunNow: (env, b) => botNewsRunNow(env, s(b.token), b.count != null ? Number(b.count) : undefined),
+	botFbRunNow: (env, b) => botFbRunNow(env, s(b.token)),
 	botNewsSkip: (env, b) => botNewsSkip(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
 
 	// dipanggil GitHub Actions (auth via job key, bukan sesi)
@@ -336,6 +338,11 @@ export default {
 				}
 				if (job === "news" || job === "all") {
 					out.news = await botNewsRun(env);
+				}
+				// Job TERPISAH sengaja TIDAK ikut "all" -- dipanggil cron sendiri tiap
+				// 10 menit (1 artikel/panggilan), independen dari jadwal Blogger.
+				if (job === "fbdirect") {
+					out.fbdirect = await fbDirectRun(env);
 				}
 			} catch (e) {
 				out.ok = false;

@@ -3,7 +3,7 @@ import { requireSession } from "./auth";
 import { logActivity } from "../lib/activity";
 import { getTurso } from "../lib/turso";
 import { tsNow } from "../lib/time";
-import { botCfgSet, botNewsRun, botNewsSnapshot } from "../lib/bot-news";
+import { botCfgSet, botNewsRun, botNewsSnapshot, fbDirectProcessOne } from "../lib/bot-news";
 
 async function gate(env: Env, token: string) {
 	// BOT & ADMIN sama-sama boleh; OPERATOR/VIEWER ditolak.
@@ -25,12 +25,12 @@ export async function botNewsSaveConfig(env: Env, token: string, data: Record<st
 	const allow = [
 		"enabled", "per_run", "daily_cap", "attribution", "rewrite_style", "gemini_model", "gemini_key",
 		"blogger_blog_id", "para_min", "para_max", "promo_url", "promo_text", "post_labels",
-		"fb_enabled", "fb_page_id", "fb_page_token",
+		"fb_enabled", "fb_page_id", "fb_page_token", "fb_direct_enabled", "fb_direct_daily_cap",
 	];
 	for (const k of allow) {
 		if (Object.prototype.hasOwnProperty.call(data, k)) {
 			let v = String((data as any)[k] ?? "").trim();
-			if (k === "enabled" || k === "attribution" || k === "fb_enabled") v = v === "1" || v === "true" ? "1" : "0";
+			if (k === "enabled" || k === "attribution" || k === "fb_enabled" || k === "fb_direct_enabled") v = v === "1" || v === "true" ? "1" : "0";
 			if ((k === "fb_page_token") && !v) continue; // kosongkan input token TIDAK menghapus yg tersimpan
 			patch[k] = v;
 		}
@@ -84,6 +84,20 @@ export async function botNewsRunNow(env: Env, token: string, count?: number) {
 		"BOT NEWS RUN",
 		`Manual: feed +${r.pulled}, diposting ${r.posted}${r.capped ? " (batas harian tercapai)" : ""}`,
 		"BERHASIL",
+		"",
+	);
+	return { success: true, ...r, snapshot: await botNewsSnapshot(env) };
+}
+
+export async function botFbRunNow(env: Env, token: string) {
+	const s = await gate(env, token);
+	const r = await fbDirectProcessOne(env);
+	await logActivity(
+		env,
+		s.username,
+		"BOT FB LANGSUNG RUN",
+		r.title ? `Terposting: ${r.title}` : r.error || "Tidak ada artikel baru.",
+		r.error && !/akan dicoba lagi/i.test(r.error) ? "SEBAGIAN" : "BERHASIL",
 		"",
 	);
 	return { success: true, ...r, snapshot: await botNewsSnapshot(env) };

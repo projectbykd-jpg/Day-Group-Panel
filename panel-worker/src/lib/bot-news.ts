@@ -416,6 +416,104 @@ export async function fbPostToPage(
 }
 
 // ---------------------------------------------------------------------------
+// FACEBOOK LANGSUNG — jalur terpisah dari Blogger. Ambil artikel dari kolam
+// yang sama (news_article) tapi dilacak lewat kolom fb_direct_posted_at
+// sendiri, jadi TIDAK terganggu kalau Blogger sedang kena rate-limit, dan
+// TIDAK bentrok dgn newsProcessOne (keduanya boleh memproses artikel yg sama,
+// masing-masing independen).
+// ---------------------------------------------------------------------------
+
+/** Caption pendek & menarik ala media sosial — LEBIH RINGAN dari rewrite artikel penuh (hemat token & subrequest). */
+async function geminiFbCaption(cfg: Record<string, string>, art: { title: string; excerpt: string; source: string }): Promise<string> {
+	const key = cfg.gemini_key;
+	const model = cfg.gemini_model || "gemini-3-flash-preview";
+	if (!key) throw new Error("gemini_key belum diisi di konfigurasi BOT.");
+	const prompt =
+		`Buatkan caption Facebook yang singkat, menarik, dan mengundang rasa penasaran (gaya media sosial, ` +
+		`boleh pakai 1-2 emoji, MAKS 3 kalimat, JANGAN mengarang fakta baru di luar ringkasan). ` +
+		`Balas HANYA teks captionnya saja, tanpa tanda kutip, tanpa markdown.\n\n` +
+		`JUDUL: ${art.title}\nRINGKASAN: ${art.excerpt || "(tidak ada)"}\nSUMBER: ${art.source}`;
+	const models = [...new Set([model, "gemini-3-flash-preview", "gemini-flash-latest", "gemini-flash-lite-latest"])];
+	for (const mdl of models) {
+		const supportsThinking = /gemini-3/i.test(mdl);
+		const generationConfig: Record<string, unknown> = { temperature: 0.9, maxOutputTokens: 300 };
+		if (supportsThinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+		try {
+			const r = await fetch(
+				`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(mdl)}:generateContent`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json", "X-goog-api-key": key },
+					body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig }),
+				},
+			);
+			const body = (await r.json()) as any;
+			const text = body?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("").trim();
+			if (r.ok && text) return text.replace(/^["']|["']$/g, "").slice(0, 500);
+		} catch {
+			/* coba model berikutnya */
+		}
+	}
+	// fallback tanpa AI kalau semua model gagal -- tetap bisa posting, cuma polos.
+	return `${art.title}`;
+}
+
+export async function fbDirectProcessOne(env: Env): Promise<{ done: boolean; title?: string; error?: string }> {
+	const cfg = await botCfg(env);
+	if (!cfg.fb_page_id || !cfg.fb_page_token) return { done: false, error: "Facebook belum tersambung." };
+	const row = await getTurso(env)
+		.prepare(`SELECT * FROM news_article WHERE fb_direct_posted_at = '' ORDER BY id ASC LIMIT 1`)
+		.first<Record<string, string>>();
+	if (!row) return { done: false };
+	const id = Number(row.id);
+	try {
+		const caption = await geminiFbCaption(cfg, { title: String(row.title), excerpt: String(row.excerpt), source: String(row.source) });
+		let imageUrl = String(row.image_url || "");
+		if (!imageUrl) imageUrl = await fetchOgImage(String(row.url));
+		// Kalau artikel ini SUDAH ada versi Blogger-nya, arahkan ke situ (bangun
+		// trafik blog); kalau belum, arahkan ke sumber asli sbg atribusi.
+		const linkUrl = row.post_url || row.url;
+		await fbPostToPage(cfg, { title: String(row.title), metaDescription: caption, postUrl: String(linkUrl), imageUrl });
+		await getTurso(env).prepare(`UPDATE news_article SET fb_direct_posted_at = ? WHERE id = ?`).bind(tsNow(), id).run();
+		return { done: true, title: String(row.title) };
+	} catch (e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		// Transient (geo-block/rate-limit) -> JANGAN tandai selesai, biarkan dicoba lagi.
+		if (/location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED/i.test(msg)) {
+			return { done: true, error: msg + " (akan dicoba lagi otomatis)" };
+		}
+		// Error lain (mis. token FB kadaluwarsa) -> tandai supaya tidak diulang
+		// tanpa henti, tapi catat alasannya di kolom error (dipakai bareng Blogger).
+		await getTurso(env).prepare(`UPDATE news_article SET fb_direct_posted_at = 'error' WHERE id = ?`).bind(id).run();
+		return { done: true, error: msg };
+	}
+}
+
+async function fbDirectPostedToday(env: Env): Promise<number> {
+	const r = await getTurso(env)
+		.prepare(`SELECT COUNT(*) AS c FROM news_article WHERE fb_direct_posted_at NOT IN ('', 'error') AND substr(fb_direct_posted_at,1,10) = ?`)
+		.bind(todayKey())
+		.first<{ c: number }>();
+	return Number(r?.c ?? 0);
+}
+
+/** Entry cron: /__cron?job=fbdirect (disarankan tiap 10 menit -> 1 artikel/panggilan). */
+export async function fbDirectRun(env: Env): Promise<{ posted: number; message: string }> {
+	const cfg = await botCfg(env);
+	if (String(cfg.fb_direct_enabled || "0") !== "1") {
+		return { posted: 0, message: "Facebook Langsung dimatikan (fb_direct_enabled=0)." };
+	}
+	const cap = Number(cfg.fb_direct_daily_cap || "50");
+	if ((await fbDirectPostedToday(env)) >= cap) {
+		return { posted: 0, message: "Batas harian Facebook Langsung tercapai." };
+	}
+	const r = await fbDirectProcessOne(env);
+	if (!r.done) return { posted: 0, message: r.error || "Tidak ada artikel baru untuk diposting." };
+	if (r.error) return { posted: 0, message: r.error };
+	return { posted: 1, message: `Terposting: ${r.title}` };
+}
+
+// ---------------------------------------------------------------------------
 // Proses 1 artikel: rewrite -> post -> tandai
 // ---------------------------------------------------------------------------
 export async function newsProcessOne(env: Env): Promise<{ done: boolean; title?: string; postUrl?: string; error?: string }> {
@@ -588,6 +686,14 @@ export async function botNewsSnapshot(env: Env) {
 		(await getTurso(env)
 			.prepare(`SELECT id, source, title, status, url, post_url, error, found_at, posted_at FROM news_article ORDER BY id DESC LIMIT 40`)
 			.all()).results ?? [];
+	const fbDirectHistory =
+		(await getTurso(env)
+			.prepare(
+				`SELECT id, source, title, url, post_url, fb_direct_posted_at
+				 FROM news_article WHERE fb_direct_posted_at NOT IN ('', 'error')
+				 ORDER BY fb_direct_posted_at DESC, id DESC LIMIT 100`,
+			)
+			.all()).results ?? [];
 	const history =
 		(await getTurso(env)
 			.prepare(
@@ -617,11 +723,18 @@ export async function botNewsSnapshot(env: Env) {
 			fb_enabled: String(cfg.fb_enabled || "0") === "1",
 			fb_page_id: cfg.fb_page_id || "",
 			has_facebook: !!(cfg.fb_page_id && cfg.fb_page_token),
+			fb_direct_enabled: String(cfg.fb_direct_enabled || "0") === "1",
+			fb_direct_daily_cap: Number(cfg.fb_direct_daily_cap || "50"),
 		},
 		postedToday: await postedToday(env),
+		fbDirectPostedToday: await fbDirectPostedToday(env),
+		fbDirectQueue: Number(
+			(await getTurso(env).prepare(`SELECT COUNT(*) AS c FROM news_article WHERE fb_direct_posted_at = ''`).first<{ c: number }>())?.c ?? 0,
+		),
 		byStatus,
 		sources,
 		recent,
 		history,
+		fbDirectHistory,
 	};
 }

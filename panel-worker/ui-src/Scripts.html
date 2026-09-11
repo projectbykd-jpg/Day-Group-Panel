@@ -511,7 +511,7 @@
     }
 
     const LAP_PAGES = ['lap-admin','lap-motion','lap-mozart','lap-setting'];
-    const BOT_PAGES = ['bot-dashboard','bot-sources','bot-history','bot-config'];
+    const BOT_PAGES = ['bot-dashboard','bot-sources','bot-history','bot-fbdirect','bot-config'];
     const NAV_KEYS = ['home','prediction','activity','admin','invest'].concat(LAP_PAGES).concat(BOT_PAGES);
     const HEADER_KICKER = {
       home: 'DAY-GROUP PANEL · RESULT HARI INI',
@@ -526,6 +526,7 @@
       'bot-dashboard': 'BOT · NEWS DASHBOARD',
       'bot-sources': 'BOT · SUMBER BERITA',
       'bot-history': 'BOT · RIWAYAT POSTING',
+      'bot-fbdirect': 'BOT · FACEBOOK LANGSUNG',
       'bot-config': 'BOT · KONFIGURASI LANJUTAN'
     };
 
@@ -552,7 +553,7 @@
         home:'main-panel', prediction:'prediction-page', activity:'activity-page',
         admin:'admin-page', invest:'invest-page',
         'lap-admin':'lap-page', 'lap-motion':'lap-page', 'lap-mozart':'lap-page', 'lap-setting':'lap-page',
-        'bot-dashboard':'bot-page', 'bot-sources':'bot-page', 'bot-history':'bot-page', 'bot-config':'bot-page'
+        'bot-dashboard':'bot-page', 'bot-sources':'bot-page', 'bot-history':'bot-page', 'bot-fbdirect':'bot-page', 'bot-config':'bot-page'
       };
       ['main-panel','prediction-page','activity-page','admin-page','invest-page','bot-page','lap-page'].forEach(id => {
         const el = document.getElementById(id);
@@ -3826,6 +3827,37 @@ Tindakan ini tidak dapat dibatalkan.`,
       if (label) { label.textContent = on ? 'ON' : 'OFF'; label.className = 'text-[11px] font-bold ' + (on ? 'text-emerald-400' : 'text-slate-500'); }
       if (bar) bar.style.borderColor = on ? 'rgba(52,211,153,.35)' : 'transparent';
     }
+    function renderBotFbDirectChip(on){
+      const dot = document.getElementById('botFbDirectDot');
+      const state = document.getElementById('botFbDirectState');
+      const sw = document.getElementById('botFbDirectSwitch');
+      const chip = document.getElementById('botFbDirectChip');
+      if (sw) sw.classList.toggle('on', on);
+      if (dot) dot.className = 'w-2.5 h-2.5 rounded-full shrink-0 ' + (on ? 'bg-blue-400' : 'bg-slate-500');
+      if (state) { state.textContent = on ? 'AKTIF' : 'NONAKTIF'; state.className = on ? 'text-blue-400' : 'text-slate-500'; }
+      if (chip) chip.style.borderColor = on ? 'rgba(96,165,250,.4)' : 'transparent';
+    }
+    function toggleBotFbDirect(){
+      const sw = document.getElementById('botFbDirectSwitch');
+      const next = !(sw && sw.classList.contains('on'));
+      renderBotFbDirectChip(next);
+      toast(next ? 'Mengaktifkan Facebook Langsung…' : 'Mematikan Facebook Langsung…');
+      google.script.run.withSuccessHandler(applyBotNews).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsSaveConfig(currentSessionToken, {fb_direct_enabled: next?'1':'0'});
+    }
+    function saveBotFbDirectCap(){
+      const v = document.getElementById('botFbDirectCap').value;
+      google.script.run.withSuccessHandler(applyBotNews).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsSaveConfig(currentSessionToken, {fb_direct_daily_cap: v});
+    }
+    function botFbDirectRun(){
+      showActionPopup('LOADING', 'Memposting ke Facebook', 'Menyiapkan caption & mengirim ke Facebook Page...', 'fa-share-nodes');
+      google.script.run.withSuccessHandler(r=>{
+        closeActionPopup();
+        toast(r && r.title ? 'Terposting: '+r.title : (r && r.error) || 'Tidak ada artikel baru untuk diposting');
+        if (r && r.snapshot) applyBotNews(r.snapshot); else loadBotNews();
+      }).withFailureHandler(e=>{
+        showActionPopup('ERROR', 'Gagal Posting', (e&&e.message)||String(e), 'fa-triangle-exclamation');
+      }).botFbRunNow(currentSessionToken);
+    }
     function toggleBotAutoPost(){
       const cb = document.getElementById('botEnabled');
       const next = !(cb && cb.checked);
@@ -3852,6 +3884,24 @@ Tindakan ini tidak dapat dibatalkan.`,
       if (hint) hint.textContent = (c.has_gemini_key?'Gemini key OK':'Gemini key BELUM ada') + ' · ' + (c.has_blogger?'Blogger OK':'Blogger BELUM tersambung');
       const fbHint = document.getElementById('botFbHint');
       if (fbHint) fbHint.textContent = c.has_facebook ? 'Facebook Page OK' : 'Facebook belum tersambung';
+
+      // Facebook Langsung (jalur terpisah dari Blogger)
+      renderBotFbDirectChip(!!c.fb_direct_enabled);
+      set('botFbDirectCap', c.fb_direct_daily_cap);
+      const fdToday = document.getElementById('botFbDirectToday'); if (fdToday) fdToday.textContent = snap.fbDirectPostedToday||0;
+      const fdQueue = document.getElementById('botFbDirectQueue'); if (fdQueue) fdQueue.textContent = snap.fbDirectQueue||0;
+      const fdList = document.getElementById('botFbDirectHistoryList');
+      if (fdList) fdList.innerHTML = (snap.fbDirectHistory||[]).map(h=>{
+        const t = String(h.fb_direct_posted_at||'').slice(0,16).replace('T',' ');
+        return `<div class="flex items-start gap-2 border-b border-white/5 pb-1.5">
+          <span class="text-[9px] text-slate-500 whitespace-nowrap mt-0.5">${botEsc(t)}</span>
+          <div class="flex-1 min-w-0">
+            <div class="text-slate-100 truncate">${botEsc(h.title)}</div>
+            <span class="text-[9px] text-slate-500">${botEsc(h.source)}</span> ·
+            <a href="${botEsc(h.post_url||h.url)}" target="_blank" class="text-[9px] text-blue-400 hover:text-blue-300">link terpasang</a>
+          </div>
+        </div>`;
+      }).join('') || '<div class="text-[11px] text-slate-500">Belum ada postingan.</div>';
 
       const bs = snap.byStatus || {};
       const stat = document.getElementById('botNewsStat');

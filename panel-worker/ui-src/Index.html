@@ -147,6 +147,9 @@
               <button onclick="switchPage('bot-history')" id="nav-bot-history" class="bot-only sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer">
                 <i class="fa-solid fa-clock-rotate-left text-indigo-400 text-sm shrink-0"></i><span class="tracking-wider">Riwayat Posting</span>
               </button>
+              <button onclick="switchPage('bot-fbdirect')" id="nav-bot-fbdirect" class="bot-only sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer">
+                <i class="fa-brands fa-facebook text-blue-400 text-sm shrink-0"></i><span class="tracking-wider">Facebook Langsung</span>
+              </button>
               <button onclick="switchPage('bot-config')" id="nav-bot-config" class="bot-only sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer">
                 <i class="fa-solid fa-sliders text-slate-300 text-sm shrink-0"></i><span class="tracking-wider">Konfigurasi Lanjutan</span>
               </button>
@@ -783,6 +786,46 @@
               <input id="botHistSearch" oninput="renderBotHistory()" class="glass-inner rounded-lg px-3 py-2 text-xs text-slate-100 w-full sm:w-64" placeholder="cari judul...">
             </div>
             <div id="botHistoryList" class="flex flex-col gap-1.5 text-xs max-h-[65vh] overflow-y-auto"></div>
+          </div>
+        </div>
+
+        <!-- ============ SUB-HALAMAN: FACEBOOK LANGSUNG ============ -->
+        <div id="bot-sec-fbdirect" class="flex flex-col gap-5" style="display:none">
+          <div class="glass-card rounded-[2rem] p-6 flex flex-col gap-5">
+            <div class="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div class="panel-section-title"><i class="fa-brands fa-facebook text-blue-400 text-sm"></i> FACEBOOK LANGSUNG</div>
+                <div class="text-[11px] text-slate-400 mt-1">Jalur terpisah dari Blogger — ambil berita &rarr; caption singkat AI &rarr; langsung posting ke Facebook Page. Tidak terganggu kalau Blogger sedang bermasalah.</div>
+              </div>
+              <div id="botFbDirectChip" class="glass-inner rounded-2xl px-4 py-2 flex items-center gap-2.5 border-2 border-transparent transition-colors">
+                <span id="botFbDirectDot" class="w-2.5 h-2.5 rounded-full bg-slate-500 shrink-0"></span>
+                <span class="text-[11px] font-black tracking-wide text-slate-200">AUTO <span id="botFbDirectState" class="text-slate-500">NONAKTIF</span></span>
+                <div id="botFbDirectSwitch" class="switch ml-1" onclick="toggleBotFbDirect()" title="Nyalakan/matikan auto-post Facebook langsung"></div>
+              </div>
+            </div>
+
+            <div class="mini-card text-[11px] text-slate-400 leading-relaxed">
+              <i class="fa-solid fa-circle-info text-blue-400 mr-1"></i>
+              Fitur ini TIDAK punya jadwal sendiri di dalam panel — kamu yang atur temponya lewat cron eksternal (mis. cron-job.org), setiap 10 menit panggil:
+              <code class="block mt-1.5 glass-inner rounded-lg px-2 py-1.5 text-slate-300 select-all">/__cron?key=&lt;CRON_KEY&gt;&amp;job=fbdirect</code>
+              Tiap panggilan = 1 artikel diposting (kalau ada antrean &amp; auto masih menyala).
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button onclick="botFbDirectRun()" class="btn-primary text-xs font-bold px-4 py-2.5 rounded-xl"><i class="fa-brands fa-facebook mr-1"></i>POSTING 1 SEKARANG</button>
+              <button onclick="loadBotNews()" class="btn-secondary text-xs font-bold px-4 py-2.5 rounded-xl"><i class="fa-solid fa-rotate mr-1"></i>REFRESH</button>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div class="mini-card"><div class="text-[10px] text-slate-400 font-semibold">Diposting hari ini</div><div id="botFbDirectToday" class="text-xl font-black mt-1 text-slate-50">0</div></div>
+              <div class="mini-card"><div class="text-[10px] text-slate-400 font-semibold">Antre</div><div id="botFbDirectQueue" class="text-xl font-black mt-1 text-slate-50">0</div></div>
+              <div class="mini-card"><div class="text-[10px] text-slate-400 font-semibold">Batas / hari<input id="botFbDirectCap" type="number" min="1" onchange="saveBotFbDirectCap()" class="glass-inner rounded-lg px-2 py-1 w-16 ml-2 text-slate-100 text-xs"></div></div>
+            </div>
+
+            <div class="mini-card">
+              <div class="text-xs font-bold text-slate-200 mb-3"><i class="fa-solid fa-clock-rotate-left text-blue-400 mr-2"></i>RIWAYAT FACEBOOK LANGSUNG</div>
+              <div id="botFbDirectHistoryList" class="flex flex-col gap-1.5 text-xs max-h-[420px] overflow-y-auto"></div>
+            </div>
           </div>
         </div>
 

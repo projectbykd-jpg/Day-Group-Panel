@@ -73,6 +73,7 @@ const ARG_MAP = {
 	botNewsToggleSource: ["token", "data"],
 	botNewsDeleteSource: ["token", "data"],
 	botNewsRunNow: ["token", "count"],
+	botFbRunNow: ["token"],
 	botNewsSkip: ["token", "data"],
 };
 
