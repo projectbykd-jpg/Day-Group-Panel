@@ -545,6 +545,7 @@ export async function botNewsRun(
 	let postedSoFar = await postedToday(env);
 	let posted = 0;
 	let capped = false;
+	let lastError = "";
 	for (let i = 0; i < perRun; i++) {
 		if (postedSoFar >= cap) {
 			capped = true;
@@ -556,6 +557,7 @@ export async function botNewsRun(
 			posted++;
 			postedSoFar++;
 		}
+		if (r.error) lastError = r.error;
 		// Geo-block sementara di edge ini -> hentikan tick, jangan ulang artikel yang
 		// sama berkali-kali (edge-nya sama sepanjang 1 invocation).
 		if (r.error && /location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED/i.test(r.error)) break;
@@ -564,7 +566,11 @@ export async function botNewsRun(
 		pulled: pull.added,
 		posted,
 		capped,
-		message: `Feed +${pull.added} artikel baru; diposting ${posted}${capped ? " (batas harian tercapai)" : ""}.`,
+		// Kalau 0 posting & ada error, tampilkan alasannya -- biar user/kita tidak
+		// perlu buka database tiap kali cuma buat tahu KENAPA 0.
+		message:
+			`Feed +${pull.added} artikel baru; diposting ${posted}${capped ? " (batas harian tercapai)" : ""}.` +
+			(posted === 0 && lastError ? ` [${lastError.slice(0, 200)}]` : ""),
 	};
 }
 
