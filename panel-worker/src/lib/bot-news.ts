@@ -31,6 +31,16 @@ export async function ensureNewsCategoryColumns(env: Env): Promise<void> {
 			/* kolom sudah ada -> abaikan */
 		}
 	}
+	// Backfill SEKALI: artikel lama yang sudah 'posted' (ke Blogger) sebelum
+	// kolom site_posted_at ada harus tetap tampil di situs -- kalau tidak,
+	// publicNewsList/-Detail (yang filter site_posted_at != '') mendadak
+	// mengosongkan Berita Terkini padahal datanya masih ada. Idempotent (WHERE
+	// site_posted_at = '' -> no-op di run berikutnya), aman dipanggil berkali².
+	try {
+		await getTurso(env).prepare(`UPDATE news_article SET site_posted_at = posted_at WHERE status = 'posted' AND site_posted_at = ''`).run();
+	} catch {
+		/* abaikan */
+	}
 	newsCategoryColumnsEnsured = true;
 }
 
