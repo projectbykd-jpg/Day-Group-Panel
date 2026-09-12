@@ -57,6 +57,7 @@ import {
 } from "./api/lap";
 import {
 	botFbRunNow,
+	botFbTemplateGenerate,
 	botNewsAddSource,
 	botNewsDeleteSource,
 	botNewsRunNow,
@@ -183,6 +184,7 @@ const ROUTES: Record<string, Handler> = {
 	botNewsDeleteSource: (env, b) => botNewsDeleteSource(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
 	botNewsRunNow: (env, b) => botNewsRunNow(env, s(b.token), b.count != null ? Number(b.count) : undefined),
 	botFbRunNow: (env, b) => botFbRunNow(env, s(b.token)),
+	botFbTemplateGenerate: (env, b) => botFbTemplateGenerate(env, s(b.token)),
 	botNewsSkip: (env, b) => botNewsSkip(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
 
 	// dipanggil GitHub Actions (auth via job key, bukan sesi)
@@ -242,6 +244,45 @@ export default {
 
 		if (url.pathname === "/health") {
 			return new Response("panel-worker OK", { headers: { "content-type": "text/plain" } });
+		}
+
+		// Proxy gambar (dipakai tombol "Copy Gambar" di BOT · Template FB): banyak
+		// gambar berita punya hotlink-protection / CORS ketat sehingga tidak bisa
+		// di-fetch langsung dari browser untuk disalin ke clipboard. Worker ambil
+		// dulu di sisi server (bebas CORS), lalu diteruskan sebagai same-origin.
+		if (url.pathname === "/img") {
+			const target = url.searchParams.get("url") || "";
+			if (!/^https?:\/\//i.test(target)) return json({ success: false, message: "url tidak valid" }, 400);
+			// Banyak situs berita menolak User-Agent "bot" walau cuma diakses server-side
+			// (bukan soal CORS -- itu aturan browser, tidak berlaku fetch server-to-server
+			// ini) -- pura-pura jadi browser biasa + kirim Referer dari domain gambar itu
+			// sendiri (anti-hotlink umumnya cuma cek Referer kosong/beda domain).
+			let targetOrigin = "";
+			try {
+				targetOrigin = new URL(target).origin;
+			} catch {
+				return json({ success: false, message: "url tidak valid" }, 400);
+			}
+			try {
+				const r = await fetch(target, {
+					headers: {
+						"User-Agent":
+							"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+						Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+						Referer: targetOrigin + "/",
+					},
+				});
+				const ct = r.headers.get("content-type") || "";
+				if (!r.ok || !r.body || !ct.startsWith("image/")) {
+					// Fetch server-side gagal (kena blokir situs asal) -> lempar browser
+					// pengguna buka LANGSUNG ke gambar aslinya (koneksi asli user kadang
+					// tidak kena blokir yang sama seperti IP Cloudflare Worker).
+					return Response.redirect(target, 302);
+				}
+				return new Response(r.body, { headers: { "content-type": ct, "cache-control": "public, max-age=3600", ...CORS_HEADERS } });
+			} catch {
+				return Response.redirect(target, 302);
+			}
 		}
 
 		// Endpoint cron eksternal (fallback kalau Cron Trigger Cloudflare tidak jalan).

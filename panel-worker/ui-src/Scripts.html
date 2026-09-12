@@ -533,7 +533,7 @@
       'bot-dashboard': 'BOT · NEWS DASHBOARD',
       'bot-sources': 'BOT · SUMBER BERITA',
       'bot-history': 'BOT · RIWAYAT POSTING',
-      'bot-fbdirect': 'BOT · FACEBOOK LANGSUNG',
+      'bot-fbdirect': 'BOT · TEMPLATE FB',
       'bot-config': 'BOT · KONFIGURASI LANJUTAN'
     };
 
@@ -2592,6 +2592,14 @@
 
       document.querySelectorAll('.nav-extra').forEach(el => el.style.display = 'flex');
       document.querySelectorAll('.bot-only').forEach(el => el.style.display = 'none');
+      // Role BOT terisolasi total (lihat komentar di atas) -- grup "Bot" di sidebar
+      // cuma berisi tombol ber-class .bot-only, jadi kalau semuanya disembunyikan,
+      // wrapper grupnya (judul + chevron) ikut disembunyikan juga. Sebelumnya cuma
+      // tombolnya yang disembunyikan, wrapper-nya nyangkut kosong tampil di SEMUA
+      // akun non-BOT (admin, operator, viewer).
+      document.querySelectorAll('.nav-group').forEach(g => {
+        if (g.querySelector('.sidebar-nav.bot-only')) g.style.display = 'none';
+      });
       document.querySelectorAll('.admin-only').forEach(el => el.style.display = isAdmin ? 'flex' : 'none');
       restoreNavGroups();
       document.querySelectorAll('.activity-admin-only').forEach(el => el.style.display = isAdmin ? '' : 'none');
@@ -3861,36 +3869,78 @@ Tindakan ini tidak dapat dibatalkan.`,
       if (label) { label.textContent = on ? 'ON' : 'OFF'; label.className = 'text-[11px] font-bold ' + (on ? 'text-emerald-400' : 'text-slate-500'); }
       if (bar) bar.style.borderColor = on ? 'rgba(52,211,153,.35)' : 'transparent';
     }
-    function renderBotFbDirectChip(on){
-      const dot = document.getElementById('botFbDirectDot');
-      const state = document.getElementById('botFbDirectState');
-      const sw = document.getElementById('botFbDirectSwitch');
-      const chip = document.getElementById('botFbDirectChip');
-      if (sw) sw.classList.toggle('on', on);
-      if (dot) dot.className = 'w-2.5 h-2.5 rounded-full shrink-0 ' + (on ? 'bg-blue-400' : 'bg-slate-500');
-      if (state) { state.textContent = on ? 'AKTIF' : 'NONAKTIF'; state.className = on ? 'text-blue-400' : 'text-slate-500'; }
-      if (chip) chip.style.borderColor = on ? 'rgba(96,165,250,.4)' : 'transparent';
+    let botFbTplLastImageUrl = '';
+    let botFbTplHistoryCache = [];
+    function botFbTplShowResult(title, imageUrl, caption){
+      document.getElementById('botFbTplEmpty').style.display = 'none';
+      document.getElementById('botFbTplResult').style.display = 'flex';
+      document.getElementById('botFbTplTitle').textContent = title || '';
+      document.getElementById('botFbTplCaption').value = caption || '';
+      botFbTplLastImageUrl = imageUrl || '';
+      const img = document.getElementById('botFbTplImg');
+      const imgOpen = document.getElementById('botFbTplImgOpen');
+      const noImg = document.getElementById('botFbTplNoImg');
+      if (imageUrl) {
+        img.style.display = ''; imgOpen.style.display = ''; noImg.style.display = 'none';
+        img.src = '/img?url=' + encodeURIComponent(imageUrl);
+        imgOpen.href = imageUrl;
+      } else {
+        img.style.display = 'none'; imgOpen.style.display = 'none'; noImg.style.display = '';
+      }
     }
-    function toggleBotFbDirect(){
-      const sw = document.getElementById('botFbDirectSwitch');
-      const next = !(sw && sw.classList.contains('on'));
-      renderBotFbDirectChip(next);
-      toast(next ? 'Mengaktifkan Facebook Langsung…' : 'Mematikan Facebook Langsung…');
-      google.script.run.withSuccessHandler(applyBotNews).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsSaveConfig(currentSessionToken, {fb_direct_enabled: next?'1':'0'});
+    function botFbTplReopen(id){
+      const h = botFbTplHistoryCache.find(x => Number(x.id) === Number(id));
+      if (!h) { toast('Data tidak ditemukan, coba refresh dulu'); return; }
+      botFbTplShowResult(h.title, h.image_url, h.fb_template_caption || '(caption lama belum tersimpan, generate ulang ya)');
+      document.getElementById('botFbTplResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      toast('Menampilkan template yang sudah pernah dibuat');
     }
-    function saveBotFbDirectCap(){
-      const v = document.getElementById('botFbDirectCap').value;
-      google.script.run.withSuccessHandler(applyBotNews).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsSaveConfig(currentSessionToken, {fb_direct_daily_cap: v});
-    }
-    function botFbDirectRun(){
-      showActionPopup('LOADING', 'Memposting ke Facebook', 'Menyiapkan caption & mengirim ke Facebook Page...', 'fa-share-nodes');
+    function botFbTemplateGenerate(){
+      showActionPopup('LOADING', 'Menyiapkan Template', 'Mengambil artikel & membuat caption dengan AI...', 'fa-wand-magic-sparkles');
       google.script.run.withSuccessHandler(r=>{
         closeActionPopup();
-        toast(r && r.title ? 'Terposting: '+r.title : (r && r.error) || 'Tidak ada artikel baru untuk diposting');
-        if (r && r.snapshot) applyBotNews(r.snapshot); else loadBotNews();
+        if (!r || !r.success) {
+          toast((r && r.error) || 'Tidak ada artikel baru untuk dibuatkan template');
+          loadBotNews();
+          return;
+        }
+        botFbTplShowResult(r.title, r.imageUrl, r.caption);
+        loadBotNews();
       }).withFailureHandler(e=>{
-        showActionPopup('ERROR', 'Gagal Posting', (e&&e.message)||String(e), 'fa-triangle-exclamation');
-      }).botFbRunNow(currentSessionToken);
+        showActionPopup('ERROR', 'Gagal Generate', (e&&e.message)||String(e), 'fa-triangle-exclamation');
+      }).botFbTemplateGenerate(currentSessionToken);
+    }
+    async function botFbTplCopyImage(){
+      if (!botFbTplLastImageUrl) { toast('Tidak ada gambar untuk disalin'); return; }
+      try {
+        const resp = await fetch('/img?url=' + encodeURIComponent(botFbTplLastImageUrl));
+        if (!resp.ok) throw new Error('gagal ambil gambar (status ' + resp.status + ')');
+        const blob = await resp.blob();
+        if (!blob.type.startsWith('image/')) throw new Error('server tidak mengembalikan gambar (' + (blob.type||'tipe tidak diketahui') + ')');
+        const pngBlob = blob.type === 'image/png' ? blob : await new Promise((resolve, reject) => {
+          const imgEl = new Image();
+          imgEl.onload = () => {
+            const cnv = document.createElement('canvas');
+            cnv.width = imgEl.naturalWidth; cnv.height = imgEl.naturalHeight;
+            cnv.getContext('2d').drawImage(imgEl, 0, 0);
+            cnv.toBlob(b => b ? resolve(b) : reject(new Error('gagal konversi gambar')), 'image/png');
+          };
+          imgEl.onerror = () => reject(new Error('gagal muat gambar'));
+          imgEl.src = URL.createObjectURL(blob);
+        });
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]);
+        toast('Gambar disalin — tinggal paste (Ctrl+V) ke Facebook');
+      } catch (e) {
+        toast('Gagal salin gambar: ' + ((e && e.message) || e) + ' — coba klik "buka gambar asli" lalu klik-kanan > Copy Image');
+      }
+    }
+    function botFbTplCopyCaption(){
+      const ta = document.getElementById('botFbTplCaption');
+      if (!ta || !ta.value) { toast('Belum ada caption'); return; }
+      navigator.clipboard.writeText(ta.value).then(()=>toast('Caption disalin ke clipboard')).catch(()=>{
+        ta.removeAttribute('readonly'); ta.select(); document.execCommand('copy'); ta.setAttribute('readonly', 'true');
+        toast('Caption disalin ke clipboard');
+      });
     }
     function toggleBotAutoPost(){
       const cb = document.getElementById('botEnabled');
@@ -3913,29 +3963,28 @@ Tindakan ini tidak dapat dibatalkan.`,
       set('botLabels', c.post_labels); set('botPromoUrl', c.promo_url); set('botPromoText', c.promo_text);
       set('botModel', c.gemini_model); set('botStyle', c.rewrite_style);
       set('botBlogId', c.blog_id);
-      set('botFbEnabled', c.fb_enabled); set('botFbPageId', c.fb_page_id);
+      set('botFbEnabled', c.fb_enabled); set('botFbPageId', c.fb_page_id); set('botFbPageUrl', c.fb_page_url);
       const hint = document.getElementById('botCredHint');
       if (hint) hint.textContent = (c.has_gemini_key?'Gemini key OK':'Gemini key BELUM ada') + ' · ' + (c.has_blogger?'Blogger OK':'Blogger BELUM tersambung');
       const fbHint = document.getElementById('botFbHint');
       if (fbHint) fbHint.textContent = c.has_facebook ? 'Facebook Page OK' : 'Facebook belum tersambung';
 
-      // Facebook Langsung (jalur terpisah dari Blogger)
-      renderBotFbDirectChip(!!c.fb_direct_enabled);
-      set('botFbDirectCap', c.fb_direct_daily_cap);
-      const fdToday = document.getElementById('botFbDirectToday'); if (fdToday) fdToday.textContent = snap.fbDirectPostedToday||0;
-      const fdQueue = document.getElementById('botFbDirectQueue'); if (fdQueue) fdQueue.textContent = snap.fbDirectQueue||0;
-      const fdList = document.getElementById('botFbDirectHistoryList');
-      if (fdList) fdList.innerHTML = (snap.fbDirectHistory||[]).map(h=>{
+      // Template FB (siapkan gambar+caption utk posting manual)
+      const tplQueue = document.getElementById('botFbTplQueue'); if (tplQueue) tplQueue.textContent = snap.fbDirectQueue||0;
+      botFbTplHistoryCache = snap.fbDirectHistory||[];
+      const tplList = document.getElementById('botFbTplHistoryList');
+      if (tplList) tplList.innerHTML = botFbTplHistoryCache.map(h=>{
         const t = String(h.fb_direct_posted_at||'').slice(0,16).replace('T',' ');
         return `<div class="flex items-start gap-2 border-b border-white/5 pb-1.5">
           <span class="text-[9px] text-slate-500 whitespace-nowrap mt-0.5">${botEsc(t)}</span>
           <div class="flex-1 min-w-0">
             <div class="text-slate-100 truncate">${botEsc(h.title)}</div>
             <span class="text-[9px] text-slate-500">${botEsc(h.source)}</span> ·
-            <a href="${botEsc(h.post_url||h.url)}" target="_blank" class="text-[9px] text-blue-400 hover:text-blue-300">link terpasang</a>
+            <a href="${botEsc(h.post_url||h.url)}" target="_blank" class="text-[9px] text-blue-400 hover:text-blue-300">link asli</a>
           </div>
+          <button onclick="botFbTplReopen(${Number(h.id)})" class="text-[9px] font-bold text-cyan-300 hover:text-cyan-200 whitespace-nowrap px-2 py-1 rounded-lg glass-inner"><i class="fa-solid fa-rotate-left mr-1"></i>BUKA LAGI</button>
         </div>`;
-      }).join('') || '<div class="text-[11px] text-slate-500">Belum ada postingan.</div>';
+      }).join('') || '<div class="text-[11px] text-slate-500">Belum ada yang di-generate.</div>';
 
       const bs = snap.byStatus || {};
       const stat = document.getElementById('botNewsStat');
@@ -3979,7 +4028,7 @@ Tindakan ini tidak dapat dibatalkan.`,
     }
     function saveBotNewsConfig(){
       const g=id=>{const el=document.getElementById(id);return !el?'':(el.type==='checkbox'?(el.checked?'1':'0'):String(el.value||'').trim());};
-      const data={enabled:g('botEnabled'),attribution:g('botAttribution'),per_run:g('botPerRun'),daily_cap:g('botDailyCap'),para_min:g('botParaMin'),para_max:g('botParaMax'),post_labels:g('botLabels'),promo_url:g('botPromoUrl'),promo_text:g('botPromoText'),gemini_model:g('botModel'),rewrite_style:g('botStyle'),blogger_blog_id:g('botBlogId'),fb_enabled:g('botFbEnabled'),fb_page_id:g('botFbPageId')};
+      const data={enabled:g('botEnabled'),attribution:g('botAttribution'),per_run:g('botPerRun'),daily_cap:g('botDailyCap'),para_min:g('botParaMin'),para_max:g('botParaMax'),post_labels:g('botLabels'),promo_url:g('botPromoUrl'),promo_text:g('botPromoText'),gemini_model:g('botModel'),rewrite_style:g('botStyle'),blogger_blog_id:g('botBlogId'),fb_enabled:g('botFbEnabled'),fb_page_id:g('botFbPageId'),fb_page_url:g('botFbPageUrl')};
       const key=g('botGeminiKey'); if(key) data.gemini_key=key;
       const fbTok=g('botFbToken'); if(fbTok) data.fb_page_token=fbTok;
       google.script.run.withSuccessHandler(s=>{toast('Konfigurasi BOT tersimpan');['botGeminiKey','botFbToken'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});applyBotNews(s);}).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsSaveConfig(currentSessionToken,data);

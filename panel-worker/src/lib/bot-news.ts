@@ -209,14 +209,21 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 	const model = cfg.gemini_model || "gemini-3-flash-preview";
 	if (!key) throw new Error("gemini_key belum diisi di konfigurasi BOT.");
 	const style = cfg.rewrite_style || "Tulis ulang jadi artikel berbahasa Indonesia yang mengalir, gaya jurnalistik ringan.";
-	const pMin = Math.max(1, Number(cfg.para_min || "5"));
-	const pMax = Math.max(pMin, Number(cfg.para_max || "10"));
+	const pMin = Math.max(1, Number(cfg.para_min || "8"));
+	const pMax = Math.max(pMin, Number(cfg.para_max || "14"));
 	const paraTarget = pMin + Math.floor(Math.random() * (pMax - pMin + 1));
 	const prompt =
 		`${style}\n\n` +
-		`Berdasarkan ringkasan berikut, tulis artikel BARU sepanjang ${paraTarget} paragraf ` +
-		`(jangan menyalin kalimat asli, jangan mengarang fakta/angka yang tidak ada di ringkasan; ` +
-		`boleh menambah konteks umum, latar belakang, dan analisis ringan agar artikel penuh). ` +
+		`Berdasarkan ringkasan berikut, tulis artikel BARU yang PANJANG dan MENDALAM, sepanjang ${paraTarget} paragraf ` +
+		`(jangan menyalin kalimat asli, jangan mengarang fakta/angka spesifik yang tidak ada di ringkasan). ` +
+		`Supaya pembahasannya detail dan tidak terasa diulur-ulur, bangun artikel dengan beberapa sudut berikut ` +
+		`(pilih yang relevan dengan topiknya, TIDAK harus semua & TIDAK usah pakai sub-judul eksplisit): ` +
+		`(1) pembukaan yang menjelaskan inti kejadian, (2) latar belakang/kronologi/konteks sebelumnya, ` +
+		`(3) penjelasan lebih rinci tiap poin penting di ringkasan — pecah jadi beberapa paragraf, jangan digabung jadi satu, ` +
+		`(4) dampak atau relevansinya bagi pembaca/masyarakat/industri terkait, ` +
+		`(5) reaksi atau sudut pandang pihak-pihak terkait (SECARA UMUM/wajar, JANGAN mengarang kutipan/nama yang tidak ada di ringkasan), ` +
+		`(6) penutup yang merangkum & memberi gambaran ke depan. ` +
+		`Tiap paragraf idealnya 3-5 kalimat yang mengalir, bukan poin-poin pendek. ` +
 		`Sertakan juga "meta_description": ringkasan 1 kalimat (maks 155 karakter) utk cuplikan hasil pencarian Google — ` +
 		`bukan copy kalimat pertama artikel, tapi rangkuman inti isi artikel. ` +
 		`Balas HANYA JSON valid tanpa markdown: {"title": "...", "meta_description": "...", "body_html": "<p>...</p><p>...</p>"}.\n\n` +
@@ -489,6 +496,123 @@ export async function fbDirectProcessOne(env: Env): Promise<{ done: boolean; tit
 	}
 }
 
+// ---------------------------------------------------------------------------
+// TEMPLATE FB — pengganti posting otomatis (Facebook API sering diblokir
+// Facebook untuk Page baru/kategori berita). Sama sekali TIDAK menyentuh
+// Graph API: cuma menyiapkan gambar + caption supaya pemilik tinggal
+// copy-paste & posting MANUAL dari akun Facebook-nya sendiri.
+// ---------------------------------------------------------------------------
+
+// Hashtag "evergreen" biar postingan gampang ketemu orang yang lagi cari/scroll berita,
+// dipasang tetap di tiap template supaya jangkauan konsisten walau AI-nya kadang pelit hashtag.
+const FB_TEMPLATE_EVERGREEN_HASHTAGS = ["#BeritaTerkini", "#BeritaHariIni", "#InfoTerkini", "#BeritaViral", "#BeritaUpdate"];
+
+/** Caption + hashtag utk template manual — link ditambahkan terpisah di bawah (bukan oleh AI). */
+async function geminiFbTemplateCaption(
+	cfg: Record<string, string>,
+	art: { title: string; excerpt: string; source: string },
+): Promise<{ text: string; hashtags: string[] }> {
+	const key = cfg.gemini_key;
+	const model = cfg.gemini_model || "gemini-3-flash-preview";
+	if (!key) throw new Error("gemini_key belum diisi di konfigurasi BOT.");
+	const prompt =
+		`Buatkan caption Facebook yang singkat, menarik, dan memancing rasa penasaran pembaca (gaya media sosial, ` +
+		`boleh pakai 1-3 emoji, MAKS 4 kalimat, JANGAN mengarang fakta baru di luar ringkasan). ` +
+		`Tutup dengan satu kalimat ajakan yang bikin orang PENASARAN untuk klik link selengkapnya ` +
+		`(JANGAN tulis link/URL apa pun, link akan ditambahkan otomatis di bawah captionmu). ` +
+		`SETELAH itu, di baris terpisah setelah tanda "===HASHTAG===", tuliskan 5-8 hashtag ` +
+		`(gabungan Bahasa Indonesia, dipisah spasi, huruf tanpa spasi di dalamnya, contoh: #BeritaJakarta) ` +
+		`yang relevan dengan topik/tokoh/kategori berita ini SUPAYA postingan gampang muncul di pencarian & ` +
+		`beranda orang yang suka/cari berita. Balas HANYA dalam format:\n` +
+		`<caption>\n===HASHTAG===\n<hashtag1> <hashtag2> ...\n\n` +
+		`JUDUL: ${art.title}\nRINGKASAN: ${art.excerpt || "(tidak ada)"}\nSUMBER: ${art.source}`;
+	const models = [...new Set([model, "gemini-3-flash-preview", "gemini-flash-latest", "gemini-flash-lite-latest"])];
+	for (const mdl of models) {
+		const supportsThinking = /gemini-3/i.test(mdl);
+		const generationConfig: Record<string, unknown> = { temperature: 0.9, maxOutputTokens: 350 };
+		if (supportsThinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+		try {
+			const r = await fetch(
+				`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(mdl)}:generateContent`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json", "X-goog-api-key": key },
+					body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig }),
+				},
+			);
+			const body = (await r.json()) as any;
+			const raw = body?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("").trim();
+			if (r.ok && raw) {
+				const [captionPart, hashtagPart] = raw.split(/===HASHTAG===/i);
+				const text = (captionPart || raw).replace(/^["']|["']$/g, "").trim().slice(0, 500);
+				const aiTags = (hashtagPart || "").match(/#[\p{L}\p{N}_]+/gu) || [];
+				return { text, hashtags: aiTags.slice(0, 8) };
+			}
+		} catch {
+			/* coba model berikutnya */
+		}
+	}
+	return { text: art.title, hashtags: [] };
+}
+
+// Kolom penyimpan hasil template supaya bisa "dibuka lagi" dari Riwayat (caption
+// tadinya cuma balikan sesaat, hilang begitu di-refresh). Migrasi malas (lazy) --
+// dicoba sekali per cold-start isolate, aman dipanggil berkali² (duplicate column
+// diabaikan) jadi tidak perlu skrip migrasi terpisah lagi.
+let fbTemplateColumnEnsured = false;
+async function ensureFbTemplateColumn(env: Env): Promise<void> {
+	if (fbTemplateColumnEnsured) return;
+	try {
+		await getTurso(env).prepare(`ALTER TABLE news_article ADD COLUMN fb_template_caption TEXT NOT NULL DEFAULT ''`).run();
+	} catch {
+		/* kolom sudah ada -> abaikan */
+	}
+	fbTemplateColumnEnsured = true;
+}
+
+/** Ambil 1 artikel berikutnya & siapkan gambar+caption utk di-copy manual ke Facebook. Tidak memanggil Graph API sama sekali. */
+export async function fbTemplateGenerate(
+	env: Env,
+): Promise<{ done: boolean; title?: string; imageUrl?: string; caption?: string; error?: string }> {
+	await ensureFbTemplateColumn(env);
+	const cfg = await botCfg(env);
+	const row = await getTurso(env)
+		.prepare(`SELECT * FROM news_article WHERE fb_direct_posted_at = '' ORDER BY id ASC LIMIT 1`)
+		.first<Record<string, string>>();
+	if (!row) return { done: false, error: "Tidak ada artikel baru untuk dibuatkan template." };
+	const id = Number(row.id);
+	try {
+		const gen = await geminiFbTemplateCaption(cfg, {
+			title: String(row.title),
+			excerpt: String(row.excerpt),
+			source: String(row.source),
+		});
+		let imageUrl = String(row.image_url || "");
+		if (!imageUrl) imageUrl = await fetchOgImage(String(row.url));
+		const linkUrl = String(row.post_url || row.url || "");
+		const hashtags = [...new Set([...gen.hashtags, ...FB_TEMPLATE_EVERGREEN_HASHTAGS])].slice(0, 12);
+		const parts = [gen.text];
+		if (linkUrl) parts.push(`🔗 Baca selengkapnya: ${linkUrl}`);
+		if (hashtags.length) parts.push(hashtags.join(" "));
+		const caption = parts.join("\n\n");
+		// Simpan hasilnya (bukan cuma tandai selesai) supaya bisa "dibuka lagi" dari Riwayat.
+		await getTurso(env)
+			.prepare(
+				`UPDATE news_article SET fb_direct_posted_at = ?, fb_template_caption = ?, image_url = CASE WHEN image_url = '' THEN ? ELSE image_url END WHERE id = ?`,
+			)
+			.bind(tsNow(), caption, imageUrl, id)
+			.run();
+		return { done: true, title: String(row.title), imageUrl, caption };
+	} catch (e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		if (/location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED/i.test(msg)) {
+			return { done: false, error: msg + " (coba lagi sebentar)" };
+		}
+		await getTurso(env).prepare(`UPDATE news_article SET fb_direct_posted_at = 'error' WHERE id = ?`).bind(id).run();
+		return { done: false, error: msg };
+	}
+}
+
 async function fbDirectPostedToday(env: Env): Promise<number> {
 	const r = await getTurso(env)
 		.prepare(`SELECT COUNT(*) AS c FROM news_article WHERE fb_direct_posted_at NOT IN ('', 'error') AND substr(fb_direct_posted_at,1,10) = ?`)
@@ -553,6 +677,14 @@ export async function newsProcessOne(env: Env): Promise<{ done: boolean; title?:
 			content +=
 				`\n<p style="font-size:13px;color:#666;margin-top:24px">Sumber: ` +
 				`<a href="${escAttr(String(row.url))}" rel="nofollow noopener" target="_blank">${escHtml(String(row.source))}</a></p>`;
+		}
+
+		// Ajakan follow Fanspage Facebook (kalau sudah diisi di Konfigurasi Lanjutan).
+		const fbPageUrl = (cfg.fb_page_url || "").trim();
+		if (fbPageUrl) {
+			content +=
+				`\n<p style="font-size:14px;margin-top:14px">📘 Follow Fanspage kami di Facebook: ` +
+				`<a href="${escAttr(fbPageUrl)}" rel="noopener" target="_blank"><strong>klik di sini</strong></a></p>`;
 		}
 		// Feed Google News (dipakai Kompas/Tribunnews) tidak menyertakan gambar
 		// sama sekali -> post-nya tampil tanpa thumbnail di daftar Blogger. Kalau
@@ -686,10 +818,11 @@ export async function botNewsSnapshot(env: Env) {
 		(await getTurso(env)
 			.prepare(`SELECT id, source, title, status, url, post_url, error, found_at, posted_at FROM news_article ORDER BY id DESC LIMIT 40`)
 			.all()).results ?? [];
+	await ensureFbTemplateColumn(env);
 	const fbDirectHistory =
 		(await getTurso(env)
 			.prepare(
-				`SELECT id, source, title, url, post_url, fb_direct_posted_at
+				`SELECT id, source, title, url, post_url, image_url, fb_direct_posted_at, fb_template_caption
 				 FROM news_article WHERE fb_direct_posted_at NOT IN ('', 'error')
 				 ORDER BY fb_direct_posted_at DESC, id DESC LIMIT 100`,
 			)
@@ -711,8 +844,8 @@ export async function botNewsSnapshot(env: Env) {
 			daily_cap: Number(cfg.daily_cap || "8"),
 			attribution: String(cfg.attribution || "1") === "1",
 			rewrite_style: cfg.rewrite_style || "",
-			para_min: Number(cfg.para_min || "5"),
-			para_max: Number(cfg.para_max || "10"),
+			para_min: Number(cfg.para_min || "8"),
+			para_max: Number(cfg.para_max || "14"),
 			promo_url: cfg.promo_url || "",
 			promo_text: cfg.promo_text || "",
 			post_labels: cfg.post_labels || "",
@@ -725,6 +858,7 @@ export async function botNewsSnapshot(env: Env) {
 			has_facebook: !!(cfg.fb_page_id && cfg.fb_page_token),
 			fb_direct_enabled: String(cfg.fb_direct_enabled || "0") === "1",
 			fb_direct_daily_cap: Number(cfg.fb_direct_daily_cap || "50"),
+			fb_page_url: cfg.fb_page_url || "",
 		},
 		postedToday: await postedToday(env),
 		fbDirectPostedToday: await fbDirectPostedToday(env),
