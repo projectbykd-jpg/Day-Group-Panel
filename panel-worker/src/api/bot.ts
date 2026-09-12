@@ -76,20 +76,29 @@ export async function botNewsDeleteSource(env: Env, token: string, data: Record<
 	return botNewsSnapshot(env);
 }
 
+/** Tombol "PROSES KE BLOGGER" -- HANYA loop Blogger, tidak menyentuh situs sendiri sama sekali. */
 export async function botNewsRunNow(env: Env, token: string, count?: number) {
 	const s = await gate(env, token);
 	// Abaikan flag enabled untuk run manual, tapi tetap hormati batas harian.
 	// count dibatasi di botNewsRun (maks 5x sekali klik) -> jaga anggaran
 	// subrequest Cloudflare (Gemini+Blogger+Turso per artikel).
-	const r = await botNewsRun(env, { force: true, count: count ? Number(count) : 1 });
+	const r = await botNewsRun(env, { force: true, count: count ? Number(count) : 1, mode: "blogger" });
 	await logActivity(
 		env,
 		s.username,
 		"BOT NEWS RUN",
-		`Manual: feed +${r.pulled}, diposting ${r.posted}${r.capped ? " (batas harian tercapai)" : ""}`,
+		`Manual (Blogger): feed +${r.pulled}, diposting ${r.posted}${r.capped ? " (batas harian tercapai)" : ""}`,
 		"BERHASIL",
 		"",
 	);
+	return { success: true, ...r, snapshot: await botNewsSnapshot(env) };
+}
+
+/** Tombol "PROSES KE SITUS SENDIRI" -- HANYA loop situs sendiri, tidak pernah menyentuh/posting ke Blogger. */
+export async function botNewsRunSiteNow(env: Env, token: string, count?: number) {
+	const s = await gate(env, token);
+	const r = await botNewsRun(env, { force: true, count: count ? Number(count) : 1, mode: "site" });
+	await logActivity(env, s.username, "BOT NEWS RUN SITUS", `Manual (Situs Sendiri): feed +${r.pulled}, +${r.siteOnly} artikel`, "BERHASIL", "");
 	return { success: true, ...r, snapshot: await botNewsSnapshot(env) };
 }
 

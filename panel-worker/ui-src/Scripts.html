@@ -4080,4 +4080,17 @@ Tindakan ini tidak dapat dibatalkan.`,
         showActionPopup('ERROR', 'Proses Gagal', (e&&e.message)||String(e), 'fa-triangle-exclamation');
       }).botNewsRunNow(currentSessionToken, count);
     }
+    function botNewsRunSite(){
+      const countEl = document.getElementById('botRunCount');
+      const count = countEl ? Number(countEl.value || 1) : 1;
+      showActionPopup('LOADING', 'Memproses Berita', `Menulis ulang & memuat ${count} artikel ke situs sendiri (tanpa Blogger)...`, 'fa-globe');
+      google.script.run.withSuccessHandler(r=>{
+        closeActionPopup();
+        if (r && r.message) toast(r.message);
+        else toast('Tidak ada artikel baru untuk diproses');
+        if(r&&r.snapshot) applyBotNews(r.snapshot); else loadBotNews();
+      }).withFailureHandler(e=>{
+        showActionPopup('ERROR', 'Proses Gagal', (e&&e.message)||String(e), 'fa-triangle-exclamation');
+      }).botNewsRunSiteNow(currentSessionToken, count);
+    }
   </script>

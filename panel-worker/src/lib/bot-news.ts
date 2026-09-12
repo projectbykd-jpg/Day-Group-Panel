@@ -45,13 +45,14 @@ export async function ensureNewsCategoryColumns(env: Env): Promise<void> {
 			/* kolom sudah ada -> abaikan */
 		}
 	}
-	// Backfill SEKALI: artikel lama yang sudah 'posted' (ke Blogger) sebelum
-	// kolom site_posted_at ada harus tetap tampil di situs -- kalau tidak,
-	// publicNewsList/-Detail (yang filter site_posted_at != '') mendadak
-	// mengosongkan Berita Terkini padahal datanya masih ada. Idempotent (WHERE
-	// site_posted_at = '' -> no-op di run berikutnya), aman dipanggil berkali².
+	// PEMBALIKAN backfill lama: sempat ada migrasi sementara yang mengisi
+	// site_posted_at dari posted_at utk SEMUA artikel status='posted' (Blogger),
+	// supaya tidak "hilang" dari Berita Terkini sebelum loop situs sendiri ada.
+	// Sekarang pemilik tegas minta 2 jalur ini TIDAK BOLEH dobel -- artikel yang
+	// posting ke Blogger TIDAK tampil di situs sendiri. Bersihkan sisa dari
+	// backfill lama itu (idempotent: no-op begitu semuanya sudah bersih).
 	try {
-		await getTurso(env).prepare(`UPDATE news_article SET site_posted_at = posted_at WHERE status = 'posted' AND site_posted_at = ''`).run();
+		await getTurso(env).prepare(`UPDATE news_article SET site_posted_at = '' WHERE status = 'posted' AND site_posted_at != ''`).run();
 	} catch {
 		/* abaikan */
 	}
@@ -901,26 +902,28 @@ const MAX_RUN_COUNT = 5;
 
 export async function botNewsRun(
 	env: Env,
-	opts: { force?: boolean; count?: number } = {},
-): Promise<{ pulled: number; posted: number; capped: boolean; message: string }> {
+	opts: { force?: boolean; count?: number; mode?: "both" | "blogger" | "site" } = {},
+): Promise<{ pulled: number; posted: number; siteOnly: number; capped: boolean; message: string }> {
+	const mode = opts.mode || "both";
 	const cfg = await botCfg(env);
 	if (!opts.force && String(cfg.enabled || "0") !== "1") {
-		return { pulled: 0, posted: 0, capped: false, message: "BOT NEWS dimatikan (enabled=0)." };
+		return { pulled: 0, posted: 0, siteOnly: 0, capped: false, message: "BOT NEWS dimatikan (enabled=0)." };
 	}
-	const perRun = opts.count
-		? Math.max(1, Math.min(MAX_RUN_COUNT, Math.floor(opts.count)))
-		: Math.max(1, Number(cfg.per_run || "2"));
+	const countOverride = opts.count ? Math.max(1, Math.min(MAX_RUN_COUNT, Math.floor(opts.count))) : 0;
+	const perRun = mode === "site" ? 0 : countOverride || Math.max(1, Number(cfg.per_run || "2"));
 	// Pace KHUSUS situs sendiri (LapakStore88) -- SENGAJA terpisah total dari
-	// per_run/daily_cap Blogger di atas. Pemilik sudah menyetel per_run/daily_cap
-	// pas untuk Blogger dan TIDAK MAU pace situs sendiri ikut terbawa/dibatasi
-	// oleh angka itu -- jadi ini loop & config sendiri, lihat loop kedua di bawah.
-	const sitePerRun = Math.max(0, Number(cfg.site_per_run ?? "5"));
+	// per_run/daily_cap Blogger di atas. PENTING: pakai "||" bukan "??" -- kalau
+	// field ini pernah tersimpan sebagai string kosong (mis. form disimpan tanpa
+	// diisi), "" ?? "5" tetap "" (cuma null/undefined yg ke-catch "??"), lalu
+	// Number("")=0 -> loop situs mati total tanpa pesan error apa pun. "||" aman
+	// dari kasus itu, dan tetap menghormati "0" eksplisit (mematikan loop situs).
+	const sitePerRun = mode === "blogger" ? 0 : countOverride || Math.max(0, Number(cfg.site_per_run || "5"));
 
 	// newsPullSources sendiri makan ~17 subrequest (feed+resolve+batch insert).
 	// Kalau antrean 'new' sudah cukup (backlog), lewati pull -> hemat anggaran
 	// buat proses artikel (masih kena limit 50/invocation kalau ditambah).
 	const queued = await getTurso(env).prepare(`SELECT COUNT(*) AS c FROM news_article WHERE status = 'new'`).first<{ c: number }>();
-	const pull = Number(queued?.c ?? 0) >= (perRun + sitePerRun) * 3 ? { added: 0, scanned: 0 } : await newsPullSources(env);
+	const pull = Number(queued?.c ?? 0) >= Math.max(1, perRun + sitePerRun) * 3 ? { added: 0, scanned: 0 } : await newsPullSources(env);
 
 	const cap = Number(cfg.daily_cap || "8");
 	// Query 1x, lalu update di memori -> bukan 1 query/iterasi (hemat subrequest).
@@ -953,17 +956,17 @@ export async function botNewsRun(
 		if (r.error && /location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED/i.test(r.error)) break;
 	}
 	const capped = postedSoFar >= cap;
+	const parts: string[] = [`Feed +${pull.added} artikel baru`];
+	if (mode !== "site") parts.push(`diposting ${posted} ke Blogger`);
+	if (mode !== "blogger") parts.push(`${siteOnly} ke situs sendiri`);
 	return {
 		pulled: pull.added,
 		posted,
+		siteOnly,
 		capped,
 		// Kalau 0 posting & ada error, tampilkan alasannya -- biar user/kita tidak
 		// perlu buka database tiap kali cuma buat tahu KENAPA 0.
-		message:
-			`Feed +${pull.added} artikel baru; diposting ${posted} ke Blogger` +
-			(siteOnly ? `, +${siteOnly} ke situs sendiri (jalur terpisah, independen dari Blogger)` : "") +
-			"." +
-			(posted === 0 && siteOnly === 0 && lastError ? ` [${lastError.slice(0, 200)}]` : ""),
+		message: parts.join("; ") + "." + (posted === 0 && siteOnly === 0 && lastError ? ` [${lastError.slice(0, 200)}]` : ""),
 	};
 }
 
@@ -1016,7 +1019,7 @@ export async function botNewsSnapshot(env: Env) {
 			enabled: String(cfg.enabled || "0") === "1",
 			per_run: Number(cfg.per_run || "2"),
 			daily_cap: Number(cfg.daily_cap || "8"),
-			site_per_run: Number(cfg.site_per_run ?? "5"),
+			site_per_run: Number(cfg.site_per_run || "5"),
 			attribution: String(cfg.attribution || "1") === "1",
 			rewrite_style: cfg.rewrite_style || "",
 			para_min: Number(cfg.para_min || "8"),
