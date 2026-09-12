@@ -66,7 +66,7 @@ import {
 	botNewsStatus,
 	botNewsToggleSource,
 } from "./api/bot";
-import { botNewsRun, fbDirectRun, publicNewsBanner, publicNewsDetail, publicNewsList, publicNewsRandom } from "./lib/bot-news";
+import { botNewsRun, fbDirectRun, publicNewsBanner, publicNewsDetail, publicNewsList, publicNewsRandom, seedCategorySources } from "./lib/bot-news";
 
 type Handler = (env: Env, body: Record<string, unknown>) => Promise<unknown>;
 const s = (v: unknown) => String(v ?? "");
@@ -412,6 +412,11 @@ export default {
 				// 10 menit (1 artikel/panggilan), independen dari jadwal Blogger.
 				if (job === "fbdirect") {
 					out.fbdirect = await fbDirectRun(env);
+				}
+				// One-shot: suntik 8 sumber RSS per-kategori Liputan6. Idempotent (aman
+				// dipanggil berkali²) -- TIDAK ikut "all", dipanggil manual sekali saja.
+				if (job === "seednews") {
+					out.seed = await seedCategorySources(env);
 				}
 			} catch (e) {
 				out.ok = false;

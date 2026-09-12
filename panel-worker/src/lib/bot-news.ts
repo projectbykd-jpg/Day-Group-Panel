@@ -172,10 +172,15 @@ async function fetchOgImage(pageUrl: string): Promise<string> {
 		const r = await fetch(pageUrl, { headers: { "User-Agent": UA } });
 		if (!r.ok) return "";
 		const html = await r.text();
+		// Beberapa situs (mis. Kompas) menaruh atribut dalam urutan/variasi lain --
+		// dicoba beberapa pola sebelum menyerah, bukan cuma og:image standar.
 		const m =
 			html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
 			html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
-			html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
+			html.match(/<meta[^>]+name=["']twitter:image(?::src)?["'][^>]+content=["']([^"']+)["']/i) ||
+			html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image(?::src)?["']/i) ||
+			html.match(/<meta[^>]+itemprop=["']image["'][^>]+content=["']([^"']+)["']/i) ||
+			html.match(/<link[^>]+rel=["']image_src["'][^>]+href=["']([^"']+)["']/i);
 		return m ? decodeEntities(m[1]) : "";
 	} catch {
 		return "";
@@ -681,6 +686,10 @@ export async function fbTemplateGenerate(
 		const hashtags = [...new Set([...gen.hashtags, ...FB_TEMPLATE_EVERGREEN_HASHTAGS])].slice(0, 12);
 		const parts = [gen.text];
 		if (linkUrl) parts.push(`🔗 Baca selengkapnya: ${linkUrl}`);
+		// Promosi toko -- sama seperti yang otomatis disisipkan di artikel Blogger/
+		// situs sendiri, supaya caption manual ini juga ikut mempromosikan toko.
+		const promoUrl = (cfg.promo_url || "").trim();
+		if (promoUrl) parts.push(`🛒 ${(cfg.promo_text || "Butuh aplikasi premium termurah? Kunjungi LapakStore88").trim()}: ${promoUrl}`);
 		if (hashtags.length) parts.push(hashtags.join(" "));
 		const caption = parts.join("\n\n");
 		// Simpan hasilnya (bukan cuma tandai selesai) supaya bisa "dibuka lagi" dari Riwayat.
@@ -734,8 +743,11 @@ export async function newsProcessOne(
 ): Promise<{ done: boolean; title?: string; postUrl?: string; error?: string; siteOnly?: boolean }> {
 	await ensureNewsCategoryColumns(env);
 	const cfg = await botCfg(env);
+	// RANDOM (bukan FIFO/id ASC) -- pemilik minta artikel yang diproses "diacak",
+	// supaya tidak keterusan memproses satu sumber/kategori secara berurutan
+	// lama sebelum sempat menyentuh kategori lain di antrean yang sama.
 	const row = await getTurso(env)
-		.prepare(`SELECT * FROM news_article WHERE status = 'new' ORDER BY id ASC LIMIT 1`)
+		.prepare(`SELECT * FROM news_article WHERE status = 'new' ORDER BY RANDOM() LIMIT 1`)
 		.first<Record<string, string>>();
 	if (!row) return { done: false };
 	const id = Number(row.id);
@@ -1079,6 +1091,38 @@ export async function publicNewsDetail(env: Env, id: number) {
 		.first<{ id: number; title: string; rewritten_html: string; image_url: string; category: string; source: string; url: string; posted_at: string }>();
 	if (!row) return { success: false, message: "Artikel tidak ditemukan." };
 	return { success: true, article: row };
+}
+
+/** Suntik sumber RSS per-kategori Liputan6 sekali jalan (dipanggil dari /__cron?job=seednews,
+ * gate cron-key BUKAN sesi -- pemilik tidak perlu ketik 8 baris manual di panel).
+ * Idempotent: kalau URL sudah ada di news_source, dilewati (tidak dobel). */
+export async function seedCategorySources(env: Env): Promise<{ added: string[]; skipped: string[] }> {
+	await ensureNewsCategoryColumns(env);
+	const seeds: { name: string; url: string; category: string }[] = [
+		{ name: "Liputan6 Bisnis", url: "https://feed.liputan6.com/rss/bisnis", category: "bisnis" },
+		{ name: "Liputan6 Bola", url: "https://feed.liputan6.com/rss/bola", category: "olahraga" },
+		{ name: "Liputan6 Showbiz", url: "https://feed.liputan6.com/rss/showbiz", category: "hiburan" },
+		{ name: "Liputan6 Tekno", url: "https://feed.liputan6.com/rss/tekno", category: "teknologi" },
+		{ name: "Liputan6 Otomotif", url: "https://feed.liputan6.com/rss/otomotif", category: "otomotif" },
+		{ name: "Liputan6 Kesehatan", url: "https://feed.liputan6.com/rss/kesehatan", category: "kesehatan" },
+		{ name: "Liputan6 Lifestyle", url: "https://feed.liputan6.com/rss/lifestyle", category: "lifestyle" },
+		{ name: "Liputan6 Cek Fakta", url: "https://feed.liputan6.com/rss/cek-fakta", category: "umum" },
+	];
+	const added: string[] = [];
+	const skipped: string[] = [];
+	for (const s of seeds) {
+		const exists = await getTurso(env).prepare(`SELECT id FROM news_source WHERE url = ?`).bind(s.url).first();
+		if (exists) {
+			skipped.push(s.name);
+			continue;
+		}
+		await getTurso(env)
+			.prepare(`INSERT INTO news_source (name, kind, url, active, added_at, category) VALUES (?, 'rss', ?, 1, ?, ?)`)
+			.bind(s.name, s.url, tsNow(), s.category)
+			.run();
+		added.push(s.name);
+	}
+	return { added, skipped };
 }
 
 /** Banner promosi sidebar Berita Terkini -- diatur dari Panel BOT (Konfigurasi Lanjutan). */
