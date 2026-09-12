@@ -432,22 +432,32 @@ export async function bloggerCreatePost(
 // ---------------------------------------------------------------------------
 // Facebook Page — auto-share tiap artikel yang terbit di Blogger
 // ---------------------------------------------------------------------------
-function buildFbCaption(title: string, metaDescription: string, postUrl: string): string {
+// Domain situs sendiri (LapakStore88 / "Berita Terkini") -- dipromosikan di
+// setiap posting Facebook Page bersama link Blogger & toko, sesuai permintaan
+// pemilik supaya ketiga aset (Blogger, situs berita sendiri, toko) selalu
+// saling mempromosikan satu sama lain.
+const LAPAKSTORE_SITE_URL = "https://lokalstore88.online";
+
+function buildFbCaption(title: string, metaDescription: string, links: { blogger?: string; site?: string; store?: string }): string {
 	const lines = [`📰 ${title}`];
 	if (metaDescription) lines.push("", metaDescription);
-	lines.push("", `🔗 Baca selengkapnya: ${postUrl}`);
+	lines.push("");
+	if (links.blogger) lines.push(`🔗 Baca di blog kami: ${links.blogger}`);
+	if (links.site) lines.push(`📰 Baca di web berita kami: ${links.site}`);
+	if (links.store) lines.push(`🛒 Toko aplikasi premium: ${links.store}`);
 	return lines.join("\n").slice(0, 1900); // batas wajar caption FB
 }
 
 /** Posting ke Facebook Page (foto+caption kalau ada gambar, teks+link kalau tidak). Gagal = non-fatal, dicatat saja. */
 export async function fbPostToPage(
 	cfg: Record<string, string>,
-	post: { title: string; metaDescription: string; postUrl: string; imageUrl?: string },
+	post: { title: string; metaDescription: string; postUrl: string; imageUrl?: string; siteUrl?: string; storeUrl?: string },
 ): Promise<string | null> {
 	const pageId = cfg.fb_page_id;
 	const token = cfg.fb_page_token;
 	if (!pageId || !token) return null; // belum disetel -> lewati diam-diam
-	const caption = buildFbCaption(post.title, post.metaDescription, post.postUrl);
+	const caption = buildFbCaption(post.title, post.metaDescription, { blogger: post.postUrl, site: post.siteUrl, store: post.storeUrl });
+	const primaryLink = post.postUrl || post.siteUrl || post.storeUrl || "";
 	const endpoint = post.imageUrl
 		? `https://graph.facebook.com/v21.0/${encodeURIComponent(pageId)}/photos`
 		: `https://graph.facebook.com/v21.0/${encodeURIComponent(pageId)}/feed`;
@@ -457,7 +467,7 @@ export async function fbPostToPage(
 		body.set("caption", caption);
 	} else {
 		body.set("message", caption);
-		body.set("link", post.postUrl);
+		body.set("link", primaryLink);
 	}
 	const r = await fetch(endpoint, { method: "POST", body });
 	const j = (await r.json()) as any;
@@ -525,7 +535,14 @@ export async function fbDirectProcessOne(env: Env): Promise<{ done: boolean; tit
 		// Kalau artikel ini SUDAH ada versi Blogger-nya, arahkan ke situ (bangun
 		// trafik blog); kalau belum, arahkan ke sumber asli sbg atribusi.
 		const linkUrl = row.post_url || row.url;
-		await fbPostToPage(cfg, { title: String(row.title), metaDescription: caption, postUrl: String(linkUrl), imageUrl });
+		await fbPostToPage(cfg, {
+			title: String(row.title),
+			metaDescription: caption,
+			postUrl: String(linkUrl),
+			imageUrl,
+			siteUrl: `${LAPAKSTORE_SITE_URL}/berita/artikel/?id=${id}`,
+			storeUrl: (cfg.promo_url || "").trim() || undefined,
+		});
 		await getTurso(env).prepare(`UPDATE news_article SET fb_direct_posted_at = ? WHERE id = ?`).bind(tsNow(), id).run();
 		return { done: true, title: String(row.title) };
 	} catch (e) {
@@ -772,7 +789,14 @@ export async function newsProcessOne(
 			postUrl = await bloggerCreatePost(env, cfg, { title: rw.title, content, labels, searchDescription: rw.metaDescription });
 			if (String(cfg.fb_enabled || "0") === "1") {
 				try {
-					await fbPostToPage(cfg, { title: rw.title, metaDescription: rw.metaDescription, postUrl, imageUrl });
+					await fbPostToPage(cfg, {
+						title: rw.title,
+						metaDescription: rw.metaDescription,
+						postUrl,
+						imageUrl,
+						siteUrl: `${LAPAKSTORE_SITE_URL}/berita/artikel/?id=${id}`,
+						storeUrl: promoUrl || undefined,
+					});
 				} catch (e) {
 					console.error("fbPostToPage gagal:", e instanceof Error ? e.message : e);
 				}
