@@ -1,7 +1,7 @@
 // Modul NEWS untuk Role BOT: tarik feed berita -> rewrite via Gemini ->
 // posting ke Blogger. Semua state di Turso (bot_kv / news_source / news_article).
 import { getTurso } from "./turso";
-import { tsNow } from "./time";
+import { tsNow, tsNowIndonesianDate } from "./time";
 
 // Dipakai dropdown "Tambah Sumber" (panel) & filter kategori di endpoint publik
 // /public/news. Daftar cocok dengan kategori RSS Liputan6 yang sudah dicek --
@@ -848,6 +848,20 @@ export async function newsProcessOne(
 			content = `<p><img src="${escAttr(imageUrl)}" alt="" style="max-width:100%"></p>\n` + content;
 		}
 
+		// Byline tanggal WAJIB di awal SETIAP artikel (Blogger maupun situs sendiri --
+		// keduanya pakai `content` yang sama ini) -- pemilik minta format persis:
+		// "LokalStore88 <NamaHari>,<tanggal> <bulan> <tahun>." dengan "LokalStore88"
+		// jadi link biru ke Fanspage Facebook.
+		const fbPageUrlForByline = (cfg.fb_page_url || "").trim();
+		const bylineBrand = fbPageUrlForByline
+			? `<a href="${escAttr(fbPageUrlForByline)}" rel="noopener" target="_blank" style="color:#1877f2;text-decoration:none;font-weight:700">LokalStore88</a>`
+			: `<strong style="color:#1877f2">LokalStore88</strong>`;
+		// TIDAK set warna teks tanggalnya sendiri (cuma "LokalStore88" yg biru) --
+		// biar warna teks default IKUT tema halaman (gelap di situs sendiri, terang
+		// di Blogger), sama seperti perbaikan kotak promo sebelumnya yg sempat
+		// tidak kebaca di tema gelap gara-gara warna solid di-hardcode.
+		content = `<p style="margin:0 0 14px;font-size:13px">${bylineBrand} ${escHtml(tsNowIndonesianDate())}.</p>\n` + content;
+
 		// Label: "LapakStore88" (brand sendiri) + kategori otomatis (dari AI) + label
 		// tambahan dari config -- SENGAJA TIDAK menyertakan nama sumber berita lagi
 		// (mis. "Detik News") sesuai permintaan pemilik, supaya Label Blogger selalu
@@ -978,8 +992,16 @@ export async function botNewsRun(
 		// (dibuktikan lewat wrangler tail: "waitUntil() tasks did not complete
 		// ... have been cancelled"). Solusi yang benar-benar aman: kecilkan
 		// beban per panggilan supaya beneran selesai jauh di bawah 30 detik.
+		// Jatah situs SELALU disisakan (>=1) kalau site_per_run pemilik >0 --
+		// kalau perRun (Blogger) dibiarkan menghabiskan SELURUH budget duluan
+		// (mis. perRun=2, budget=2 -> sitePerRun kebagian 0), cron otomatis jadi
+		// TIDAK PERNAH lagi posting ke situs sendiri sampai daily_cap Blogger
+		// tercapai -- persis kekhawatiran pemilik ("nanti kalau habis blogger
+		// gak ada jatah situs"). Situs & Blogger masing² dijatah rata dulu SEBELUM
+		// Blogger boleh pakai sisanya.
 		const SAFE_COMBINED_BUDGET = 2;
-		perRun = Math.min(perRun, SAFE_COMBINED_BUDGET);
+		const siteWanted = sitePerRun > 0 ? 1 : 0;
+		perRun = Math.min(perRun, SAFE_COMBINED_BUDGET - siteWanted);
 		sitePerRun = Math.max(0, Math.min(sitePerRun, SAFE_COMBINED_BUDGET - perRun));
 	}
 

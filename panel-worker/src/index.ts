@@ -466,7 +466,7 @@ export default {
 					out.recent = (
 						await getTurso(env)
 							.prepare(
-								`SELECT id, category, status, posted_at, site_posted_at FROM news_article WHERE status='posted' OR site_posted_at != '' ORDER BY id DESC LIMIT 8`,
+								`SELECT id, category, status, post_url, posted_at, site_posted_at FROM news_article WHERE status='posted' OR site_posted_at != '' ORDER BY MAX(posted_at, site_posted_at) DESC LIMIT 8`,
 							)
 							.all()
 					).results;

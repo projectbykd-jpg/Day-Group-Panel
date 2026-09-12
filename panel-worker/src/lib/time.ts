@@ -18,3 +18,16 @@ export function tsPlusMinutes(minutes: number): string {
 		.slice(0, 19)
 		.replace("T", " ");
 }
+
+const ID_DAY_NAMES = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+const ID_MONTH_NAMES = [
+	"Januari", "Februari", "Maret", "April", "Mei", "Juni",
+	"Juli", "Agustus", "September", "Oktober", "November", "Desember",
+];
+
+/** "Minggu,13 September 2026" (nama hari + tanggal berbahasa Indonesia, GMT+7) --
+ *  dipakai buat byline tanggal di awal tiap artikel (Blogger & situs sendiri). */
+export function tsNowIndonesianDate(): string {
+	const d = new Date(Date.now() + OFFSET_MS);
+	return `${ID_DAY_NAMES[d.getUTCDay()]},${d.getUTCDate()} ${ID_MONTH_NAMES[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
