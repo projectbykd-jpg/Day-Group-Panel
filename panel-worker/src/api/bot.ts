@@ -23,7 +23,7 @@ export async function botNewsSaveConfig(env: Env, token: string, data: Record<st
 	const s = await gate(env, token);
 	const patch: Record<string, string> = {};
 	const allow = [
-		"enabled", "per_run", "daily_cap", "attribution", "rewrite_style", "gemini_model", "gemini_key",
+		"enabled", "per_run", "daily_cap", "site_per_run", "attribution", "rewrite_style", "gemini_model", "gemini_key",
 		"blogger_blog_id", "para_min", "para_max", "promo_url", "promo_text", "post_labels",
 		"fb_enabled", "fb_page_id", "fb_page_token", "fb_direct_enabled", "fb_direct_daily_cap", "fb_page_url", "blogger_site_url",
 		"news_banner_enabled", "news_banner_image", "news_banner_url", "news_banner_text",

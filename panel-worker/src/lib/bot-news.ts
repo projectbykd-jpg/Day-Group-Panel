@@ -7,6 +7,20 @@ import { tsNow } from "./time";
 // /public/news. Daftar cocok dengan kategori RSS Liputan6 yang sudah dicek --
 // begitu sumber per-kategori ditambahkan, artikelnya otomatis kebagi rapi.
 export const NEWS_CATEGORIES = ["umum", "nasional", "bisnis", "olahraga", "hiburan", "teknologi", "otomotif", "kesehatan", "lifestyle"] as const;
+const NEWS_CATEGORY_LABELS: Record<string, string> = {
+	umum: "Umum",
+	nasional: "Nasional",
+	bisnis: "Bisnis",
+	olahraga: "Olahraga",
+	hiburan: "Hiburan",
+	teknologi: "Teknologi",
+	otomotif: "Otomotif",
+	kesehatan: "Kesehatan",
+	lifestyle: "Lifestyle",
+};
+function newsCategoryLabel(cat: string): string {
+	return NEWS_CATEGORY_LABELS[cat] || NEWS_CATEGORY_LABELS.umum;
+}
 
 // Kolom category ditambahkan belakangan -- migrasi malas (lazy), sama seperti
 // fb_template_caption di bawah: dicoba sekali per cold-start isolate, aman
@@ -247,6 +261,7 @@ interface Rewritten {
 	title: string;
 	html: string;
 	metaDescription: string;
+	category: string;
 }
 
 export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: { title: string; excerpt: string; source: string; url: string }): Promise<Rewritten> {
@@ -271,7 +286,9 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 		`Tiap paragraf idealnya 3-5 kalimat yang mengalir, bukan poin-poin pendek. ` +
 		`Sertakan juga "meta_description": ringkasan 1 kalimat (maks 155 karakter) utk cuplikan hasil pencarian Google — ` +
 		`bukan copy kalimat pertama artikel, tapi rangkuman inti isi artikel. ` +
-		`Balas HANYA JSON valid tanpa markdown: {"title": "...", "meta_description": "...", "body_html": "<p>...</p><p>...</p>"}.\n\n` +
+		`Sertakan juga "category": kategori artikel ini, PILIH TEPAT SATU dari daftar berikut sesuai topik sebenarnya ` +
+		`(jangan mengarang kategori lain di luar daftar): ${NEWS_CATEGORIES.join(", ")}. ` +
+		`Balas HANYA JSON valid tanpa markdown: {"title": "...", "meta_description": "...", "category": "...", "body_html": "<p>...</p><p>...</p>"}.\n\n` +
 		`JUDUL ASLI: ${art.title}\n` +
 		`RINGKASAN: ${art.excerpt || "(tidak ada, tulis ringkas dari judul saja)"}\n` +
 		`SUMBER: ${art.source}`;
@@ -323,6 +340,7 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 	let title = "";
 	let html = "";
 	let metaDescription = "";
+	let category = "";
 
 	// 1) coba parse JSON apa adanya
 	const tryParse = (s: string): boolean => {
@@ -332,6 +350,7 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 				title = String(p.title || "").trim();
 				html = String(p.body_html || p.html || "").trim();
 				metaDescription = String(p.meta_description || "").trim();
+				category = String(p.category || "").trim().toLowerCase();
 				return true;
 			}
 		} catch {
@@ -350,11 +369,13 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 		const tm = text.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/);
 		const bm = text.match(/"body_html"\s*:\s*"((?:[^"\\]|\\.)*)"/);
 		const dm = text.match(/"meta_description"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+		const cm = text.match(/"category"\s*:\s*"((?:[^"\\]|\\.)*)"/);
 		if (bm) {
 			const unesc = (x: string) => x.replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\\\/g, "\\");
 			html = unesc(bm[1]).trim();
 			if (tm) title = unesc(tm[1]).trim();
 			if (dm) metaDescription = unesc(dm[1]).trim();
+			if (cm) category = unesc(cm[1]).trim().toLowerCase();
 		}
 	}
 	// 4) benar-benar bukan JSON: anggap teks polos = body (bersihkan sisa JSON kalau ada)
@@ -374,7 +395,12 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 		// fallback: potong dari teks polos hasil rewrite (tanpa tag HTML)
 		metaDescription = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 155);
 	}
-	return { title: title.slice(0, 180), html, metaDescription: metaDescription.slice(0, 155) };
+	// Kategori dari AI dipakai HANYA kalau cocok salah satu dari daftar resmi --
+	// kalau Gemini "mengarang" nilai di luar daftar, biarkan kosong supaya
+	// pemanggil (newsProcessOne) jatuh balik ke kategori sumbernya (aman,
+	// tidak pernah menyimpan kategori sampah/tidak dikenal ke database).
+	if (!(NEWS_CATEGORIES as readonly string[]).includes(category)) category = "";
+	return { title: title.slice(0, 180), html, metaDescription: metaDescription.slice(0, 155), category };
 }
 
 // ---------------------------------------------------------------------------
@@ -721,6 +747,10 @@ export async function newsProcessOne(
 			url: String(row.url),
 		});
 		let content = rw.html;
+		// Kategori otomatis dari AI (klasifikasi isi artikel yang sebenarnya) --
+		// menang atas kategori bawaan sumbernya (yang cuma tebakan kasar per-feed).
+		// Kalau Gemini tidak balas kategori valid, tetap pakai punya sumber.
+		const category = rw.category || String(row.category || "umum");
 
 		// Blok promo (disisipkan setelah paragraf ke-2 kalau bisa, biar natural).
 		const promoUrl = (cfg.promo_url || "").trim();
@@ -774,8 +804,8 @@ export async function newsProcessOne(
 			content = `<p><img src="${escAttr(imageUrl)}" alt="" style="max-width:100%"></p>\n` + content;
 		}
 
-		// Label: sumber + label wajib dari config (mis. "LapakStore88").
-		const labels = [String(row.source)];
+		// Label: sumber + kategori otomatis (dari AI) + label wajib dari config (mis. "LapakStore88").
+		const labels = [String(row.source), newsCategoryLabel(category)];
 		for (const l of String(cfg.post_labels || "").split(",").map((x) => x.trim()).filter(Boolean)) {
 			if (!labels.includes(l)) labels.push(l);
 		}
@@ -804,8 +834,8 @@ export async function newsProcessOne(
 		}
 		const now = tsNow();
 		await getTurso(env)
-			.prepare(`UPDATE news_article SET status=?, rewritten_html=?, post_url=?, posted_at=?, site_posted_at=?, error='' WHERE id=?`)
-			.bind(postUrl ? "posted" : "site", content, postUrl, postUrl ? now : "", now, id)
+			.prepare(`UPDATE news_article SET status=?, rewritten_html=?, post_url=?, posted_at=?, site_posted_at=?, category=?, error='' WHERE id=?`)
+			.bind(postUrl ? "posted" : "site", content, postUrl, postUrl ? now : "", now, category, id)
 			.run();
 
 		return { done: true, title: rw.title, postUrl: postUrl || undefined, siteOnly: !postUrl };
@@ -851,35 +881,46 @@ export async function botNewsRun(
 	const perRun = opts.count
 		? Math.max(1, Math.min(MAX_RUN_COUNT, Math.floor(opts.count)))
 		: Math.max(1, Number(cfg.per_run || "2"));
+	// Pace KHUSUS situs sendiri (LapakStore88) -- SENGAJA terpisah total dari
+	// per_run/daily_cap Blogger di atas. Pemilik sudah menyetel per_run/daily_cap
+	// pas untuk Blogger dan TIDAK MAU pace situs sendiri ikut terbawa/dibatasi
+	// oleh angka itu -- jadi ini loop & config sendiri, lihat loop kedua di bawah.
+	const sitePerRun = Math.max(0, Number(cfg.site_per_run ?? "5"));
 
 	// newsPullSources sendiri makan ~17 subrequest (feed+resolve+batch insert).
 	// Kalau antrean 'new' sudah cukup (backlog), lewati pull -> hemat anggaran
 	// buat proses artikel (masih kena limit 50/invocation kalau ditambah).
 	const queued = await getTurso(env).prepare(`SELECT COUNT(*) AS c FROM news_article WHERE status = 'new'`).first<{ c: number }>();
-	const pull = Number(queued?.c ?? 0) >= perRun * 3 ? { added: 0, scanned: 0 } : await newsPullSources(env);
+	const pull = Number(queued?.c ?? 0) >= (perRun + sitePerRun) * 3 ? { added: 0, scanned: 0 } : await newsPullSources(env);
 
 	const cap = Number(cfg.daily_cap || "8");
 	// Query 1x, lalu update di memori -> bukan 1 query/iterasi (hemat subrequest).
 	let postedSoFar = await postedToday(env);
 	let posted = 0;
-	let siteOnly = 0;
 	let lastError = "";
+	// ---- Loop 1: BLOGGER -- pace & limit persis seperti yang sudah disetel pemilik, TIDAK diubah. ----
 	for (let i = 0; i < perRun; i++) {
-		// Blogger capped -> BUKAN alasan untuk berhenti total. Artikel tetap
-		// di-rewrite & disimpan utk situs sendiri (newsProcessOne, site_posted_at),
-		// cuma langkah posting-ke-Blogger-nya yang dilewati.
-		const postToBlogger = postedSoFar < cap;
-		const r = await newsProcessOne(env, { postToBlogger });
+		if (postedSoFar >= cap) break; // Blogger capped -> loop Blogger cukup di sini, bukan urusan loop situs di bawah.
+		const r = await newsProcessOne(env, { postToBlogger: true });
 		if (!r.done) break; // tidak ada artikel 'new'
 		if (r.postUrl) {
 			posted++;
 			postedSoFar++;
-		} else if (r.siteOnly) {
-			siteOnly++;
 		}
 		if (r.error) lastError = r.error;
 		// Geo-block sementara di edge ini -> hentikan tick, jangan ulang artikel yang
 		// sama berkali-kali (edge-nya sama sepanjang 1 invocation).
+		if (r.error && /location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED/i.test(r.error)) break;
+	}
+	// ---- Loop 2: SITUS SENDIRI -- 100% terpisah, postToBlogger SELALU false di
+	// sini (tidak pernah coba posting Blogger sama sekali), pace-nya cuma dari
+	// site_per_run. Berjalan tiap tick TERLEPAS dari status cap Blogger di atas. ----
+	let siteOnly = 0;
+	for (let i = 0; i < sitePerRun; i++) {
+		const r = await newsProcessOne(env, { postToBlogger: false });
+		if (!r.done) break; // tidak ada artikel 'new' lagi
+		if (r.siteOnly) siteOnly++;
+		if (r.error) lastError = r.error;
 		if (r.error && /location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED/i.test(r.error)) break;
 	}
 	const capped = postedSoFar >= cap;
@@ -891,7 +932,7 @@ export async function botNewsRun(
 		// perlu buka database tiap kali cuma buat tahu KENAPA 0.
 		message:
 			`Feed +${pull.added} artikel baru; diposting ${posted} ke Blogger` +
-			(siteOnly ? `, +${siteOnly} khusus situs sendiri (Blogger sudah kena batas harian)` : "") +
+			(siteOnly ? `, +${siteOnly} ke situs sendiri (jalur terpisah, independen dari Blogger)` : "") +
 			"." +
 			(posted === 0 && siteOnly === 0 && lastError ? ` [${lastError.slice(0, 200)}]` : ""),
 	};
@@ -936,6 +977,7 @@ export async function botNewsSnapshot(env: Env) {
 			enabled: String(cfg.enabled || "0") === "1",
 			per_run: Number(cfg.per_run || "2"),
 			daily_cap: Number(cfg.daily_cap || "8"),
+			site_per_run: Number(cfg.site_per_run ?? "5"),
 			attribution: String(cfg.attribution || "1") === "1",
 			rewrite_style: cfg.rewrite_style || "",
 			para_min: Number(cfg.para_min || "8"),
