@@ -18,6 +18,12 @@ export async function ensureNewsCategoryColumns(env: Env): Promise<void> {
 	for (const stmt of [
 		`ALTER TABLE news_source ADD COLUMN category TEXT NOT NULL DEFAULT 'umum'`,
 		`ALTER TABLE news_article ADD COLUMN category TEXT NOT NULL DEFAULT 'umum'`,
+		// site_posted_at = kapan artikel ini tersedia di LapakStore88 (Berita Terkini) --
+		// TERPISAH dari posted_at (kapan sukses posting ke Blogger). Blogger tetap
+		// dibatasi daily_cap (anti-spam-flag), tapi situs sendiri TIDAK dibatasi sama
+		// sekali (lihat newsProcessOne/botNewsRun) -- pemilik minta situs sendiri boleh
+		// jauh lebih banyak daripada Blogger.
+		`ALTER TABLE news_article ADD COLUMN site_posted_at TEXT NOT NULL DEFAULT ''`,
 	]) {
 		try {
 			await getTurso(env).prepare(stmt).run();
@@ -669,7 +675,11 @@ export async function fbDirectRun(env: Env): Promise<{ posted: number; message: 
 // ---------------------------------------------------------------------------
 // Proses 1 artikel: rewrite -> post -> tandai
 // ---------------------------------------------------------------------------
-export async function newsProcessOne(env: Env): Promise<{ done: boolean; title?: string; postUrl?: string; error?: string }> {
+export async function newsProcessOne(
+	env: Env,
+	opts: { postToBlogger: boolean } = { postToBlogger: true },
+): Promise<{ done: boolean; title?: string; postUrl?: string; error?: string; siteOnly?: boolean }> {
+	await ensureNewsCategoryColumns(env);
 	const cfg = await botCfg(env);
 	const row = await getTurso(env)
 		.prepare(`SELECT * FROM news_article WHERE status = 'new' ORDER BY id ASC LIMIT 1`)
@@ -715,6 +725,15 @@ export async function newsProcessOne(env: Env): Promise<{ done: boolean; title?:
 				`\n<p style="font-size:14px;margin-top:14px">📘 Follow Fanspage kami di Facebook: ` +
 				`<a href="${escAttr(fbPageUrl)}" rel="noopener" target="_blank"><strong>klik di sini</strong></a></p>`;
 		}
+		// Promosi silang ke situs Blogger -- SELALU disisipkan (tidak digate
+		// postToBlogger) karena ini juga ikut tayang di artikel Berita Terkini
+		// LapakStore88, bukan cuma di postingan Blogger itu sendiri.
+		const bloggerSiteUrl = (cfg.blogger_site_url || "").trim();
+		if (bloggerSiteUrl) {
+			content +=
+				`\n<p style="font-size:14px;margin-top:10px">📰 Baca artikel lainnya di blog kami: ` +
+				`<a href="${escAttr(bloggerSiteUrl)}" rel="noopener" target="_blank"><strong>kunjungi blog</strong></a></p>`;
+		}
 		// Feed Google News (dipakai Kompas/Tribunnews) tidak menyertakan gambar
 		// sama sekali -> post-nya tampil tanpa thumbnail di daftar Blogger. Kalau
 		// image_url kosong, coba ambil <meta og:image> dari halaman artikel asli
@@ -733,23 +752,29 @@ export async function newsProcessOne(env: Env): Promise<{ done: boolean; title?:
 		for (const l of String(cfg.post_labels || "").split(",").map((x) => x.trim()).filter(Boolean)) {
 			if (!labels.includes(l)) labels.push(l);
 		}
-		const postUrl = await bloggerCreatePost(env, cfg, { title: rw.title, content, labels, searchDescription: rw.metaDescription });
-		await getTurso(env)
-			.prepare(`UPDATE news_article SET status='posted', rewritten_html=?, post_url=?, posted_at=?, error='' WHERE id=?`)
-			.bind(content, postUrl, tsNow(), id)
-			.run();
-
-		// Auto-share ke Facebook Page — GAGAL DI SINI TIDAK BOLEH membatalkan
-		// posting Blogger yang sudah berhasil (non-fatal, dicatat saja).
-		if (String(cfg.fb_enabled || "0") === "1") {
-			try {
-				await fbPostToPage(cfg, { title: rw.title, metaDescription: rw.metaDescription, postUrl, imageUrl });
-			} catch (e) {
-				console.error("fbPostToPage gagal:", e instanceof Error ? e.message : e);
+		// Blogger (dan Facebook auto-share yang menyertainya) TETAP dibatasi
+		// daily_cap milik pemilik akun -- kalau limit sudah tercapai, lewati
+		// langkah ini, tapi artikel TETAP disimpan & tersedia di situs sendiri
+		// (site_posted_at) lewat cabang else di bawah. Jadi situs sendiri tidak
+		// pernah "menunggu jatah" Blogger.
+		let postUrl = "";
+		if (opts.postToBlogger) {
+			postUrl = await bloggerCreatePost(env, cfg, { title: rw.title, content, labels, searchDescription: rw.metaDescription });
+			if (String(cfg.fb_enabled || "0") === "1") {
+				try {
+					await fbPostToPage(cfg, { title: rw.title, metaDescription: rw.metaDescription, postUrl, imageUrl });
+				} catch (e) {
+					console.error("fbPostToPage gagal:", e instanceof Error ? e.message : e);
+				}
 			}
 		}
+		const now = tsNow();
+		await getTurso(env)
+			.prepare(`UPDATE news_article SET status=?, rewritten_html=?, post_url=?, posted_at=?, site_posted_at=?, error='' WHERE id=?`)
+			.bind(postUrl ? "posted" : "site", content, postUrl, postUrl ? now : "", now, id)
+			.run();
 
-		return { done: true, title: rw.title, postUrl };
+		return { done: true, title: rw.title, postUrl: postUrl || undefined, siteOnly: !postUrl };
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
 		// "User location is not supported" = Cloudflare edge yg kebagian request ini
@@ -803,24 +828,27 @@ export async function botNewsRun(
 	// Query 1x, lalu update di memori -> bukan 1 query/iterasi (hemat subrequest).
 	let postedSoFar = await postedToday(env);
 	let posted = 0;
-	let capped = false;
+	let siteOnly = 0;
 	let lastError = "";
 	for (let i = 0; i < perRun; i++) {
-		if (postedSoFar >= cap) {
-			capped = true;
-			break;
-		}
-		const r = await newsProcessOne(env);
+		// Blogger capped -> BUKAN alasan untuk berhenti total. Artikel tetap
+		// di-rewrite & disimpan utk situs sendiri (newsProcessOne, site_posted_at),
+		// cuma langkah posting-ke-Blogger-nya yang dilewati.
+		const postToBlogger = postedSoFar < cap;
+		const r = await newsProcessOne(env, { postToBlogger });
 		if (!r.done) break; // tidak ada artikel 'new'
 		if (r.postUrl) {
 			posted++;
 			postedSoFar++;
+		} else if (r.siteOnly) {
+			siteOnly++;
 		}
 		if (r.error) lastError = r.error;
 		// Geo-block sementara di edge ini -> hentikan tick, jangan ulang artikel yang
 		// sama berkali-kali (edge-nya sama sepanjang 1 invocation).
 		if (r.error && /location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED/i.test(r.error)) break;
 	}
+	const capped = postedSoFar >= cap;
 	return {
 		pulled: pull.added,
 		posted,
@@ -828,8 +856,10 @@ export async function botNewsRun(
 		// Kalau 0 posting & ada error, tampilkan alasannya -- biar user/kita tidak
 		// perlu buka database tiap kali cuma buat tahu KENAPA 0.
 		message:
-			`Feed +${pull.added} artikel baru; diposting ${posted}${capped ? " (batas harian tercapai)" : ""}.` +
-			(posted === 0 && lastError ? ` [${lastError.slice(0, 200)}]` : ""),
+			`Feed +${pull.added} artikel baru; diposting ${posted} ke Blogger` +
+			(siteOnly ? `, +${siteOnly} khusus situs sendiri (Blogger sudah kena batas harian)` : "") +
+			"." +
+			(posted === 0 && siteOnly === 0 && lastError ? ` [${lastError.slice(0, 200)}]` : ""),
 	};
 }
 
@@ -883,12 +913,17 @@ export async function botNewsSnapshot(env: Env) {
 			has_gemini_key: !!cfg.gemini_key,
 			has_blogger: !!(cfg.blogger_refresh_token && cfg.blogger_blog_id),
 			blog_id: cfg.blogger_blog_id || "",
+			blogger_site_url: cfg.blogger_site_url || "",
 			fb_enabled: String(cfg.fb_enabled || "0") === "1",
 			fb_page_id: cfg.fb_page_id || "",
 			has_facebook: !!(cfg.fb_page_id && cfg.fb_page_token),
 			fb_direct_enabled: String(cfg.fb_direct_enabled || "0") === "1",
 			fb_direct_daily_cap: Number(cfg.fb_direct_daily_cap || "50"),
 			fb_page_url: cfg.fb_page_url || "",
+			news_banner_enabled: String(cfg.news_banner_enabled || "0") === "1",
+			news_banner_image: cfg.news_banner_image || "",
+			news_banner_url: cfg.news_banner_url || "",
+			news_banner_text: cfg.news_banner_text || "",
 		},
 		postedToday: await postedToday(env),
 		fbDirectPostedToday: await fbDirectPostedToday(env),
@@ -904,22 +939,25 @@ export async function botNewsSnapshot(env: Env) {
 }
 
 // ---------------------------------------------------------------------------
-// Untuk situs publik (LapakStore88 "Berita Terkini") — TANPA sesi/auth, jadi
-// cuma boleh mengembalikan artikel yang sudah status='posted' (sudah lolos
-// rewrite & terbit), tidak pernah artikel 'new'/'error' yang isinya masih
-// mentah/gagal.
+// Untuk situs publik (LapakStore88 "Berita Terkini") — TANPA sesi/auth. Filter
+// pakai site_posted_at (BUKAN status='posted') karena situs sendiri sengaja
+// TIDAK dibatasi daily_cap Blogger -- artikel bisa "site_posted_at" terisi
+// (status='site') meski belum/tidak pernah diposting ke Blogger. Tetap tidak
+// pernah menampilkan artikel 'new'/'error' yang isinya masih mentah/gagal.
 // ---------------------------------------------------------------------------
 export async function publicNewsList(env: Env, category: string, page: number, pageSize: number) {
 	await ensureNewsCategoryColumns(env);
 	const size = Math.min(30, Math.max(1, pageSize || 20));
 	const offset = Math.max(0, (Math.max(1, page || 1) - 1) * size);
 	const cat = category && (NEWS_CATEGORIES as readonly string[]).includes(category) ? category : "";
-	const where = cat ? `WHERE status='posted' AND category=?` : `WHERE status='posted'`;
+	const where = cat ? `WHERE site_posted_at != '' AND category=?` : `WHERE site_posted_at != ''`;
 	const args = cat ? [cat] : [];
 	const rows =
 		(
 			await getTurso(env)
-				.prepare(`SELECT id, title, excerpt, image_url, category, source, posted_at FROM news_article ${where} ORDER BY posted_at DESC, id DESC LIMIT ? OFFSET ?`)
+				.prepare(
+					`SELECT id, title, excerpt, image_url, category, source, site_posted_at AS posted_at FROM news_article ${where} ORDER BY site_posted_at DESC, id DESC LIMIT ? OFFSET ?`,
+				)
 				.bind(...args, size, offset)
 				.all<{ id: number; title: string; excerpt: string; image_url: string; category: string; source: string; posted_at: string }>()
 		).results ?? [];
@@ -932,9 +970,36 @@ export async function publicNewsList(env: Env, category: string, page: number, p
 export async function publicNewsDetail(env: Env, id: number) {
 	await ensureNewsCategoryColumns(env);
 	const row = await getTurso(env)
-		.prepare(`SELECT id, title, rewritten_html, image_url, category, source, url, posted_at FROM news_article WHERE id=? AND status='posted'`)
+		.prepare(`SELECT id, title, rewritten_html, image_url, category, source, url, site_posted_at AS posted_at FROM news_article WHERE id=? AND site_posted_at != ''`)
 		.bind(id)
 		.first<{ id: number; title: string; rewritten_html: string; image_url: string; category: string; source: string; url: string; posted_at: string }>();
 	if (!row) return { success: false, message: "Artikel tidak ditemukan." };
 	return { success: true, article: row };
+}
+
+/** Banner promosi sidebar Berita Terkini -- diatur dari Panel BOT (Konfigurasi Lanjutan). */
+export async function publicNewsBanner(env: Env) {
+	const cfg = await botCfg(env);
+	if (String(cfg.news_banner_enabled || "0") !== "1" || !cfg.news_banner_image) return { success: true, banner: null };
+	return {
+		success: true,
+		banner: { image: cfg.news_banner_image, url: cfg.news_banner_url || "", text: cfg.news_banner_text || "" },
+	};
+}
+
+/** Beberapa artikel acak (utk widget "Arsip Berita" sidebar) -- kalau category dikirim, hanya dari kategori itu. */
+export async function publicNewsRandom(env: Env, category: string, limit: number) {
+	await ensureNewsCategoryColumns(env);
+	const n = Math.min(20, Math.max(1, limit || 6));
+	const cat = category && (NEWS_CATEGORIES as readonly string[]).includes(category) ? category : "";
+	const where = cat ? `WHERE site_posted_at != '' AND category=?` : `WHERE site_posted_at != ''`;
+	const args = cat ? [cat] : [];
+	const rows =
+		(
+			await getTurso(env)
+				.prepare(`SELECT id, title, image_url, category FROM news_article ${where} ORDER BY RANDOM() LIMIT ?`)
+				.bind(...args, n)
+				.all<{ id: number; title: string; image_url: string; category: string }>()
+		).results ?? [];
+	return { success: true, articles: rows };
 }

@@ -66,7 +66,7 @@ import {
 	botNewsStatus,
 	botNewsToggleSource,
 } from "./api/bot";
-import { botNewsRun, fbDirectRun, publicNewsDetail, publicNewsList } from "./lib/bot-news";
+import { botNewsRun, fbDirectRun, publicNewsBanner, publicNewsDetail, publicNewsList, publicNewsRandom } from "./lib/bot-news";
 
 type Handler = (env: Env, body: Record<string, unknown>) => Promise<unknown>;
 const s = (v: unknown) => String(v ?? "");
@@ -292,13 +292,20 @@ export default {
 		if (url.pathname === "/public/news") {
 			try {
 				const category = url.searchParams.get("category") || "";
-				const page = parseInt(url.searchParams.get("page") || "1", 10);
-				const pageSize = parseInt(url.searchParams.get("pageSize") || "20", 10);
+				if (url.searchParams.get("banner")) {
+					return json(await publicNewsBanner(env), 200);
+				}
+				if (url.searchParams.get("random")) {
+					const limit = parseInt(url.searchParams.get("limit") || "6", 10);
+					return json(await publicNewsRandom(env, category, limit), 200);
+				}
 				const idParam = url.searchParams.get("id");
 				if (idParam) {
 					const out = await publicNewsDetail(env, Number(idParam));
 					return json(out, out.success ? 200 : 404);
 				}
+				const page = parseInt(url.searchParams.get("page") || "1", 10);
+				const pageSize = parseInt(url.searchParams.get("pageSize") || "20", 10);
 				const out = await publicNewsList(env, category, page, pageSize);
 				return json(out, 200);
 			} catch (e) {

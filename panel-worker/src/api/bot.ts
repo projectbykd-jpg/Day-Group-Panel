@@ -25,12 +25,13 @@ export async function botNewsSaveConfig(env: Env, token: string, data: Record<st
 	const allow = [
 		"enabled", "per_run", "daily_cap", "attribution", "rewrite_style", "gemini_model", "gemini_key",
 		"blogger_blog_id", "para_min", "para_max", "promo_url", "promo_text", "post_labels",
-		"fb_enabled", "fb_page_id", "fb_page_token", "fb_direct_enabled", "fb_direct_daily_cap", "fb_page_url",
+		"fb_enabled", "fb_page_id", "fb_page_token", "fb_direct_enabled", "fb_direct_daily_cap", "fb_page_url", "blogger_site_url",
+		"news_banner_enabled", "news_banner_image", "news_banner_url", "news_banner_text",
 	];
 	for (const k of allow) {
 		if (Object.prototype.hasOwnProperty.call(data, k)) {
 			let v = String((data as any)[k] ?? "").trim();
-			if (k === "enabled" || k === "attribution" || k === "fb_enabled" || k === "fb_direct_enabled") v = v === "1" || v === "true" ? "1" : "0";
+			if (k === "enabled" || k === "attribution" || k === "fb_enabled" || k === "fb_direct_enabled" || k === "news_banner_enabled") v = v === "1" || v === "true" ? "1" : "0";
 			if ((k === "fb_page_token") && !v) continue; // kosongkan input token TIDAK menghapus yg tersimpan
 			patch[k] = v;
 		}
