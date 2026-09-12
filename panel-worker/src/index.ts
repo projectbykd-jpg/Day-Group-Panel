@@ -67,7 +67,7 @@ import {
 	botNewsStatus,
 	botNewsToggleSource,
 } from "./api/bot";
-import { botNewsRun, disableGnewsSources, fbDirectRun, publicNewsBanner, publicNewsDetail, publicNewsList, publicNewsRandom, seedCategorySources } from "./lib/bot-news";
+import { botNewsRun, disableGnewsSources, fbDirectRun, newsPullSources, publicNewsBanner, publicNewsDetail, publicNewsList, publicNewsRandom, seedCategorySources } from "./lib/bot-news";
 
 type Handler = (env: Env, body: Record<string, unknown>) => Promise<unknown>;
 const s = (v: unknown) => String(v ?? "");
@@ -409,6 +409,13 @@ export default {
 				}
 				if (job === "news" || job === "all") {
 					out.news = await botNewsRun(env);
+				}
+				// Job KHUSUS tarik RSS -- SENGAJA TIDAK ikut "all"/"news" lagi (lihat
+				// komentar di botNewsRun): gabung pull+proses dalam 1 invocation kena
+				// "Too many subrequests" berulang kali. Dipanggil cron eksternal
+				// TERPISAH (mis. tiap 10-15 menit), aman sendiri (~10 subrequest).
+				if (job === "pullnews") {
+					out.pull = await newsPullSources(env);
 				}
 				// Job TERPISAH sengaja TIDAK ikut "all" -- dipanggil cron sendiri tiap
 				// 10 menit (1 artikel/panggilan), independen dari jadwal Blogger.

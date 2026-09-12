@@ -6,7 +6,7 @@ import { tsNow } from "./time";
 // Dipakai dropdown "Tambah Sumber" (panel) & filter kategori di endpoint publik
 // /public/news. Daftar cocok dengan kategori RSS Liputan6 yang sudah dicek --
 // begitu sumber per-kategori ditambahkan, artikelnya otomatis kebagi rapi.
-export const NEWS_CATEGORIES = ["umum", "nasional", "bisnis", "olahraga", "bola", "hiburan", "teknologi", "otomotif", "kesehatan", "lifestyle"] as const;
+export const NEWS_CATEGORIES = ["umum", "nasional", "bisnis", "olahraga", "bola", "hiburan", "selebritis", "teknologi", "otomotif", "kesehatan", "lifestyle"] as const;
 const NEWS_CATEGORY_LABELS: Record<string, string> = {
 	umum: "Umum",
 	nasional: "Nasional",
@@ -14,6 +14,7 @@ const NEWS_CATEGORY_LABELS: Record<string, string> = {
 	olahraga: "Olahraga",
 	bola: "Bola",
 	hiburan: "Hiburan",
+	selebritis: "Selebritis",
 	teknologi: "Teknologi",
 	otomotif: "Otomotif",
 	kesehatan: "Kesehatan",
@@ -201,10 +202,16 @@ async function fetchFeed(kind: string, url: string): Promise<FeedItem[]> {
 // ---------------------------------------------------------------------------
 export async function newsPullSources(env: Env, perSource = 6): Promise<{ added: number; scanned: number }> {
 	await ensureNewsCategoryColumns(env);
+	// ORDER BY RANDOM() -- PENTING: EXTERNAL_FETCH_BUDGET di bawah (14) selalu
+	// lebih kecil dari jumlah sumber aktif sekarang (~19+ setelah nambah RSS
+	// per-kategori Liputan6+Detik), jadi kalau urutannya tetap (id ASC, default
+	// SQLite), sumber dgn id lebih besar (yang paling baru ditambah) TIDAK
+	// PERNAH kebagian giliran ditarik -- budget selalu habis duluan di sumber
+	// lama. Acak urutannya tiap pull supaya semua sumber gantian kebagian.
 	const srcs =
 		(
 			await getTurso(env)
-				.prepare(`SELECT id, name, kind, url, category FROM news_source WHERE active = 1`)
+				.prepare(`SELECT id, name, kind, url, category FROM news_source WHERE active = 1 ORDER BY RANDOM()`)
 				.all<{ id: number; name: string; kind: string; url: string; category: string }>()
 		).results ?? [];
 	// Cloudflare Free: 50 subrequest/invocation, TERHITUNG jg query Turso — dan
@@ -930,13 +937,38 @@ export async function botNewsRun(
 	// diisi), "" ?? "5" tetap "" (cuma null/undefined yg ke-catch "??"), lalu
 	// Number("")=0 -> loop situs mati total tanpa pesan error apa pun. "||" aman
 	// dari kasus itu, dan tetap menghormati "0" eksplisit (mematikan loop situs).
-	const sitePerRun = mode === "blogger" ? 0 : countOverride || Math.max(0, Number(cfg.site_per_run || "5"));
+	let sitePerRun = mode === "blogger" ? 0 : countOverride || Math.max(0, Number(cfg.site_per_run || "5"));
+	// PENTING: kalau mode="both" (ini yang dipanggil cron eksternal otomatis),
+	// loop Blogger & situs jalan dalam 1 INVOCATION yang SAMA -> subrequest-nya
+	// NUMPUK (tiap artikel Blogger ~6-9 subrequest: Gemini+Blogger+FB+Turso;
+	// situs ~3-4). Cloudflare Free cuma 50 subrequest/invocation, dan begitu
+	// kelewat, SELURUH invocation mati mendadak (exception tidak tertangkap
+	// try/catch manapun) -- bukan cuma loop situs yang gagal, Blogger yang
+	// sudah jalan duluan pun ikut tidak sempat tersimpan. Makanya cron
+	// otomatis "kelihatan cuma posting Blogger" (kadang malah dua²nya gagal
+	// diam²): total gabungan kelewat limit. Klik manual TIDAK kena batas ini
+	// (mode="site"/"blogger" sendiri-sendiri, tidak ada loop lain yang numpuk
+	// di invocation yang sama).
+	if (mode === "both") {
+		// 6 ternyata masih kena "Too many subrequests" sesekali (tiap artikel Blogger
+		// bisa sampai ~4 subrequest CUMA utk retry beberapa model Gemini kalau satu
+		// model gagal, belum lagi Blogger+FB+Turso) -- turun ke angka yang jauh lebih
+		// konservatif. Klik manual "PROSES KE SITUS SENDIRI" TIDAK kena batas ini
+		// (invocation sendiri, tidak numpuk dgn loop Blogger), jadi tetap jadi cara
+		// utama isi banyak sekaligus; otomatis cukup nyicil pasti-jalan tiap tick.
+		const SAFE_COMBINED_BUDGET = 4;
+		sitePerRun = Math.max(0, Math.min(sitePerRun, SAFE_COMBINED_BUDGET - perRun));
+	}
 
-	// newsPullSources sendiri makan ~17 subrequest (feed+resolve+batch insert).
-	// Kalau antrean 'new' sudah cukup (backlog), lewati pull -> hemat anggaran
-	// buat proses artikel (masih kena limit 50/invocation kalau ditambah).
-	const queued = await getTurso(env).prepare(`SELECT COUNT(*) AS c FROM news_article WHERE status = 'new'`).first<{ c: number }>();
-	const pull = Number(queued?.c ?? 0) >= Math.max(1, perRun + sitePerRun) * 3 ? { added: 0, scanned: 0 } : await newsPullSources(env);
+	// Coba pull+proses dalam 1 invocation ternyata TETAP kelewat limit 50
+	// subrequest walau sudah dikecilkan -- perkiraan biaya per artikel di
+	// kondisi geo-block Gemini (retry beberapa model, masing² 1 subrequest)
+	// ternyata lebih mahal dari perkiraan. Daripada tebak-tebak angka lagi,
+	// PISAH TOTAL: pull TIDAK PERNAH jalan inline di sini lagi -- jalankan
+	// lewat job KHUSUS (/__cron?job=pullnews) yang isinya CUMA
+	// newsPullSources tanpa proses apa pun sesudahnya (aman sendiri, ~10
+	// subrequest), dipanggil cron eksternal terpisah dari job=news.
+	const pull = { added: 0, scanned: 0 };
 
 	const cap = Number(cfg.daily_cap || "8");
 	// Query 1x, lalu update di memori -> bukan 1 query/iterasi (hemat subrequest).
@@ -1134,6 +1166,7 @@ export async function seedCategorySources(env: Env): Promise<{ added: string[]; 
 		{ name: "Detik Health", url: "https://health.detik.com/rss", category: "kesehatan" },
 		{ name: "Detik Wolipop", url: "https://wolipop.detik.com/rss", category: "lifestyle" },
 		{ name: "Detik Travel", url: "https://travel.detik.com/rss", category: "lifestyle" },
+		{ name: "Liputan6 Selebritis", url: "https://feed.liputan6.com/rss/showbiz/celeb", category: "selebritis" },
 	];
 	const added: string[] = [];
 	const skipped: string[] = [];
