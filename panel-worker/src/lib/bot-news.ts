@@ -752,11 +752,20 @@ export async function newsProcessOne(
 ): Promise<{ done: boolean; title?: string; postUrl?: string; error?: string; siteOnly?: boolean }> {
 	await ensureNewsCategoryColumns(env);
 	const cfg = await botCfg(env);
-	// RANDOM (bukan FIFO/id ASC) -- pemilik minta artikel yang diproses "diacak",
-	// supaya tidak keterusan memproses satu sumber/kategori secara berurutan
-	// lama sebelum sempat menyentuh kategori lain di antrean yang sama.
+	// RANDOM PER-KATEGORI (bukan RANDOM mentah atas semua baris, dan bukan
+	// FIFO/id ASC) -- pemilik minta semua kategori kebagian, bukan cuma "umum".
+	// RANDOM mentah tetap bias ke kategori dengan backlog paling besar (mis.
+	// "umum" yang sumbernya sudah lama aktif) sehingga kategori baru dgn
+	// backlog kecil (Bola/Selebritis dll) nyaris tidak pernah kepilih selama
+	// backlog besar itu belum habis. Di sini kategori dipilih acak dulu
+	// (tiap kategori yg masih punya antrean == peluang sama), baru artikel
+	// acak DI DALAM kategori itu.
 	const row = await getTurso(env)
-		.prepare(`SELECT * FROM news_article WHERE status = 'new' ORDER BY RANDOM() LIMIT 1`)
+		.prepare(
+			`SELECT * FROM news_article WHERE status = 'new' AND category = (
+				SELECT category FROM news_article WHERE status = 'new' GROUP BY category ORDER BY RANDOM() LIMIT 1
+			) ORDER BY RANDOM() LIMIT 1`,
+		)
 		.first<Record<string, string>>();
 	if (!row) return { done: false };
 	const id = Number(row.id);
@@ -930,7 +939,7 @@ export async function botNewsRun(
 		return { pulled: 0, posted: 0, siteOnly: 0, capped: false, message: "BOT NEWS dimatikan (enabled=0)." };
 	}
 	const countOverride = opts.count ? Math.max(1, Math.min(MAX_RUN_COUNT, Math.floor(opts.count))) : 0;
-	const perRun = mode === "site" ? 0 : countOverride || Math.max(1, Number(cfg.per_run || "2"));
+	let perRun = mode === "site" ? 0 : countOverride || Math.max(1, Number(cfg.per_run || "2"));
 	// Pace KHUSUS situs sendiri (LapakStore88) -- SENGAJA terpisah total dari
 	// per_run/daily_cap Blogger di atas. PENTING: pakai "||" bukan "??" -- kalau
 	// field ini pernah tersimpan sebagai string kosong (mis. form disimpan tanpa
@@ -956,7 +965,21 @@ export async function botNewsRun(
 		// konservatif. Klik manual "PROSES KE SITUS SENDIRI" TIDAK kena batas ini
 		// (invocation sendiri, tidak numpuk dgn loop Blogger), jadi tetap jadi cara
 		// utama isi banyak sekaligus; otomatis cukup nyicil pasti-jalan tiap tick.
-		const SAFE_COMBINED_BUDGET = 4;
+		//
+		// KEDUA: dibatasi juga demi WAKTU, bukan cuma subrequest -- 1 artikel
+		// (Gemini rewrite + posting Blogger + Facebook, semua berurutan) makan
+		// ~8 detik rata-rata (terukur langsung). 4 artikel/panggilan = ~32 detik,
+		// TERBUKTI kelewat batas tunggu banyak layanan cron eksternal (~30 detik)
+		// -- begitu lewat, layanan cron itu melaporkan "timeout" (walau Worker-nya
+		// sendiri tetap selesai normal). Coba dibalas cepat + lanjut di
+		// background lewat ctx.waitUntil TERNYATA LEBIH BURUK: Cloudflare
+		// membatalkan task waitUntil yang belum selesai dalam waktu tertentu,
+		// jadi artikelnya malah TIDAK PERNAH selesai diproses sama sekali
+		// (dibuktikan lewat wrangler tail: "waitUntil() tasks did not complete
+		// ... have been cancelled"). Solusi yang benar-benar aman: kecilkan
+		// beban per panggilan supaya beneran selesai jauh di bawah 30 detik.
+		const SAFE_COMBINED_BUDGET = 2;
+		perRun = Math.min(perRun, SAFE_COMBINED_BUDGET);
 		sitePerRun = Math.max(0, Math.min(sitePerRun, SAFE_COMBINED_BUDGET - perRun));
 	}
 

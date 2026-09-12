@@ -397,6 +397,19 @@ export default {
 				return json({ ok: true, baseUrl, cookiePreview: cookie.slice(0, 20) + "…", results });
 			}
 
+			// PERNAH DICOBA: balas cron SEGERA lalu lanjutkan botNewsRun via
+			// ctx.waitUntil supaya cron eksternal tidak pernah menunggu lama.
+			// TERBUKTI SALAH lewat pengetesan langsung (wrangler tail): Cloudflare
+			// membatalkan task waitUntil yang belum selesai dalam waktu tertentu
+			// sesudah respons dikirim ("waitUntil() tasks did not complete within
+			// the allowed time... have been cancelled") -- karena proses kita
+			// (~32 detik saat 4 artikel lancar) melebihi batas itu, artikelnya
+			// JUSTRU TIDAK PERNAH selesai diproses sama sekali (lebih parah dari
+			// sekadar "cron-nya lapor timeout" seperti semula). Makanya di sini
+			// TETAP sinkron (di-await penuh) -- lihat perbaikan nyata di
+			// SAFE_COMBINED_BUDGET (botNewsRun) yang MEMPERKECIL beban per
+			// panggilan supaya selesai jauh di bawah 30 detik, bukan menyembunyikan
+			// waktu prosesnya dari cron.
 			const out: Record<string, unknown> = { ok: true, job, ts: Date.now() };
 			try {
 				if (job === "autopost" || job === "all") {
@@ -441,6 +454,36 @@ export default {
 				// menemukan apa pun.
 				if (job === "listsources") {
 					out.sources = (await getTurso(env).prepare(`SELECT id, name, kind, url, active, category FROM news_source ORDER BY id`).all()).results;
+				}
+				// Diagnosa: hitung artikel per kategori -- berapa yang masih antre
+				// (status='new'), sudah posting Blogger (status='posted'), dan sudah
+				// tayang di situs sendiri (site_posted_at != '').
+				// Diagnosa sementara: lihat 8 artikel TERAKHIR yang statusnya berubah
+				// (posted/site) plus timestamp-nya -- dipakai buat verifikasi apakah
+				// ctx.waitUntil() di job=news/pullnews beneran jalan sampai selesai
+				// di background, bukan cuma keliatan cepat tapi diam-diam batal.
+				if (job === "recentpost") {
+					out.recent = (
+						await getTurso(env)
+							.prepare(
+								`SELECT id, category, status, posted_at, site_posted_at FROM news_article WHERE status='posted' OR site_posted_at != '' ORDER BY id DESC LIMIT 8`,
+							)
+							.all()
+					).results;
+				}
+				if (job === "catstats") {
+					out.stats = (
+						await getTurso(env)
+							.prepare(
+								`SELECT category,
+									COUNT(*) AS total,
+									SUM(CASE WHEN status='new' THEN 1 ELSE 0 END) AS queued,
+									SUM(CASE WHEN status='posted' THEN 1 ELSE 0 END) AS blogger_posted,
+									SUM(CASE WHEN site_posted_at != '' THEN 1 ELSE 0 END) AS site_posted
+								FROM news_article GROUP BY category ORDER BY total DESC`
+							)
+							.all()
+					).results;
 				}
 				// One-shot: sumber Kompas sudah nonaktif duluan, TAPI ratusan artikel
 				// yang sudah kelanjur ditarik sebelumnya (status='new') tetap akan terus
