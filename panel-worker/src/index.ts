@@ -66,7 +66,7 @@ import {
 	botNewsStatus,
 	botNewsToggleSource,
 } from "./api/bot";
-import { botNewsRun, fbDirectRun } from "./lib/bot-news";
+import { botNewsRun, fbDirectRun, publicNewsDetail, publicNewsList } from "./lib/bot-news";
 
 type Handler = (env: Env, body: Record<string, unknown>) => Promise<unknown>;
 const s = (v: unknown) => String(v ?? "");
@@ -282,6 +282,27 @@ export default {
 				return new Response(r.body, { headers: { "content-type": ct, "cache-control": "public, max-age=3600", ...CORS_HEADERS } });
 			} catch {
 				return Response.redirect(target, 302);
+			}
+		}
+
+		// Endpoint PUBLIK (tanpa sesi) untuk situs "Berita Terkini" di LapakStore88 --
+		// cuma baca (read-only), cuma artikel status='posted' yang pernah dikembalikan
+		// (lihat publicNewsList/publicNewsDetail di lib/bot-news.ts). CORS dibuka lebar
+		// karena memang dikonsumsi dari origin lain (lokalstore88.online, GitHub Pages).
+		if (url.pathname === "/public/news") {
+			try {
+				const category = url.searchParams.get("category") || "";
+				const page = parseInt(url.searchParams.get("page") || "1", 10);
+				const pageSize = parseInt(url.searchParams.get("pageSize") || "20", 10);
+				const idParam = url.searchParams.get("id");
+				if (idParam) {
+					const out = await publicNewsDetail(env, Number(idParam));
+					return json(out, out.success ? 200 : 404);
+				}
+				const out = await publicNewsList(env, category, page, pageSize);
+				return json(out, 200);
+			} catch (e) {
+				return json({ success: false, message: e instanceof Error ? e.message : String(e) }, 500);
 			}
 		}
 

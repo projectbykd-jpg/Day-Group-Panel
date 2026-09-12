@@ -3,7 +3,7 @@ import { requireSession } from "./auth";
 import { logActivity } from "../lib/activity";
 import { getTurso } from "../lib/turso";
 import { tsNow } from "../lib/time";
-import { botCfgSet, botNewsRun, botNewsSnapshot, fbDirectProcessOne, fbTemplateGenerate } from "../lib/bot-news";
+import { botCfgSet, botNewsRun, botNewsSnapshot, ensureNewsCategoryColumns, fbDirectProcessOne, fbTemplateGenerate, NEWS_CATEGORIES } from "../lib/bot-news";
 
 async function gate(env: Env, token: string) {
 	// BOT & ADMIN sama-sama boleh; OPERATOR/VIEWER ditolak.
@@ -45,11 +45,14 @@ export async function botNewsAddSource(env: Env, token: string, data: Record<str
 	const name = String(data.name ?? "").trim();
 	const url = String(data.url ?? "").trim();
 	const kind = String(data.kind ?? "rss").trim().toLowerCase();
+	const category = String(data.category ?? "umum").trim().toLowerCase();
 	if (!name || !/^https?:\/\//i.test(url)) throw new Error("Nama & URL feed wajib (URL harus http/https).");
 	if (!["rss", "gnews", "scrape"].includes(kind)) throw new Error("Jenis sumber tidak valid.");
+	if (!(NEWS_CATEGORIES as readonly string[]).includes(category)) throw new Error("Kategori tidak valid.");
+	await ensureNewsCategoryColumns(env);
 	await getTurso(env)
-		.prepare(`INSERT INTO news_source (name, kind, url, active, added_at) VALUES (?, ?, ?, 1, ?)`)
-		.bind(name, kind, url, tsNow())
+		.prepare(`INSERT INTO news_source (name, kind, url, active, added_at, category) VALUES (?, ?, ?, 1, ?, ?)`)
+		.bind(name, kind, url, tsNow(), category)
 		.run();
 	await logActivity(env, s.username, "BOT NEWS SUMBER", "Tambah sumber: " + name, "BERHASIL", url);
 	return botNewsSnapshot(env);

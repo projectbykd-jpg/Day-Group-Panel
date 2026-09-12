@@ -3,6 +3,31 @@
 import { getTurso } from "./turso";
 import { tsNow } from "./time";
 
+// Dipakai dropdown "Tambah Sumber" (panel) & filter kategori di endpoint publik
+// /public/news. Daftar cocok dengan kategori RSS Liputan6 yang sudah dicek --
+// begitu sumber per-kategori ditambahkan, artikelnya otomatis kebagi rapi.
+export const NEWS_CATEGORIES = ["umum", "nasional", "bisnis", "olahraga", "hiburan", "teknologi", "otomotif", "kesehatan", "lifestyle"] as const;
+
+// Kolom category ditambahkan belakangan -- migrasi malas (lazy), sama seperti
+// fb_template_caption di bawah: dicoba sekali per cold-start isolate, aman
+// dipanggil berkali² (duplicate column diabaikan), tidak perlu skrip migrasi
+// manual terpisah.
+let newsCategoryColumnsEnsured = false;
+export async function ensureNewsCategoryColumns(env: Env): Promise<void> {
+	if (newsCategoryColumnsEnsured) return;
+	for (const stmt of [
+		`ALTER TABLE news_source ADD COLUMN category TEXT NOT NULL DEFAULT 'umum'`,
+		`ALTER TABLE news_article ADD COLUMN category TEXT NOT NULL DEFAULT 'umum'`,
+	]) {
+		try {
+			await getTurso(env).prepare(stmt).run();
+		} catch {
+			/* kolom sudah ada -> abaikan */
+		}
+	}
+	newsCategoryColumnsEnsured = true;
+}
+
 // ---------------------------------------------------------------------------
 // Konfigurasi (key-value)
 // ---------------------------------------------------------------------------
@@ -138,9 +163,13 @@ async function fetchFeed(kind: string, url: string): Promise<FeedItem[]> {
 // Tarik feed -> simpan artikel baru (status "new")
 // ---------------------------------------------------------------------------
 export async function newsPullSources(env: Env, perSource = 6): Promise<{ added: number; scanned: number }> {
+	await ensureNewsCategoryColumns(env);
 	const srcs =
-		(await getTurso(env).prepare(`SELECT id, name, kind, url FROM news_source WHERE active = 1`).all<{ id: number; name: string; kind: string; url: string }>())
-			.results ?? [];
+		(
+			await getTurso(env)
+				.prepare(`SELECT id, name, kind, url, category FROM news_source WHERE active = 1`)
+				.all<{ id: number; name: string; kind: string; url: string; category: string }>()
+		).results ?? [];
 	// Cloudflare Free: 50 subrequest/invocation, TERHITUNG jg query Turso — dan
 	// botNewsRun masih lanjut newsProcessOne (fetch Gemini+Blogger) sesudah ini
 	// dalam invocation yang SAMA. Batasi total fetch eksternal (feed + resolve
@@ -150,7 +179,7 @@ export async function newsPullSources(env: Env, perSource = 6): Promise<{ added:
 	const EXTERNAL_FETCH_BUDGET = 14;
 	let extFetches = 0;
 	let scanned = 0;
-	const rows: { source: string; url: string; hash: string; title: string; excerpt: string; image: string }[] = [];
+	const rows: { source: string; url: string; hash: string; title: string; excerpt: string; image: string; category: string }[] = [];
 	const seenHash = new Set<string>();
 
 	for (const s of srcs) {
@@ -170,7 +199,7 @@ export async function newsPullSources(env: Env, perSource = 6): Promise<{ added:
 				const h = await sha256Hex(realUrl.split("#")[0]);
 				if (seenHash.has(h)) continue;
 				seenHash.add(h);
-				rows.push({ source: s.name, url: realUrl, hash: h, title: it.title, excerpt: it.excerpt, image: it.image || "" });
+				rows.push({ source: s.name, url: realUrl, hash: h, title: it.title, excerpt: it.excerpt, image: it.image || "", category: s.category || "umum" });
 			}
 		} catch (e) {
 			console.error("newsPullSources", s.name, e instanceof Error ? e.message : e);
@@ -183,10 +212,10 @@ export async function newsPullSources(env: Env, perSource = 6): Promise<{ added:
 		getTurso(env)
 			.prepare(
 				`INSERT OR IGNORE INTO news_article
-				   (source, url, url_hash, title, excerpt, image_url, status, found_at)
-				 VALUES (?, ?, ?, ?, ?, ?, 'new', ?)`,
+				   (source, url, url_hash, title, excerpt, image_url, status, found_at, category)
+				 VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?)`,
 			)
-			.bind(r.source, r.url, r.hash, r.title, r.excerpt, r.image, now),
+			.bind(r.source, r.url, r.hash, r.title, r.excerpt, r.image, now, r.category),
 	);
 	for (let i = 0; i < stmts.length; i += 25) {
 		const res = await getTurso(env).batch(stmts.slice(i, i + 25));
@@ -808,9 +837,10 @@ export async function botNewsRun(
 // Untuk panel (API)
 // ---------------------------------------------------------------------------
 export async function botNewsSnapshot(env: Env) {
+	await ensureNewsCategoryColumns(env);
 	const cfg = await botCfg(env);
 	const sources =
-		(await getTurso(env).prepare(`SELECT id, name, kind, url, active FROM news_source ORDER BY id`).all()).results ?? [];
+		(await getTurso(env).prepare(`SELECT id, name, kind, url, active, category FROM news_source ORDER BY id`).all()).results ?? [];
 	const counts =
 		(await getTurso(env).prepare(`SELECT status, COUNT(*) AS c FROM news_article GROUP BY status`).all<{ status: string; c: number }>())
 			.results ?? [];
@@ -871,4 +901,40 @@ export async function botNewsSnapshot(env: Env) {
 		history,
 		fbDirectHistory,
 	};
+}
+
+// ---------------------------------------------------------------------------
+// Untuk situs publik (LapakStore88 "Berita Terkini") — TANPA sesi/auth, jadi
+// cuma boleh mengembalikan artikel yang sudah status='posted' (sudah lolos
+// rewrite & terbit), tidak pernah artikel 'new'/'error' yang isinya masih
+// mentah/gagal.
+// ---------------------------------------------------------------------------
+export async function publicNewsList(env: Env, category: string, page: number, pageSize: number) {
+	await ensureNewsCategoryColumns(env);
+	const size = Math.min(30, Math.max(1, pageSize || 20));
+	const offset = Math.max(0, (Math.max(1, page || 1) - 1) * size);
+	const cat = category && (NEWS_CATEGORIES as readonly string[]).includes(category) ? category : "";
+	const where = cat ? `WHERE status='posted' AND category=?` : `WHERE status='posted'`;
+	const args = cat ? [cat] : [];
+	const rows =
+		(
+			await getTurso(env)
+				.prepare(`SELECT id, title, excerpt, image_url, category, source, posted_at FROM news_article ${where} ORDER BY posted_at DESC, id DESC LIMIT ? OFFSET ?`)
+				.bind(...args, size, offset)
+				.all<{ id: number; title: string; excerpt: string; image_url: string; category: string; source: string; posted_at: string }>()
+		).results ?? [];
+	const total = Number(
+		(await getTurso(env).prepare(`SELECT COUNT(*) AS c FROM news_article ${where}`).bind(...args).first<{ c: number }>())?.c ?? 0,
+	);
+	return { success: true, articles: rows, total, page: Math.max(1, page || 1), pageSize: size, categories: NEWS_CATEGORIES };
+}
+
+export async function publicNewsDetail(env: Env, id: number) {
+	await ensureNewsCategoryColumns(env);
+	const row = await getTurso(env)
+		.prepare(`SELECT id, title, rewritten_html, image_url, category, source, url, posted_at FROM news_article WHERE id=? AND status='posted'`)
+		.bind(id)
+		.first<{ id: number; title: string; rewritten_html: string; image_url: string; category: string; source: string; url: string; posted_at: string }>();
+	if (!row) return { success: false, message: "Artikel tidak ditemukan." };
+	return { success: true, article: row };
 }

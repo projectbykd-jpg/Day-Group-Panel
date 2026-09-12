@@ -3999,7 +3999,7 @@ Tindakan ini tidak dapat dibatalkan.`,
       if (sl) sl.innerHTML = (snap.sources||[]).map(s=>`
         <div class="flex items-center gap-2 glass-inner rounded-xl px-3 py-2">
           <span class="text-[9px] font-bold px-2 py-0.5 rounded-full ${s.active?'bg-emerald-500/15 text-emerald-300':'bg-slate-500/15 text-slate-400'}">${s.active?'ON':'OFF'}</span>
-          <div class="flex-1 min-w-0"><div class="text-xs text-slate-100 font-semibold truncate">${botEsc(s.name)} <span class="text-slate-500">(${botEsc(s.kind)})</span></div><div class="text-[10px] text-slate-500 truncate">${botEsc(s.url)}</div></div>
+          <div class="flex-1 min-w-0"><div class="text-xs text-slate-100 font-semibold truncate">${botEsc(s.name)} <span class="text-slate-500">(${botEsc(s.kind)})</span> <span class="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300">${botEsc(s.category||'umum')}</span></div><div class="text-[10px] text-slate-500 truncate">${botEsc(s.url)}</div></div>
           <button onclick="toggleBotSource(${s.id},${s.active?0:1})" class="text-[10px] text-cyan-300 font-bold">${s.active?'Matikan':'Nyalakan'}</button>
           <button onclick="deleteBotSource(${s.id})" class="text-[10px] text-rose-300 font-bold">Hapus</button>
         </div>`).join('') || '<div class="text-[11px] text-slate-500">Belum ada sumber.</div>';
@@ -4034,7 +4034,7 @@ Tindakan ini tidak dapat dibatalkan.`,
       google.script.run.withSuccessHandler(s=>{toast('Konfigurasi BOT tersimpan');['botGeminiKey','botFbToken'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});applyBotNews(s);}).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsSaveConfig(currentSessionToken,data);
     }
     function addBotSource(){
-      const data={name:document.getElementById('botSrcName').value.trim(),kind:document.getElementById('botSrcKind').value,url:document.getElementById('botSrcUrl').value.trim()};
+      const data={name:document.getElementById('botSrcName').value.trim(),kind:document.getElementById('botSrcKind').value,category:document.getElementById('botSrcCategory').value,url:document.getElementById('botSrcUrl').value.trim()};
       if(!data.name||!data.url){toast('Isi nama & URL feed');return;}
       google.script.run.withSuccessHandler(s=>{toast('Sumber ditambah');document.getElementById('botSrcName').value='';document.getElementById('botSrcUrl').value='';applyBotNews(s);}).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsAddSource(currentSessionToken,data);
     }
