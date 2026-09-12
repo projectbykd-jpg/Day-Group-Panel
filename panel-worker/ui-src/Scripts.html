@@ -3850,6 +3850,28 @@ Tindakan ini tidak dapat dibatalkan.`,
       }).join('') || '<div class="text-[11px] text-slate-500">Belum ada postingan.</div>';
     }
 
+    let botSiteHistoryCache = [];
+    function renderBotSiteHistory(){
+      const box = document.getElementById('botSiteHistoryList');
+      const cnt = document.getElementById('botSiteHistCount');
+      if (!box) return;
+      const q = (document.getElementById('botSiteHistSearch')||{}).value || '';
+      const ql = q.toLowerCase();
+      const rows = botSiteHistoryCache.filter(h => !ql || String(h.title||'').toLowerCase().includes(ql));
+      if (cnt) cnt.textContent = '(' + botSiteHistoryCache.length + (q ? ' · tampil ' + rows.length : '') + ')';
+      box.innerHTML = rows.map(h => {
+        const t = String(h.site_posted_at||'').slice(0,16).replace('T',' ');
+        return `<div class="flex items-start gap-2 border-b border-white/5 pb-1.5">
+          <span class="text-[9px] text-slate-500 whitespace-nowrap mt-0.5">${botEsc(t)}</span>
+          <div class="flex-1 min-w-0">
+            <a href="https://lokalstore88.online/berita/artikel/?id=${Number(h.id)}" target="_blank" class="text-slate-100 hover:text-emerald-300 block truncate">${botEsc(h.title)}</a>
+            <span class="text-[9px] text-slate-500">${botEsc(h.source)} · ${botEsc(h.category||'umum')}</span> ·
+            <a href="${botEsc(h.url)}" target="_blank" class="text-[9px] text-slate-500 hover:text-slate-300">sumber asli</a>
+          </div>
+        </div>`;
+      }).join('') || '<div class="text-[11px] text-slate-500">Belum ada postingan.</div>';
+    }
+
     function renderBotSubpage(page){
       BOT_PAGES.forEach(p => {
         const el = document.getElementById('bot-sec-' + p.replace('bot-', ''));
@@ -3955,6 +3977,8 @@ Tindakan ini tidak dapat dibatalkan.`,
       const c = snap.config || {};
       botHistoryCache = snap.history || [];
       renderBotHistory();
+      botSiteHistoryCache = snap.siteHistory || [];
+      renderBotSiteHistory();
       const set = (id,v)=>{ const el=document.getElementById(id); if(el){ if(el.type==='checkbox') el.checked=!!v; else el.value=(v==null?'':v); } };
       set('botEnabled', c.enabled); set('botAttribution', c.attribution);
       renderBotAutoBar(!!c.enabled);

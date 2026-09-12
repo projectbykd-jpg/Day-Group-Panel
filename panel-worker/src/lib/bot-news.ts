@@ -739,6 +739,16 @@ export async function newsProcessOne(
 		.first<Record<string, string>>();
 	if (!row) return { done: false };
 	const id = Number(row.id);
+	// Klaim atomik: loop Blogger & loop situs sendiri jalan berurutan dalam 1
+	// invocation (aman), TAPI 2 jadwal cron yang tumpang-tindih (lihat
+	// wrangler.jsonc: */5 & tiap menit) bisa saja overlap jadi 2 invocation
+	// berbeda -- tanpa klaim ini, keduanya bisa SELECT baris 'new' yang SAMA
+	// sebelum salah satu sempat UPDATE status-nya -> artikel yang sama diproses
+	// dobel (dobel post Blogger, atau dobel di situs sendiri). UPDATE ... WHERE
+	// status='new' ini atomik di level SQLite -- kalau invocation lain sudah
+	// lebih dulu mengklaim, changes=0 di sini dan kita mundur dgn aman.
+	const claim = await getTurso(env).prepare(`UPDATE news_article SET status='processing' WHERE id=? AND status='new'`).bind(id).run();
+	if (!claim.meta.changes) return { done: false };
 	try {
 		const rw = await geminiRewrite(env, cfg, {
 			title: String(row.title),
@@ -756,8 +766,12 @@ export async function newsProcessOne(
 		const promoUrl = (cfg.promo_url || "").trim();
 		if (promoUrl) {
 			const promoText = (cfg.promo_text || "Butuh aplikasi premium termurah? Kunjungi LapakStore88").trim();
+			// Tint pakai rgba semi-transparan (BUKAN warna solid #fafafa) supaya kotak ini
+			// tetap enak dilihat baik di halaman Blogger (biasanya terang) MAUPUN di
+			// artikel Berita Terkini (tema gelap) -- warna solid terang dulu bikin kotak
+			// putih mencolok aneh di tengah halaman gelap.
 			const promo =
-				`\n<div style="border:1px solid #e2e2e2;border-radius:10px;padding:14px 16px;margin:20px 0;background:#fafafa">` +
+				`\n<div style="border:1px solid rgba(127,127,127,.35);border-radius:10px;padding:14px 16px;margin:20px 0;background:rgba(127,127,127,.08)">` +
 				`<p style="margin:0;font-size:14px">🛒 <strong>${escHtml(promoText)}</strong> &mdash; ` +
 				`<a href="${escAttr(promoUrl)}" rel="noopener" target="_blank"><strong>Kunjungi Toko &raquo;</strong></a></p></div>`;
 			const parts = content.split(/(<\/p>)/i);
@@ -832,10 +846,13 @@ export async function newsProcessOne(
 				}
 			}
 		}
+		// site_posted_at HANYA diisi untuk artikel yang TIDAK diposting ke Blogger
+		// (postUrl kosong) -- pemilik minta 2 kumpulan ini benar-benar terpisah,
+		// TIDAK boleh dobel tampil di Blogger maupun situs sendiri sekaligus.
 		const now = tsNow();
 		await getTurso(env)
 			.prepare(`UPDATE news_article SET status=?, rewritten_html=?, post_url=?, posted_at=?, site_posted_at=?, category=?, error='' WHERE id=?`)
-			.bind(postUrl ? "posted" : "site", content, postUrl, postUrl ? now : "", now, category, id)
+			.bind(postUrl ? "posted" : "site", content, postUrl, postUrl ? now : "", postUrl ? "" : now, category, id)
 			.run();
 
 		return { done: true, title: rw.title, postUrl: postUrl || undefined, siteOnly: !postUrl };
@@ -969,6 +986,16 @@ export async function botNewsSnapshot(env: Env) {
 				 FROM news_article WHERE status='posted' ORDER BY posted_at DESC, id DESC LIMIT 200`,
 			)
 			.all()).results ?? [];
+	// Riwayat KHUSUS situs sendiri -- terpisah total dari history Blogger di atas
+	// (lihat newsProcessOne: site_posted_at cuma keisi kalau TIDAK diposting ke
+	// Blogger, jadi tidak ada baris yang muncul di kedua riwayat sekaligus).
+	const siteHistory =
+		(await getTurso(env)
+			.prepare(
+				`SELECT id, source, title, url, category, site_posted_at
+				 FROM news_article WHERE site_posted_at != '' ORDER BY site_posted_at DESC, id DESC LIMIT 200`,
+			)
+			.all()).results ?? [];
 	const byStatus: Record<string, number> = {};
 	for (const r of counts) byStatus[String(r.status)] = Number(r.c);
 	return {
@@ -1010,6 +1037,7 @@ export async function botNewsSnapshot(env: Env) {
 		sources,
 		recent,
 		history,
+		siteHistory,
 		fbDirectHistory,
 	};
 }
