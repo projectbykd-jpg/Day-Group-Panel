@@ -90,20 +90,25 @@ export async function lapRunMotion(env: Env, token: string, startDate: string, e
 	const pCreate = { page: 0, start: 0, limit: LIMIT, count: 0, date1: startDate, date2: endDate, filter_status: "1", filter_by: "1", sort: { field: "created_at", order: "desc" } };
 	const pWd = { page: 0, start: 0, limit: LIMIT, count: 0, date1: startDate, date2: endDate, filter_status: "1", filter_by: "0" };
 
-	// Panggilan pertama manual -> tangkap status untuk diagnosa.
-	let firstText = "";
-	let firstStatus = 0;
-	try {
-		const fr = await fetch(urlDepo, {
-			method: "POST",
-			headers: { "content-type": "application/json", ...headers },
-			body: JSON.stringify(pPaid),
-		});
-		firstStatus = fr.status;
-		firstText = await fr.text();
-	} catch (e) {
-		return { success: false, message: "Tidak bisa menghubungi API Motion: " + (e instanceof Error ? e.message : String(e)) };
+	// Kirim 1 request, dengan 1x retry kalau jaringan putus (BUKAN utk error bisnis
+	// 4xx -- itu tetap dianggap final). Motion sesekali balas kosong/putus sesaat;
+	// tanpa retry, blip 1 request bisa bikin SATU kategori (paid/create/wd) hilang
+	// total tanpa pesan error apa pun -> hasil kelihatan "berhasil" tapi 0/salah.
+	async function postOnce(url: string, body: unknown): Promise<{ status: number; text: string } | null> {
+		try {
+			const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+			return { status: r.status, text: await r.text() };
+		} catch {
+			return null;
+		}
 	}
+
+	// Panggilan pertama manual -> tangkap status untuk diagnosa.
+	let first = await postOnce(urlDepo, pPaid);
+	if (!first) first = await postOnce(urlDepo, pPaid);
+	if (!first) return { success: false, message: "Tidak bisa menghubungi API Motion: jaringan gagal setelah 2 percobaan." };
+	const firstStatus = first.status;
+	const firstText = first.text;
 	if (firstStatus === 401 || firstStatus === 403) {
 		const cf = /cloudflare|attention required|just a moment|cf-ray|challenge/i.test(firstText);
 		return {
@@ -122,15 +127,45 @@ export async function lapRunMotion(env: Env, token: string, startDate: string, e
 	try {
 		parsedPaid = JSON.parse(firstText) as Rec;
 	} catch {
-		return { success: false, message: "Respons Motion bukan JSON: " + firstText.slice(0, 160) };
+		const retry = await postOnce(urlDepo, pPaid);
+		if (retry) {
+			try {
+				parsedPaid = JSON.parse(retry.text) as Rec;
+			} catch {
+				/* jatuh ke pesan error di bawah */
+			}
+		}
+		if (!parsedPaid) return { success: false, message: "Respons Motion bukan JSON: " + firstText.slice(0, 160) };
 	}
 	const rest = await postJsonBatch([
 		{ url: urlDepo, headers, body: pCreate },
 		{ url: urlWd, headers, body: pWd },
 	]);
 	let fetched = 3;
-	const parsedCreate = rest[0] as Rec | null;
-	const parsedWd = rest[1] as Rec | null;
+	let parsedCreate = rest[0] as Rec | null;
+	let parsedWd = rest[1] as Rec | null;
+	if (!parsedCreate) {
+		const r = await postOnce(urlDepo, pCreate);
+		fetched++;
+		if (r) {
+			try {
+				parsedCreate = JSON.parse(r.text) as Rec;
+			} catch {
+				/* biarkan null, ditangani jaring pengaman di bawah */
+			}
+		}
+	}
+	if (!parsedWd) {
+		const r = await postOnce(urlWd, pWd);
+		fetched++;
+		if (r) {
+			try {
+				parsedWd = JSON.parse(r.text) as Rec;
+			} catch {
+				/* biarkan null, ditangani jaring pengaman di bawah */
+			}
+		}
+	}
 	if (parsedPaid.success === false || parsedPaid.error) {
 		return { success: false, message: "API Motion menolak: " + (parsedPaid.msg || parsedPaid.message || parsedPaid.error || "unknown") };
 	}
@@ -177,44 +212,55 @@ export async function lapRunMotion(env: Env, token: string, startDate: string, e
 		});
 	}
 
-	// Jaring pengaman: kalau "create" masih jauh dari total (mis. sebagian
-	// halaman tetap gagal), tarik ulang halaman yang hilang secara berurutan.
-	const createTarget = totCreate || 0;
-	if (createTarget > listCreate.length + 20 && fetched < MOTION_FETCH_BUDGET) {
-		const seen = new Set(listCreate.map((it) => String(it.reference_no || it.invoice_no || "")));
-		for (let p = 1; p < Math.ceil(createTarget / LIMIT) + 1 && fetched < MOTION_FETCH_BUDGET; p++) {
-			if (listCreate.length >= createTarget) break;
-			let txt = "";
-			try {
-				const r = await fetch(urlDepo, {
-					method: "POST",
-					headers: { "content-type": "application/json", ...headers },
-					body: JSON.stringify({ ...pCreate, page: p, start: p * LIMIT }),
-				});
-				txt = await r.text();
-			} catch {
+	// Jaring pengaman: kalau SATU pun kategori masih jauh dari total (halaman
+	// gagal diam-diam lewat postJsonBatch -- reject/parse-gagal cuma jadi `null`
+	// tanpa pesan apa pun), tarik ulang halaman yang hilang secara berurutan.
+	// Sebelumnya cuma "create" yang dapat jaring pengaman ini, jadi "paid"/"wd"
+	// bisa diam-diam kepotong -> total salah tanpa peringatan (mis. banyak baris
+	// paid dicap palsu "TIDAK ADA DI CREATE"/"TIDAK ADA DI PAID"). Sekarang
+	// ketiganya dapat perlakuan sama, dan kalau tetap kurang setelah dicoba,
+	// `truncated` diset supaya banner peringatan di panel muncul (bukan diam saja).
+	const refKey = (it: Rec) => String(it.reference_no || it.invoice_no || "");
+	const wdKey = (it: Rec) => String(it.reference_no || it.unique_id || "");
+	async function fillMissingPages(list: Rec[], target: number, url: string, bodyBase: Rec, keyOf: (it: Rec) => string, parseRows: (j: Rec | null) => Rec[]): Promise<Rec[]> {
+		if (!(target > list.length + 20) || fetched >= MOTION_FETCH_BUDGET) return list;
+		const out = list.slice();
+		const seen = new Set(out.map(keyOf));
+		for (let p = 1; p < Math.ceil(target / LIMIT) + 1 && fetched < MOTION_FETCH_BUDGET; p++) {
+			if (out.length >= target) break;
+			const r = await postOnce(url, { ...bodyBase, page: p, start: p * LIMIT });
+			fetched++;
+			if (!r) {
+				truncated = true;
 				continue;
 			}
-			fetched++;
 			let jj: Rec | null = null;
 			try {
-				jj = JSON.parse(txt) as Rec;
+				jj = JSON.parse(r.text) as Rec;
 			} catch {
+				truncated = true;
 				continue;
 			}
-			const rows = arr(jj?.data);
 			let added = 0;
-			for (const it of rows) {
-				const k = String(it.reference_no || it.invoice_no || "");
+			for (const it of parseRows(jj)) {
+				const k = keyOf(it);
 				if (k && !seen.has(k)) {
 					seen.add(k);
-					listCreate.push(it);
+					out.push(it);
 					added++;
 				}
 			}
-			if (!added) break; // server mengabaikan paginasi / sudah habis
+			if (!added) {
+				truncated = true;
+				break; // server mengabaikan paginasi / sudah habis
+			}
 		}
+		if (out.length < target) truncated = true;
+		return out;
 	}
+	listPaid = await fillMissingPages(listPaid, totPaid, urlDepo, pPaid, refKey, (j) => arr(j?.data));
+	listCreate = await fillMissingPages(listCreate, totCreate, urlDepo, pCreate, refKey, (j) => arr(j?.data));
+	listWd = await fillMissingPages(listWd, totWd, urlWd, pWd, wdKey, (j) => wdArr(j?.data));
 
 	// ---- proses (port persis logika Apps Script) ----
 	const motionDpPga: Rec[] = [];

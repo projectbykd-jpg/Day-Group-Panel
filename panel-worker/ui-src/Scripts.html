@@ -52,10 +52,15 @@
         FX.reveal(sel.length ? sel : container.querySelectorAll(':scope > *'), { y: 14, step: 55, duration: 480 });
       },
       // angka menghitung naik dari 0; format ribuan otomatis. el butuh data-fx-count.
+      // Guard: HANYA jalan kalau data-fx-count = satu angka bersih (mis. "1,234"),
+      // bukan string gabungan seperti "2 (2,632,014,000)" -- kalau tidak match,
+      // dibiarkan apa adanya tanpa count-up supaya nilai gabungan tidak rusak.
       countUp(root) {
         const els = (root || document).querySelectorAll('[data-fx-count]');
         els.forEach(el => {
-          const to = Number(String(el.getAttribute('data-fx-count')).replace(/[^0-9.-]/g, '')) || 0;
+          const raw = String(el.getAttribute('data-fx-count')).trim();
+          if (!/^-?[0-9][0-9,]*(\.[0-9]+)?$/.test(raw)) return;
+          const to = Number(raw.replace(/,/g, '')) || 0;
           if (el.getAttribute('data-fx-done') === String(to)) return;
           el.setAttribute('data-fx-done', String(to));
           if (!FX.on) { el.textContent = to.toLocaleString('en-US'); return; }
@@ -498,6 +503,8 @@
       document.body.classList.remove('modal-open');
       clearLocalSession();
       stopLivePolling();
+      stopInvestPolling();
+      clearTimeout(lapAdminPollTimer);
       pageDataCache.activity = null; pageDataCache.admin = null;
       pageFetchedAt.activity = 0; pageFetchedAt.admin = 0; pageFetchedAt.prediction = 0;
       headerSummaryLoadedOnce = false;
@@ -579,6 +586,7 @@
       if (BOT_PAGES.includes(page)) renderBotSubpage(page);
 
       if (page !== 'invest') stopInvestPolling();
+      if (page !== 'lap-admin') clearTimeout(lapAdminPollTimer);
 
       // "home" adalah halaman paling sering diklik (default landing) -- skip log di sini
       // biar tidak nambah beban lock/tulis sheet tiap kali orang balik ke Beranda.
@@ -1794,8 +1802,16 @@
       if (icon) icon.innerHTML = `<i class="fa-solid ${iconMap[type]}"></i>`;
       msg.textContent = text;
 
-      // Reflow paksa supaya animasi "show" jalan lagi meski toast sebelumnya belum sempat hilang.
-      requestAnimationFrame(() => box.classList.add('show'));
+      // Reflow paksa (SINKRON, bukan requestAnimationFrame) supaya animasi "show" jalan
+      // lagi meski toast sebelumnya belum sempat hilang. requestAnimationFrame menunda
+      // penambahan class "show" ke frame berikutnya -- kalau hideToast() (dipanggil
+      // switchPage() tiap pindah menu) kebetulan jalan di jeda itu, timer auto-hide yang
+      // baru saja dijadwalkan di bawah ini sudah kadung dibatalkan duluan, lalu "show"
+      // baru ditambahkan belakangan tanpa ada timer yang akan menghapusnya lagi -> toast
+      // nyangkut permanen sampai reload. Reflow paksa lewat offsetWidth tidak punya jeda
+      // async sama sekali, jadi race ini tidak mungkin terjadi lagi.
+      void box.offsetWidth;
+      box.classList.add('show');
 
       clearTimeout(toastHideTimer);
       toastHideTimer = setTimeout(() => box.classList.remove('show'), 2600);
@@ -3232,8 +3248,23 @@
 
     let centerNoticeResolver = null;
     let centerNoticeTimer = null;
+    let centerNoticeShowing = false;
+    const centerNoticeQueue = [];
 
+    // Modal ini cuma satu di DOM, jadi kalau ada pemanggilan openCenterNotice() kedua
+    // saat modal pertama masih terbuka (mis. notifikasi background muncul di tengah
+    // dialog konfirmasi), request kedua diantre dulu -- BUKAN menimpa resolver yang
+    // sedang aktif. Kalau ditimpa, promise pemanggil pertama tidak akan pernah resolve
+    // dan kode yang `await`-nya (mis. konfirmasi hapus user) nge-hang selamanya.
     function openCenterNotice(options) {
+      if (centerNoticeShowing) {
+        return new Promise(resolve => centerNoticeQueue.push({ options, resolve }));
+      }
+      return showCenterNotice(options);
+    }
+
+    function showCenterNotice(options) {
+      centerNoticeShowing = true;
       const config = options || {};
       const modal = document.getElementById('centerNoticeModal');
       const iconBox = document.getElementById('centerNoticeIcon');
@@ -3278,7 +3309,10 @@
           document.body.classList.remove('modal-open');
           const resolver = centerNoticeResolver;
           centerNoticeResolver = null;
+          centerNoticeShowing = false;
           if (resolver) resolver(answer);
+          const next = centerNoticeQueue.shift();
+          if (next) showCenterNotice(next.options).then(next.resolve);
         };
 
         confirmBtn.onclick = () => finish(true);
