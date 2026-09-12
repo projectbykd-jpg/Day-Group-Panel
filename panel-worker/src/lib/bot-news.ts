@@ -1123,6 +1123,17 @@ export async function seedCategorySources(env: Env): Promise<{ added: string[]; 
 		{ name: "Liputan6 Kesehatan", url: "https://feed.liputan6.com/rss/kesehatan", category: "kesehatan" },
 		{ name: "Liputan6 Lifestyle", url: "https://feed.liputan6.com/rss/lifestyle", category: "lifestyle" },
 		{ name: "Liputan6 Cek Fakta", url: "https://feed.liputan6.com/rss/cek-fakta", category: "umum" },
+		// Detik per-channel -- supaya tiap kategori punya LEBIH DARI 1 sumber
+		// (bukan cuma Liputan6), volumenya jadi jauh lebih banyak per kategori.
+		{ name: "Detik Finance", url: "https://finance.detik.com/rss", category: "bisnis" },
+		{ name: "Detik Sepakbola", url: "https://sport.detik.com/sepakbola/rss", category: "bola" },
+		{ name: "Detik Sport", url: "https://sport.detik.com/rss", category: "olahraga" },
+		{ name: "Detik Hot", url: "https://hot.detik.com/rss", category: "hiburan" },
+		{ name: "Detik Inet", url: "https://inet.detik.com/rss", category: "teknologi" },
+		{ name: "Detik Oto", url: "https://oto.detik.com/rss", category: "otomotif" },
+		{ name: "Detik Health", url: "https://health.detik.com/rss", category: "kesehatan" },
+		{ name: "Detik Wolipop", url: "https://wolipop.detik.com/rss", category: "lifestyle" },
+		{ name: "Detik Travel", url: "https://travel.detik.com/rss", category: "lifestyle" },
 	];
 	const added: string[] = [];
 	const skipped: string[] = [];
