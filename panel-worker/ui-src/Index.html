@@ -751,7 +751,7 @@
               </div>
             </div>
 
-            <div id="botNewsStat" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+            <div id="botNewsStat" class="grid grid-cols-2 sm:grid-cols-5 gap-3"></div>
 
             <div class="mini-card">
               <div class="text-xs font-bold text-slate-200 mb-3"><i class="fa-solid fa-newspaper text-emerald-400 mr-2"></i>LOG ARTIKEL TERBARU (semua status)</div>
@@ -863,7 +863,6 @@
               <label class="flex items-center gap-2 text-xs text-slate-300 sm:col-span-2"><input type="checkbox" id="botAttribution"> Cantumkan sumber + backlink</label>
               <label class="text-xs text-slate-400">Artikel per proses cron<input id="botPerRun" type="number" min="1" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs"></label>
               <label class="text-xs text-slate-400">Batas artikel / hari (Blogger)<input id="botDailyCap" type="number" min="1" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs"></label>
-              <label class="text-xs text-slate-400 sm:col-span-2">Artikel per proses KHUSUS situs sendiri (lokalstore88.online) -- terpisah total dari pengaturan Blogger di atas, tidak ada batas harian<input id="botSitePerRun" type="number" min="0" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs"></label>
               <label class="text-xs text-slate-400">Paragraf minimal<input id="botParaMin" type="number" min="1" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs"></label>
               <label class="text-xs text-slate-400">Paragraf maksimal<input id="botParaMax" type="number" min="1" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs"></label>
               <label class="text-xs text-slate-400 sm:col-span-2">Label/Tag postingan (pisah koma)<input id="botLabels" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs" placeholder="LapakStore88"></label>
@@ -874,6 +873,13 @@
               <label class="text-xs text-slate-400 sm:col-span-2">Ganti Gemini API key (kosongkan = tidak diubah)<input id="botGeminiKey" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs" placeholder="••••••"></label>
               <label class="text-xs text-slate-400 sm:col-span-2">Blogger Blog ID<input id="botBlogId" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs"></label>
               <label class="text-xs text-slate-400 sm:col-span-2">Link situs Blogger (dipromosikan otomatis di tiap artikel, termasuk yang tayang di Berita Terkini)<input id="botBloggerSiteUrl" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs" placeholder="https://lokalstore88.blogspot.com"></label>
+
+              <div class="sm:col-span-2 border-t border-white/5 pt-3 mt-1">
+                <div class="text-xs font-bold text-emerald-300"><i class="fa-solid fa-globe mr-1.5"></i>AUTO-POST KE SITUS SENDIRI (lokalstore88.online / Berita Terkini)</div>
+                <p class="text-[10px] text-slate-500 mt-1">Jalur & pace TERPISAH TOTAL dari pengaturan Blogger di atas -- TIDAK ada batas harian, dan artikel yang sudah posting ke Blogger tidak ikut dobel tampil di sini.</p>
+              </div>
+              <label class="text-xs text-slate-400 sm:col-span-2">Artikel per proses (0 = matikan auto-post ke situs sendiri)<input id="botSitePerRun" type="number" min="0" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs"></label>
+
               <div class="sm:col-span-2 border-t border-white/5 pt-3 mt-1 flex items-center justify-between">
                 <label class="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" id="botFbEnabled"> Auto-share tiap post ke Facebook Page</label>
                 <span id="botFbHint" class="text-[10px] text-slate-500"></span>

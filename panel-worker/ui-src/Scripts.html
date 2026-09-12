@@ -4014,9 +4014,10 @@ Tindakan ini tidak dapat dibatalkan.`,
       const bs = snap.byStatus || {};
       const stat = document.getElementById('botNewsStat');
       if (stat) stat.innerHTML = [
-        ['Diposting hari ini', snap.postedToday||0],
+        ['Diposting ke Blogger hari ini', snap.postedToday||0],
         ['Antre (new)', bs.new||0],
-        ['Total diposting', bs.posted||0],
+        ['Total ke Blogger', bs.posted||0],
+        ['Total ke Situs Sendiri', bs.site||0],
         ['Error', bs.error||0]
       ].map(x=>`<div class="mini-card"><div class="text-[10px] text-slate-400 font-semibold">${x[0]}</div><div class="text-xl font-black mt-1 text-slate-50">${x[1]}</div></div>`).join('');
 
