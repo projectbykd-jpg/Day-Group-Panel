@@ -67,7 +67,7 @@ import {
 	botNewsStatus,
 	botNewsToggleSource,
 } from "./api/bot";
-import { botNewsRun, fbDirectRun, publicNewsBanner, publicNewsDetail, publicNewsList, publicNewsRandom, seedCategorySources } from "./lib/bot-news";
+import { botNewsRun, disableGnewsSources, fbDirectRun, publicNewsBanner, publicNewsDetail, publicNewsList, publicNewsRandom, seedCategorySources } from "./lib/bot-news";
 
 type Handler = (env: Env, body: Record<string, unknown>) => Promise<unknown>;
 const s = (v: unknown) => String(v ?? "");
@@ -419,6 +419,40 @@ export default {
 				// dipanggil berkali²) -- TIDAK ikut "all", dipanggil manual sekali saja.
 				if (job === "seednews") {
 					out.seed = await seedCategorySources(env);
+				}
+				if (job === "disablegnews") {
+					out.disabled = await disableGnewsSources(env);
+				}
+				// One-shot: sumber Liputan6 Bola sempat disuntik dgn category='olahraga'
+				// sebelum "bola" jadi kategori tersendiri -- perbaiki jadi 'bola'.
+				if (job === "fixbolacat") {
+					const r = await getTurso(env).prepare(`UPDATE news_source SET category='bola' WHERE url LIKE '%rss/bola%'`).run();
+					out.fixed = r.meta.changes;
+				}
+				// Diagnosa sementara: lihat semua sumber terdaftar (nama/kind/url asli)
+				// supaya tahu persis kenapa filter "kompas" di job disablegnews tidak
+				// menemukan apa pun.
+				if (job === "listsources") {
+					out.sources = (await getTurso(env).prepare(`SELECT id, name, kind, url, active, category FROM news_source ORDER BY id`).all()).results;
+				}
+				// One-shot: sumber Kompas sudah nonaktif duluan, TAPI ratusan artikel
+				// yang sudah kelanjur ditarik sebelumnya (status='new') tetap akan terus
+				// diproses selama belum dibersihkan -- nonaktifkan source cuma menghentikan
+				// TARIKAN BARU, tidak menyentuh backlog yang sudah ada.
+				if (job === "skipkompasqueue") {
+					const r1 = await getTurso(env)
+						.prepare(`UPDATE news_article SET status='skipped' WHERE status='new' AND source LIKE '%ompas%'`)
+						.run();
+					// Template FB (fbTemplateGenerate) TIDAK dibatasi status='new' -- dia
+					// jalan lewat kolom terpisah fb_direct_posted_at='' yg mencakup
+					// SEMUA artikel lama (termasuk yg sudah lama posting ke Blogger),
+					// jadi backlog Kompas juga harus dibersihkan dari SINI supaya tidak
+					// terus muncul di antrean Template FB.
+					const r2 = await getTurso(env)
+						.prepare(`UPDATE news_article SET fb_direct_posted_at='skip' WHERE fb_direct_posted_at='' AND source LIKE '%ompas%'`)
+						.run();
+					out.skippedMain = r1.meta.changes;
+					out.skippedFbTemplate = r2.meta.changes;
 				}
 			} catch (e) {
 				out.ok = false;

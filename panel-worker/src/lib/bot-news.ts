@@ -6,12 +6,13 @@ import { tsNow } from "./time";
 // Dipakai dropdown "Tambah Sumber" (panel) & filter kategori di endpoint publik
 // /public/news. Daftar cocok dengan kategori RSS Liputan6 yang sudah dicek --
 // begitu sumber per-kategori ditambahkan, artikelnya otomatis kebagi rapi.
-export const NEWS_CATEGORIES = ["umum", "nasional", "bisnis", "olahraga", "hiburan", "teknologi", "otomotif", "kesehatan", "lifestyle"] as const;
+export const NEWS_CATEGORIES = ["umum", "nasional", "bisnis", "olahraga", "bola", "hiburan", "teknologi", "otomotif", "kesehatan", "lifestyle"] as const;
 const NEWS_CATEGORY_LABELS: Record<string, string> = {
 	umum: "Umum",
 	nasional: "Nasional",
 	bisnis: "Bisnis",
 	olahraga: "Olahraga",
+	bola: "Bola",
 	hiburan: "Hiburan",
 	teknologi: "Teknologi",
 	otomotif: "Otomotif",
@@ -831,8 +832,12 @@ export async function newsProcessOne(
 			content = `<p><img src="${escAttr(imageUrl)}" alt="" style="max-width:100%"></p>\n` + content;
 		}
 
-		// Label: sumber + kategori otomatis (dari AI) + label wajib dari config (mis. "LapakStore88").
-		const labels = [String(row.source), newsCategoryLabel(category)];
+		// Label: "LapakStore88" (brand sendiri) + kategori otomatis (dari AI) + label
+		// tambahan dari config -- SENGAJA TIDAK menyertakan nama sumber berita lagi
+		// (mis. "Detik News") sesuai permintaan pemilik, supaya Label Blogger selalu
+		// menonjolkan brand sendiri. Atribusi sumber di ISI artikel (paragraf
+		// "Sumber: ...") TIDAK diubah -- itu kewajiban hak cipta yang beda urusan.
+		const labels = ["LapakStore88", newsCategoryLabel(category)];
 		for (const l of String(cfg.post_labels || "").split(",").map((x) => x.trim()).filter(Boolean)) {
 			if (!labels.includes(l)) labels.push(l);
 		}
@@ -862,10 +867,18 @@ export async function newsProcessOne(
 		// site_posted_at HANYA diisi untuk artikel yang TIDAK diposting ke Blogger
 		// (postUrl kosong) -- pemilik minta 2 kumpulan ini benar-benar terpisah,
 		// TIDAK boleh dobel tampil di Blogger maupun situs sendiri sekaligus.
+		// image_url DISIMPAN BALIK ke sini (kalau tadinya kosong) -- sebelumnya
+		// imageUrl yang sudah ketemu (dari RSS atau fetchOgImage) cuma dipakai
+		// sesaat utk konten Blogger, tidak pernah ditulis ke kolomnya sendiri.
+		// Akibatnya proses LAIN yang baca ulang artikel yang sama nanti (mis.
+		// Template FB) melihat image_url kosong lagi & harus coba cari ulang dari
+		// nol -- padahal sudah pernah ketemu sebelumnya.
 		const now = tsNow();
 		await getTurso(env)
-			.prepare(`UPDATE news_article SET status=?, rewritten_html=?, post_url=?, posted_at=?, site_posted_at=?, category=?, error='' WHERE id=?`)
-			.bind(postUrl ? "posted" : "site", content, postUrl, postUrl ? now : "", postUrl ? "" : now, category, id)
+			.prepare(
+				`UPDATE news_article SET status=?, rewritten_html=?, post_url=?, posted_at=?, site_posted_at=?, category=?, image_url=CASE WHEN image_url='' THEN ? ELSE image_url END, error='' WHERE id=?`,
+			)
+			.bind(postUrl ? "posted" : "site", content, postUrl, postUrl ? now : "", postUrl ? "" : now, category, imageUrl, id)
 			.run();
 
 		return { done: true, title: rw.title, postUrl: postUrl || undefined, siteOnly: !postUrl };
@@ -1103,7 +1116,7 @@ export async function seedCategorySources(env: Env): Promise<{ added: string[]; 
 	await ensureNewsCategoryColumns(env);
 	const seeds: { name: string; url: string; category: string }[] = [
 		{ name: "Liputan6 Bisnis", url: "https://feed.liputan6.com/rss/bisnis", category: "bisnis" },
-		{ name: "Liputan6 Bola", url: "https://feed.liputan6.com/rss/bola", category: "olahraga" },
+		{ name: "Liputan6 Bola", url: "https://feed.liputan6.com/rss/bola", category: "bola" },
 		{ name: "Liputan6 Showbiz", url: "https://feed.liputan6.com/rss/showbiz", category: "hiburan" },
 		{ name: "Liputan6 Tekno", url: "https://feed.liputan6.com/rss/tekno", category: "teknologi" },
 		{ name: "Liputan6 Otomotif", url: "https://feed.liputan6.com/rss/otomotif", category: "otomotif" },
@@ -1126,6 +1139,29 @@ export async function seedCategorySources(env: Env): Promise<{ added: string[]; 
 		added.push(s.name);
 	}
 	return { added, skipped };
+}
+
+/** One-shot: matikan sumber "gnews" (Kompas via Google News) -- Google mengubah
+ * halaman redirect artikelnya jadi full client-side JS (dikonfirmasi manual: HTML
+ * mentahnya 0 <a href>, 0 kata "kompas.com"), jadi resolveGnews/fetchOgImage tidak
+ * akan pernah dapat URL/gambar asli lagi. Pemilik pilih matikan sumbernya saja
+ * daripada membangun scraper ke API privat Google (yang dilarang di ToS RSS-nya). */
+export async function disableGnewsSources(env: Env): Promise<{ disabled: string[] }> {
+	// Cocokkan lewat kind='gnews' ATAU nama mengandung "ompas" -- source Kompas
+	// ternyata bisa saja terdaftar kind='rss' langsung ke URL search Google News
+	// (bukan lewat kind='gnews'+resolveGnews), jadi jangan cuma andalkan kind.
+	const rows =
+		(
+			await getTurso(env)
+				.prepare(`SELECT id, name FROM news_source WHERE active = 1 AND (kind = 'gnews' OR name LIKE '%ompas%' OR url LIKE '%kompas%')`)
+				.all<{ id: number; name: string }>()
+		).results ?? [];
+	const disabled: string[] = [];
+	for (const r of rows) {
+		await getTurso(env).prepare(`UPDATE news_source SET active = 0 WHERE id = ?`).bind(r.id).run();
+		disabled.push(r.name);
+	}
+	return { disabled };
 }
 
 /** Banner promosi sidebar Berita Terkini -- diatur dari Panel BOT (Konfigurasi Lanjutan). */
