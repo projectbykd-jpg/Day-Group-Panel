@@ -504,6 +504,48 @@ export async function bloggerCreatePost(
 // saling mempromosikan satu sama lain.
 const LAPAKSTORE_SITE_URL = "https://lokalstore88.online";
 
+// ---------------------------------------------------------------------------
+// Backlink acak (foto + kata dalam kalimat) -- pemilik minta tiap artikel yang
+// diposting (Blogger maupun situs sendiri, karena `content` yang sama dipakai
+// untuk keduanya) menyertakan link balik ke aset sendiri, dipilih ACAK per
+// artikel, TANPA pernah mengarah ke situs luar.
+// ---------------------------------------------------------------------------
+function ownLinkTargets(cfg: Record<string, string>): { url: string; label: string }[] {
+	const targets = [
+		{ url: `${LAPAKSTORE_SITE_URL}/`, label: "LapakStore88" },
+		{ url: `${LAPAKSTORE_SITE_URL}/produk.html`, label: "Katalog Produk" },
+		{ url: `${LAPAKSTORE_SITE_URL}/berita.html`, label: "Berita Terkini" },
+	];
+	const bloggerSite = (cfg.blogger_site_url || "").trim();
+	if (bloggerSite) targets.push({ url: bloggerSite, label: "Blog Resmi" });
+	return targets;
+}
+function pickOwnLink(cfg: Record<string, string>): { url: string; label: string } {
+	const targets = ownLinkTargets(cfg);
+	return targets[Math.floor(Math.random() * targets.length)];
+}
+
+// Kata-kata GENERIK yang aman disisipi link (bukan nama orang/tempat/istilah
+// penting, tidak mengubah makna kalimat kalau jadi link biru) -- dipilih 1
+// kandidat yang MEMANG muncul di artikel, hanya kemunculan PERTAMA yang
+// ditautkan. Kalau tidak ada satu pun kandidat yang cocok, artikel dibiarkan
+// apa adanya (tidak dipaksakan menyisipkan kata baru).
+const ANCHOR_WORD_CANDIDATES = [
+	"informasi", "resmi", "terkini", "selengkapnya", "terbaru",
+	"kabar", "laporan", "diketahui", "tersebut", "berlangsung",
+];
+function insertAnchorBacklink(html: string, cfg: Record<string, string>): string {
+	const order = [...ANCHOR_WORD_CANDIDATES].sort(() => Math.random() - 0.5);
+	for (const word of order) {
+		const re = new RegExp(`\\b(${word})\\b`, "i");
+		if (re.test(html)) {
+			const pick = pickOwnLink(cfg);
+			return html.replace(re, (m) => `<a href="${escAttr(pick.url)}" rel="noopener">${m}</a>`);
+		}
+	}
+	return html;
+}
+
 function buildFbCaption(title: string, metaDescription: string, links: { blogger?: string; site?: string; store?: string }): string {
 	const lines = [`📰 ${title}`];
 	if (metaDescription) lines.push("", metaDescription);
@@ -812,7 +854,7 @@ export async function newsProcessOne(
 			source: String(row.source),
 			url: String(row.url),
 		});
-		let content = rw.html;
+		let content = insertAnchorBacklink(rw.html, cfg);
 		// Kategori otomatis dari AI (klasifikasi isi artikel yang sebenarnya) --
 		// menang atas kategori bawaan sumbernya (yang cuma tebakan kasar per-feed).
 		// Kalau Gemini tidak balas kategori valid, tetap pakai punya sumber.
@@ -933,7 +975,13 @@ export async function newsProcessOne(
 		if (imageUrl) {
 			// alt text diisi judul artikel (sebelumnya kosong) -- Google Image Search
 			// & aksesibilitas butuh alt yang deskriptif, bukan cuma dekorasi kosong.
-			content = `<p><img src="${escAttr(imageUrl)}" alt="${escAttr(rw.title)}" style="max-width:100%"></p>\n` + content;
+			// Foto dibungkus link ke aset sendiri (acak) -- backlink acak, sama
+			// seperti yang sudah dipasang di tema Blogger, tapi di sini berlaku
+			// juga utk artikel yang tayang di situs sendiri (content yang sama).
+			const heroLink = pickOwnLink(cfg);
+			content =
+				`<p><a href="${escAttr(heroLink.url)}" rel="noopener"><img src="${escAttr(imageUrl)}" alt="${escAttr(rw.title)}" style="max-width:100%"></a></p>\n` +
+				content;
 		}
 
 		// Structured data (schema.org NewsArticle) -- murni data buat mesin
