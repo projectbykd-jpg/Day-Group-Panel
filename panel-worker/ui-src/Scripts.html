@@ -914,36 +914,50 @@
       const mtoken = ((lapConfig && lapConfig.tokenMotion) || '').replace(/^Bearer\s+/i, '').trim();
       const vendorId = ((lapConfig && lapConfig.vendorIdMotion) || '').trim();
       const isDepo = mode === 'deposit';
-      // AKAR MASALAH yang akhirnya ketemu (dari riwayat commit, bukan tebakan):
-      // body deposit TANPA date1/date2 (commit a4a66b0) TERBUKTI SUKSES tarik 837
-      // baris; begitu date1/date2/filter_status/filter_by/sort dibalikin ke body
-      // (commit 996fd15), SEMUA percobaan langsung timeout -- termasuk saat hasil
-      // yang cocok cuma 93 baris. Artinya bukan soal volume hasil, tapi soal
-      // FILTER TANGGAL-nya sendiri yang bikin server Motion nge-scan tanpa index
-      // (jumlah hasil 93 atau 853 sama saja beratnya kalau harus scan semua).
-      // Withdraw tidak kena karena tabelnya jauh lebih kecil.
-      // Solusi: pakai body yang TERBUKTI jalan (vendor_id saja), lalu saring
-      // tanggal di sisi kita (backend panel sudah punya cek `inRange` sendiri).
+      // Pelajaran dari percobaan tanpa date1/date2: server Motion punya DEFAULT
+      // rentang tanggal sendiri = HARI INI (terbukti -- request tanpa parameter
+      // tanggal balas total_records 104 yang semuanya bertanggal hari itu, bukan
+      // seluruh riwayat vendor). Jadi filter tanggal WAJIB dikirim kalau mau
+      // tanggal lampau; menyaring di sisi kita saja TIDAK CUKUP karena datanya
+      // memang tidak pernah sampai ke kita.
+      // Body dikirim PERSIS seperti yang situsnya sendiri kirim saat user menekan
+      // Apply di filter tanggal (urutan field & isian identik, termasuk `sort`):
+      //   filter_by "0" + sort paid_at    -> daftar PAID
+      //   filter_by "1" + sort created_at -> daftar CREATE
+      // Kalau request bertanggal gagal/timeout (server Motion memang sesekali
+      // berat di endpoint ini), ada jaring pengaman: ulangi TANPA parameter
+      // tanggal -- itu jalur cepat yang terbukti stabil, tapi HANYA berguna kalau
+      // rentang yang diminta memang mencakup hari ini, jadi dipakai cuma dalam
+      // kondisi itu dan user diberi tahu lewat peringatan.
       const pullCalls = isDepo
         // VID bisa berisi BEBERAPA vendor_id sekaligus (dipisah koma/spasi/baris
         // baru) -- akun yang ngurus banyak website (dropdown "By Website" di
         // Motion) punya vendor_id BEDA per website, jadi tarik data 1-per-1 per
         // vendor lalu digabung, supaya semua website ikut ketarik dalam 1x jalan.
         ? "  const vids=VID.split(/[\\s,]+/).filter(Boolean);\n"
-          + "  let depo=[];\n"
+          + "  const d1=sd+' 00:00:00', d2=ed+' 23:59:59';\n"
+          + "  const hariIni=td(new Date());\n"
+          + "  let paid=[], create=[], fallbackDipakai=false;\n"
           + "  for(const vid of vids){\n"
-          + "    console.log('%cMotion: deposit vendor '+vid+'...','color:#0ff');\n"
-          + "    depo=depo.concat(await pull('/api/deposit/list/pga',{limit:100,count:0,vendor_id:vid},100,sd));\n"
+          + "    for(const kind of [{label:'paid',fb:'0',sf:'paid_at',into:0},{label:'create',fb:'1',sf:'created_at',into:1}]){\n"
+          + "      console.log('%cMotion: deposit '+kind.label+' vendor '+vid+'...','color:#0ff');\n"
+          + "      let rows;\n"
+          + "      try{\n"
+          + "        rows=await pull('/api/deposit/list/pga',{limit:100,count:0,date1:d1,date2:d2,filter_by:kind.fb,filter_status:'1',sort:{field:kind.sf,order:'desc'},vendor_id:vid},100,sd);\n"
+          + "      }catch(e){\n"
+          + "        if(!(sd<=hariIni&&hariIni<=ed))throw e;\n"
+          + "        console.log('%cMotion: request bertanggal gagal ('+((e&&e.message)||e)+') -- coba jalur cepat TANPA filter tanggal (hanya data hari ini)','color:#ff0');\n"
+          + "        rows=await pull('/api/deposit/list/pga',{limit:100,count:0,vendor_id:vid},100,sd);\n"
+          + "        fallbackDipakai=true;\n"
+          + "      }\n"
+          + "      if(kind.into===0)paid=paid.concat(rows);else create=create.concat(rows);\n"
+          + "    }\n"
           + "  }\n"
+          + "  if(fallbackDipakai)console.log('%cPERHATIAN: sebagian data diambil lewat jalur cepat tanpa filter tanggal -- isinya HANYA hari ini.','color:#f80;font-weight:bold');\n"
         : "  console.log('%cMotion: withdraw...','color:#0ff');\n"
           + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'},100);\n";
-      // Deposit: 1 daftar dipakai utk depoPaidRows DAN depoCreateRows -- tanpa
-      // filter_by, server tidak bisa membedakan daftar "paid" vs "create", tapi
-      // tiap barisnya sudah punya created_at DAN paid_at sendiri, jadi backend
-      // panel tetap bisa hitung keduanya (dan rekonsiliasi "TIDAK ADA DI
-      // CREATE/PAID" otomatis tidak pernah salah tuduh).
       const payload = isDepo
-        ? "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,depoPaidRows:depo,depoCreateRows:depo}"
+        ? "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,depoPaidRows:paid,depoCreateRows:create}"
         : "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,wdRows:wd}";
       const okMsg = isDepo
         ? "'Motion (Deposit) terkirim ke panel OK\\nDP '+jr.dp+' · Pending '+jr.pending+'\\n\\nBuka panel -> Lap Motion -> Muat Ulang.'"
