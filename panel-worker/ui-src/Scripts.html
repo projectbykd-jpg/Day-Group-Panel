@@ -1011,15 +1011,18 @@
         + "    const list=winStrat?[winStrat]:STRATS;\n"
         + "    let lastErr, lastAuthFail=null;\n"
         + "    for(const st of list){\n"
-        // Strategi pertama (token header + cookie) itu yang TERBUKTI benar (pernah
-        // sukses ratusan baris) -- kalau dia timeout, kemungkinan besar cuma lambat
-        // SESAAT di server Motion, bukan berarti salah. Coba 2x dengan timeout lebih
-        // panjang sebelum nyerah pindah ke strategi lain (yang belum tentu benar).
-        + "      const attempts=(!winStrat&&st===STRATS[0])?2:1;\n"
+        // Strategi pertama (token header + cookie) itu yang TERBUKTI benar (request
+        // body-nya sudah dicocokkan persis dengan yang situsnya sendiri kirim) --
+        // begitu dia timeout berulang kali, itu bukan lagi soal salah kredensial,
+        // kemungkinan besar server Motion sendiri yang lambat/sesekali tidak
+        // merespons kalau ditanya FRESH (bukan dari cache situsnya). Coba 4x
+        // dengan timeout panjang (30 detik) sebelum nyerah pindah ke strategi lain
+        // (yang belum tentu benar, cuma jaring pengaman terakhir).
+        + "      const attempts=(!winStrat&&st===STRATS[0])?4:1;\n"
         + "      let ok=false;\n"
         + "      for(let a=0;a<attempts&&!ok;a++){\n"
         + "        try{\n"
-        + "          const r=await fetchTO(O+path,{method:'POST',body:JSON.stringify(body),...st.opts},winStrat?25000:20000);\n"
+        + "          const r=await fetchTO(O+path,{method:'POST',body:JSON.stringify(body),...st.opts},winStrat?25000:30000);\n"
         + "          if(r.status===401||r.status===403){lastAuthFail=r;console.log('  strategi \"'+st.label+'\" ditolak: HTTP '+r.status);ok=true;break;}\n"
         + "          if(!winStrat){winStrat=st;console.log('%cMotion: cara akses yang jalan -> '+st.label,'color:#0f0;font-weight:bold');}\n"
         + "          return r;\n"
@@ -1032,7 +1035,7 @@
         + "    }\n"
         + "    if(lastAuthFail)return lastAuthFail;\n"
         + "    const isTO=lastErr&&lastErr.name==='AbortError';\n"
-        + "    throw new Error(path+(isTO?' TIMEOUT semua cara akses dicoba, Motion tidak merespons sama sekali dari halaman ini. Coba buka menu " + (isDepo ? "RIWAYAT PGA" : "WD REQUEST/RIWAYAT WD PGA") + " dulu di Motion, atau pakai rentang tanggal lebih pendek.':' gagal: '+((lastErr&&lastErr.message)||lastErr)));\n"
+        + "    throw new Error(path+(isTO?' server Motion tidak merespons sama sekali setelah beberapa kali dicoba (bukan salah token/vendor_id -- body request sudah persis sama dengan situsnya). Coba jalankan skrip ini lagi, atau tunggu beberapa menit lalu coba lagi.':' gagal: '+((lastErr&&lastErr.message)||lastErr)));\n"
         + "  };\n"
         // pull(path, bodyBase, pageLimit): tarik SAMPAI HABIS (berhenti hanya
         // begitu 1 halaman balas kurang dari pageLimit -- itu satu-satunya sinyal
