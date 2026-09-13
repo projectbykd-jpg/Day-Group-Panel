@@ -12,14 +12,9 @@ import {
 	lapLoadResults,
 	lapSaveCreds,
 	lapSaveResults,
-	normLink,
 	num,
-	postJsonBatch,
-	UA,
 } from "../lib/lap";
 
-// Batas aman subrequest per invocation (Cloudflare Free = 50).
-const MOTION_FETCH_BUDGET = 44;
 const MOZART_PAGE_CAP = 18; // per list (depo/wd)
 
 function credsForClient(c: LapCreds) {
@@ -60,209 +55,34 @@ export async function lapSaveConfig(env: Env, token: string, data: Record<string
 const str = (v: unknown) => (v === undefined ? undefined : String(v ?? "").trim());
 
 // =========================================================================
-// LAP MOTION  (port scrapeStepMotionPGA)
+// LAP MOTION -- impor dari browser (skrip Console, sama pola dengan Mozart)
+// motionv2.com KADANG menantang/menolak trafik IP datacenter Worker (WAF
+// adaptif -- kadang lolos, kadang balas kosong/di-challenge tanpa pesan error
+// jelas, gejalanya "DP 0 WD 0 padahal ada data"). Server-side fetch langsung
+// (lapRunMotion, versi lama) DIHAPUS -- pemilik minta ganti total ke pola
+// Mozart: skrip di-generate, di-paste di Console tab Motion (browser asli,
+// bukan IP datacenter), fetch same-origin (page-by-page sampai habis, TANPA
+// batas subrequest Worker), lalu POST hasil mentah ke sini untuk diproses &
+// disimpan. Ini juga otomatis menghilangkan masalah "data terpotong" pada
+// periode besar (dulu dibatasi MOTION_FETCH_BUDGET=44 subrequest/invocation).
 // =========================================================================
-export async function lapRunMotion(env: Env, token: string, startDate: string, endDate: string) {
+export async function lapMotionImport(
+	env: Env,
+	token: string,
+	startDate: string,
+	endDate: string,
+	depoPaidRows: unknown,
+	depoCreateRows: unknown,
+	wdRows: unknown,
+) {
 	const s = await requireSession(env, token, { ignoreMaintenance: true });
-	const c = await lapLoadCreds(env, s.username);
-	if (!c.tokenMotion) return { success: false, message: "Token Motion belum diisi di menu Setting!" };
+	const listPaid = (Array.isArray(depoPaidRows) ? depoPaidRows : []) as Rec[];
+	const listCreate = (Array.isArray(depoCreateRows) ? depoCreateRows : []) as Rec[];
+	const listWd = (Array.isArray(wdRows) ? wdRows : []) as Rec[];
 
-	const base = normLink(c.linkMotion, "https://motionv2.com");
-	const tokenClean = c.tokenMotion.replace(/^Bearer\s+/i, "").trim();
-	const headers: Record<string, string> = {
-		"x-access-token": tokenClean,
-		accept: "application/json, text/plain, */*",
-		"accept-language": "en-US,en;q=0.9",
-		"user-agent": UA,
-		referer: base + "/riwayat-pga",
-		origin: base,
-		"sec-ch-ua": '"Chromium";v="128", "Not;A=Brand";v="24"',
-		"sec-ch-ua-mobile": "?0",
-		"sec-ch-ua-platform": '"Windows"',
-		"sec-fetch-dest": "empty",
-		"sec-fetch-mode": "cors",
-		"sec-fetch-site": "same-origin",
-	};
-	const urlDepo = `${base}/api/deposit/list/pga`;
-	const urlWd = `${base}/api/withdraw/list/pga`;
-	const LIMIT = 100;
-	const pPaid = { page: 0, start: 0, limit: LIMIT, count: 0, date1: startDate, date2: endDate, filter_status: "1", filter_by: "0", sort: { field: "paid_at", order: "desc" } };
-	const pCreate = { page: 0, start: 0, limit: LIMIT, count: 0, date1: startDate, date2: endDate, filter_status: "1", filter_by: "1", sort: { field: "created_at", order: "desc" } };
-	const pWd = { page: 0, start: 0, limit: LIMIT, count: 0, date1: startDate, date2: endDate, filter_status: "1", filter_by: "0" };
-
-	// Kirim 1 request, dengan 1x retry kalau jaringan putus (BUKAN utk error bisnis
-	// 4xx -- itu tetap dianggap final). Motion sesekali balas kosong/putus sesaat;
-	// tanpa retry, blip 1 request bisa bikin SATU kategori (paid/create/wd) hilang
-	// total tanpa pesan error apa pun -> hasil kelihatan "berhasil" tapi 0/salah.
-	async function postOnce(url: string, body: unknown): Promise<{ status: number; text: string } | null> {
-		try {
-			const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
-			return { status: r.status, text: await r.text() };
-		} catch {
-			return null;
-		}
-	}
-
-	// Panggilan pertama manual -> tangkap status untuk diagnosa.
-	let first = await postOnce(urlDepo, pPaid);
-	if (!first) first = await postOnce(urlDepo, pPaid);
-	if (!first) return { success: false, message: "Tidak bisa menghubungi API Motion: jaringan gagal setelah 2 percobaan." };
-	const firstStatus = first.status;
-	const firstText = first.text;
-	if (firstStatus === 401 || firstStatus === 403) {
-		const cf = /cloudflare|attention required|just a moment|cf-ray|challenge/i.test(firstText);
-		return {
-			success: false,
-			message:
-				firstStatus === 401
-					? "Token Motion (x-access-token) kedaluwarsa / salah. Perbarui di menu Setting."
-					: cf
-						? "Motion 403 diblokir Cloudflare â€” API menolak request dari Worker. Modul ini perlu jalur GitHub Actions."
-						: "Motion 403: " + firstText.slice(0, 160),
-		};
-	}
-	if (firstStatus >= 400) return { success: false, message: "Motion HTTP " + firstStatus + ": " + firstText.slice(0, 160) };
-
-	let parsedPaid: Rec | null = null;
-	try {
-		parsedPaid = JSON.parse(firstText) as Rec;
-	} catch {
-		const retry = await postOnce(urlDepo, pPaid);
-		if (retry) {
-			try {
-				parsedPaid = JSON.parse(retry.text) as Rec;
-			} catch {
-				/* jatuh ke pesan error di bawah */
-			}
-		}
-		if (!parsedPaid) return { success: false, message: "Respons Motion bukan JSON: " + firstText.slice(0, 160) };
-	}
-	const rest = await postJsonBatch([
-		{ url: urlDepo, headers, body: pCreate },
-		{ url: urlWd, headers, body: pWd },
-	]);
-	let fetched = 3;
-	let parsedCreate = rest[0] as Rec | null;
-	let parsedWd = rest[1] as Rec | null;
-	if (!parsedCreate) {
-		const r = await postOnce(urlDepo, pCreate);
-		fetched++;
-		if (r) {
-			try {
-				parsedCreate = JSON.parse(r.text) as Rec;
-			} catch {
-				/* biarkan null, ditangani jaring pengaman di bawah */
-			}
-		}
-	}
-	if (!parsedWd) {
-		const r = await postOnce(urlWd, pWd);
-		fetched++;
-		if (r) {
-			try {
-				parsedWd = JSON.parse(r.text) as Rec;
-			} catch {
-				/* biarkan null, ditangani jaring pengaman di bawah */
-			}
-		}
-	}
-	if (parsedPaid.success === false || parsedPaid.error) {
-		return { success: false, message: "API Motion menolak: " + (parsedPaid.msg || parsedPaid.message || parsedPaid.error || "unknown") };
-	}
-
-	let listPaid = arr(parsedPaid.data);
-	let listCreate = arr(parsedCreate?.data);
-	let listWd = wdArr(parsedWd?.data);
-
-	const totPaid = optTotal(parsedPaid, listPaid.length);
-	const totCreate = optTotal(parsedCreate, listCreate.length);
-	const totWd = wdTotal(parsedWd, listWd.length);
-	let truncated = false;
-
-	const extra: { t: "paid" | "create" | "wd"; body: Rec }[] = [];
-	const addPages = (t: "paid" | "create" | "wd", total: number, base: Rec) => {
-		const pages = Math.ceil(total / LIMIT);
-		for (let p = 1; p < pages; p++) {
-			if (fetched + extra.length >= MOTION_FETCH_BUDGET) {
-				truncated = true;
-				return;
-			}
-			extra.push({ t, body: { ...base, page: p, start: p * LIMIT } });
-		}
-	};
-	addPages("paid", totPaid, pPaid);
-	addPages("create", totCreate, pCreate);
-	addPages("wd", totWd, pWd);
-
-	if (extra.length) {
-		// Konkurensi RENDAH (5): dulu 14+ request paralel ke Motion sekaligus ->
-		// server rate-limit/drop -> daftar "create" cuma dapat 1 halaman (100)
-		// padahal ada 763 -> 600+ transaksi paid dicap "TIDAK ADA DI CREATE" palsu.
-		const res = await postJsonBatch(
-			extra.map((e) => ({ url: e.t === "wd" ? urlWd : urlDepo, headers, body: e.body })),
-			5,
-		);
-		fetched += extra.length;
-		res.forEach((pp, i) => {
-			const j = pp as Rec | null;
-			if (!j) return;
-			if (extra[i].t === "paid") listPaid = listPaid.concat(arr(j.data));
-			else if (extra[i].t === "create") listCreate = listCreate.concat(arr(j.data));
-			else listWd = listWd.concat(wdArr(j.data));
-		});
-	}
-
-	// Jaring pengaman: kalau SATU pun kategori masih jauh dari total (halaman
-	// gagal diam-diam lewat postJsonBatch -- reject/parse-gagal cuma jadi `null`
-	// tanpa pesan apa pun), tarik ulang halaman yang hilang secara berurutan.
-	// Sebelumnya cuma "create" yang dapat jaring pengaman ini, jadi "paid"/"wd"
-	// bisa diam-diam kepotong -> total salah tanpa peringatan (mis. banyak baris
-	// paid dicap palsu "TIDAK ADA DI CREATE"/"TIDAK ADA DI PAID"). Sekarang
-	// ketiganya dapat perlakuan sama, dan kalau tetap kurang setelah dicoba,
-	// `truncated` diset supaya banner peringatan di panel muncul (bukan diam saja).
-	const refKey = (it: Rec) => String(it.reference_no || it.invoice_no || "");
-	const wdKey = (it: Rec) => String(it.reference_no || it.unique_id || "");
-	async function fillMissingPages(list: Rec[], target: number, url: string, bodyBase: Rec, keyOf: (it: Rec) => string, parseRows: (j: Rec | null) => Rec[]): Promise<Rec[]> {
-		if (!(target > list.length + 20) || fetched >= MOTION_FETCH_BUDGET) return list;
-		const out = list.slice();
-		const seen = new Set(out.map(keyOf));
-		for (let p = 1; p < Math.ceil(target / LIMIT) + 1 && fetched < MOTION_FETCH_BUDGET; p++) {
-			if (out.length >= target) break;
-			const r = await postOnce(url, { ...bodyBase, page: p, start: p * LIMIT });
-			fetched++;
-			if (!r) {
-				truncated = true;
-				continue;
-			}
-			let jj: Rec | null = null;
-			try {
-				jj = JSON.parse(r.text) as Rec;
-			} catch {
-				truncated = true;
-				continue;
-			}
-			let added = 0;
-			for (const it of parseRows(jj)) {
-				const k = keyOf(it);
-				if (k && !seen.has(k)) {
-					seen.add(k);
-					out.push(it);
-					added++;
-				}
-			}
-			if (!added) {
-				truncated = true;
-				break; // server mengabaikan paginasi / sudah habis
-			}
-		}
-		if (out.length < target) truncated = true;
-		return out;
-	}
-	listPaid = await fillMissingPages(listPaid, totPaid, urlDepo, pPaid, refKey, (j) => arr(j?.data));
-	listCreate = await fillMissingPages(listCreate, totCreate, urlDepo, pCreate, refKey, (j) => arr(j?.data));
-	listWd = await fillMissingPages(listWd, totWd, urlWd, pWd, wdKey, (j) => wdArr(j?.data));
-
-	// ---- proses (port persis logika Apps Script) ----
+	// ---- proses (port persis logika lama, minus jalur data_optional API yang
+	// cuma tersedia lewat fetch server-side -- di sini semua total dihitung
+	// manual dari baris yang dikirim skrip, sama seperti fallback lama) ----
 	const motionDpPga: Rec[] = [];
 	const pgaPendingError: Rec[] = [];
 	const motionWdPga: Rec[] = [];
@@ -276,12 +96,6 @@ export async function lapRunMotion(env: Env, token: string, startDate: string, e
 
 	let totalNominalPaidAt = 0;
 	let totalTransaksiPaid = 0;
-	const optP = parsedPaid.data_optional as Rec | undefined;
-	if (optP && optP.total_records !== undefined) {
-		totalTransaksiPaid = num(optP.total_records);
-		totalNominalPaidAt = num(optP.total_amount || optP.total_sum || 0);
-	}
-
 	for (const item of listPaid) {
 		const key = String(item.reference_no || item.invoice_no || "");
 		if (key) paidKeys.add(key);
@@ -308,10 +122,8 @@ export async function lapRunMotion(env: Env, token: string, startDate: string, e
 		};
 		if (isSuccess && inRange) {
 			motionDpPga.push(row);
-			if (!optP) {
-				totalNominalPaidAt += amount;
-				totalTransaksiPaid++;
-			}
+			totalNominalPaidAt += amount;
+			totalTransaksiPaid++;
 			if (!createMap.has(key) || createdDay < startDate || createdDay > endDate) {
 				pgaPendingError.push({ ...row, status: createdDay !== paidDay ? `BEDA TGL (CREATE: ${createdDay})` : "TIDAK ADA DI CREATE" });
 			}
@@ -322,17 +134,10 @@ export async function lapRunMotion(env: Env, token: string, startDate: string, e
 
 	let totalTransaksiCreate = 0;
 	let totalNominalCreatedAt = 0;
-	const optC = parsedCreate?.data_optional as Rec | undefined;
-	if (optC && optC.total_records !== undefined) {
-		totalTransaksiCreate = num(optC.total_records);
-		totalNominalCreatedAt = num(optC.total_amount || optC.total_sum || 0);
-	}
 	for (const item of listCreate) {
 		const key = String(item.reference_no || item.invoice_no || "");
-		if (!optC) {
-			totalNominalCreatedAt += num(item.amount || item.net_amount || 0);
-			totalTransaksiCreate++;
-		}
+		totalNominalCreatedAt += num(item.amount || item.net_amount || 0);
+		totalTransaksiCreate++;
 		if (!paidKeys.has(key)) {
 			pgaPendingError.push({
 				createdAt: item.created_at || "",
@@ -348,15 +153,11 @@ export async function lapRunMotion(env: Env, token: string, startDate: string, e
 		}
 	}
 
-	let totalWdRecords = 0;
 	let totalWdAmount = 0;
-	const wdOpt = (parsedWd?.data as Rec | undefined) || undefined;
-	if (wdOpt && wdOpt.total_records !== undefined) {
-		totalWdRecords = num(wdOpt.total_records);
-		totalWdAmount = num(wdOpt.total_sum || 0);
-	}
 	for (const item of listWd) {
 		const cust = item.customer as Rec | undefined;
+		const amount = num(item.amount || 0);
+		totalWdAmount += amount;
 		motionWdPga.push({
 			createdAt: item.created_at || "",
 			payoutAt: item.payout_at || item.paid_at || "-",
@@ -366,7 +167,7 @@ export async function lapRunMotion(env: Env, token: string, startDate: string, e
 			bank: cust?.bank_name || "-",
 			accountNumber: cust?.bank_account_number || "-",
 			vendor: item.pga || "-",
-			amount: num(item.amount || 0),
+			amount,
 			fee: num(item.fee_total_with_service_fee || item.fee || 0),
 			status: String(item.payout_status_description || item.payout_description || "SUCCESS").toUpperCase(),
 			adminName: item.admin_name || "-",
@@ -379,37 +180,24 @@ export async function lapRunMotion(env: Env, token: string, startDate: string, e
 		totalTransaksiCreate,
 		totalNominalCreatedAt,
 		totalPendingErrorCount: pgaPendingError.length,
-		totalWdRecords: totalWdRecords || motionWdPga.length,
+		totalWdRecords: motionWdPga.length,
 		totalWdAmount,
 	};
-	// Diagnosa: kenapa banyak "TIDAK ADA DI CREATE"? Simpan contoh baris mentah
-	// + berapa key paid yang ketemu di createMap.
-	const paidRefFound = listPaid.filter((it) => {
-		const k = String(it.reference_no || it.invoice_no || "");
-		return k && createMap.has(k);
-	}).length;
 	await lapSaveResults(env, s.username, {
 		motionDpPga,
 		motionPendingError: pgaPendingError,
 		motionWd: motionWdPga,
-		_motionMeta: [{ summary, truncated, at: startDate + "|" + endDate }],
-		_motionRawSample: [
-			{
-				paid: listPaid.slice(0, 3),
-				create: listCreate.slice(0, 3),
-				counts: { listPaid: listPaid.length, listCreate: listCreate.length, paidRefFound },
-			},
-		],
+		_motionMeta: [{ summary, source: "browser", at: startDate + "|" + endDate }],
 	});
 	await logActivity(
 		env,
 		s.username,
 		"LAP MOTION",
-		`${startDate}..${endDate} â€” DP ${motionDpPga.length}, pending ${pgaPendingError.length}, WD ${motionWdPga.length}` + (truncated ? " (terpotong)" : ""),
+		`Impor browser ${startDate}..${endDate} — DP ${motionDpPga.length}, pending ${pgaPendingError.length}, WD ${motionWdPga.length}`,
 		"BERHASIL",
 		"",
 	);
-	return { success: true, summary, motionDpPga, pgaPendingError, motionWdPga, truncated };
+	return { success: true, summary, dp: motionDpPga.length, pending: pgaPendingError.length, wd: motionWdPga.length };
 }
 
 // =========================================================================
@@ -856,22 +644,6 @@ type Rec = Record<string, unknown> & {
 	total_sum?: unknown;
 	total_amount?: unknown;
 };
-function arr(v: unknown): Rec[] {
-	return Array.isArray(v) ? (v as Rec[]) : [];
-}
-function wdArr(v: unknown): Rec[] {
-	if (Array.isArray(v)) return v as Rec[];
-	const d = (v as Rec | undefined)?.data;
-	return Array.isArray(d) ? (d as Rec[]) : [];
-}
-function optTotal(p: Rec | null, fallback: number): number {
-	const o = p?.data_optional as Rec | undefined;
-	return o && o.total_records !== undefined ? num(o.total_records) : fallback;
-}
-function wdTotal(p: Rec | null, fallback: number): number {
-	const d = p?.data as Rec | undefined;
-	return d && d.total_records !== undefined ? num(d.total_records) : fallback;
-}
 function mozartFindRows(json: unknown): Rec[] {
 	if (Array.isArray(json)) return json as Rec[];
 	let best: Rec[] = [];

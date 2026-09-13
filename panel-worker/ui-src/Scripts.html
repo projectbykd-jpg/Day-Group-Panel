@@ -880,15 +880,79 @@
     }
 
     // ---------- MOTION ----------
+    // motionv2.com KADANG menantang/menolak trafik IP datacenter Worker (WAF
+    // adaptif -- kadang lolos, kadang balas kosong tanpa pesan error jelas,
+    // gejalanya "DP 0 WD 0 padahal ada data"). Diganti total ke pola sama
+    // persis dengan Lap Mozart: skrip di-generate, di-paste di Console tab
+    // Motion (browser asli, bukan IP datacenter), fetch same-origin paginasi
+    // penuh (tanpa batas subrequest Worker -- sekalian menghilangkan masalah
+    // "data terpotong" pada periode besar), lalu POST hasil mentah ke sini.
+    function lapMotionConsoleScript() {
+      const panel = location.origin;
+      const token = currentSessionToken || '';
+      const mtoken = ((lapConfig && lapConfig.tokenMotion) || '').replace(/^Bearer\s+/i, '').trim();
+      return "(async()=>{\n"
+        + "try{\n"
+        + "  const O=location.origin, PANEL=" + JSON.stringify(panel) + ", TOKEN=" + JSON.stringify(token) + ", MTOKEN=" + JSON.stringify(mtoken) + ";\n"
+        + "  if(!/motionv2/i.test(O)){alert('Buka skrip ini di TAB MOTION (motionv2.com), bukan di sini.');return;}\n"
+        + "  if(!MTOKEN){alert('Token Motion belum diisi di menu Setting panel.');return;}\n"
+        + "  const p2=n=>('0'+n).slice(-2), td=d=>d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());\n"
+        + "  const sd=prompt('Tanggal MULAI (YYYY-MM-DD)',td(new Date())); if(!sd)return;\n"
+        + "  const ed=prompt('Tanggal AKHIR (YYYY-MM-DD)',sd); if(!ed)return;\n"
+        + "  const H={'content-type':'application/json','x-access-token':MTOKEN};\n"
+        + "  const rowsOf=j=>{if(Array.isArray(j&&j.data))return j.data;const d=j&&j.data&&j.data.data;return Array.isArray(d)?d:[];};\n"
+        + "  const pull=async(path,bd)=>{const rows=[];for(let p=0;p<400;p++){const r=await fetch(O+path,{method:'POST',credentials:'include',headers:H,body:JSON.stringify({...bd,page:p,start:p*100})});if(r.status===401||r.status===403){throw new Error('Motion '+r.status+' -- token salah/kedaluwarsa atau diblokir. Cek Token Motion di Setting.');}if(!r.ok){if(p===0)throw new Error(path+' HTTP '+r.status);break;}const j=await r.json();const rr=rowsOf(j);rows.push(...rr);console.log(path,bd.filter_by,'hal',p,'(+'+rr.length+')');if(rr.length<100)break;}return rows;};\n"
+        + "  console.log('%cMotion: deposit paid...','color:#0ff');\n"
+        + "  const paid=await pull('/api/deposit/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0',sort:{field:'paid_at',order:'desc'}});\n"
+        + "  console.log('%cMotion: deposit create...','color:#0ff');\n"
+        + "  const create=await pull('/api/deposit/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'1',sort:{field:'created_at',order:'desc'}});\n"
+        + "  console.log('%cMotion: withdraw...','color:#0ff');\n"
+        + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'});\n"
+        + "  const x=await fetch(PANEL+'/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,depoPaidRows:paid,depoCreateRows:create,wdRows:wd})});\n"
+        + "  const jr=await x.json(); console.log(jr);\n"
+        + "  alert(jr.success?('Motion terkirim ke panel OK\\nDP '+jr.dp+' · Pending '+jr.pending+' · WD '+jr.wd+'\\n\\nBuka panel -> Lap Motion -> Muat Ulang.'):('Gagal: '+(jr.message||'?')));\n"
+        + "}catch(e){alert('Gagal: '+((e&&e.message)||e));console.error(e);}\n"
+        + "})();";
+    }
+    function lapMotionCopyScript() {
+      lapEnsureConfig(() => {
+        if (!lapConfig || !lapConfig.tokenMotion) { toast('Isi Token Motion di menu Setting dulu'); switchPage('lap-setting'); return; }
+        const code = lapMotionConsoleScript();
+        const done = () => toast('Skrip disalin. Buka tab Motion, Console, tempel, Enter.');
+        navigator.clipboard.writeText(code).then(done).catch(() => {
+          const ta = document.getElementById('lapMotionCode');
+          if (ta) { ta.focus(); ta.select(); try { document.execCommand('copy'); done(); } catch(e){ toast('Salin manual dari kotak di bawah'); } }
+        });
+      });
+    }
     function lapRenderMotion(host) {
       const meta = (lapResults._motionMeta && lapResults._motionMeta[0]) || {};
       const sm = meta.summary || {};
       const dp = lapResults.motionDpPga || [], pe = lapResults.motionPendingError || [], wd = lapResults.motionWd || [];
       const wdSum = Number(sm.totalWdAmount) || wd.reduce((n,r) => n + Number(r.amount||0), 0);
       const wdCnt = Number(sm.totalWdRecords) || wd.length;
+      const code = lapMotionConsoleScript();
       host.innerHTML = lapHeaderCard('fa-bolt-lightning', 'Lap Motion', 'Motion DP PGA · PGA Pending/Error · PGA Withdraw', `
-        ${lapDateBar('lapMotion', lapRunMotion)}
-        ${meta.truncated ? '<div class="text-[11px] text-amber-300 mt-1">⚠ Data terpotong (batas request Worker). Untuk periode besar pakai Lap Admin nanti.</div>' : ''}
+        <div class="glass-inner rounded-2xl p-4 border border-amber-500/20 text-[11px] text-slate-300 leading-relaxed">
+          <div class="font-bold text-amber-300 mb-1"><i class="fa-solid fa-shield-halved mr-1"></i>Motion kadang menolak trafik server</div>
+          motionv2.com sesekali menantang/menolak request dari Worker (WAF) -- hasilnya data bisa muncul 0 padahal aslinya ada.
+          Tarik data Motion sekarang lewat <b>Console</b> tab Motion (browser asli, bukan server), sama seperti Lap Mozart:
+          <ol class="list-decimal ml-4 mt-1.5 space-y-1">
+            <li>Klik <b>Salin Skrip</b> di bawah.</li>
+            <li>Buka tab <b>Motion</b> (motionv2.com), pastikan sudah login.</li>
+            <li>Tekan <b>F12</b> → tab <b>Console</b>. (Pertama kali Chrome minta ketik <code>allow pasting</code> lalu Enter.)</li>
+            <li>Tempel (Ctrl+V) → <b>Enter</b> → isi tanggal → tunggu muncul “terkirim ke panel OK”.</li>
+            <li>Balik ke sini → <b>Muat Ulang</b>.</li>
+          </ol>
+          <div class="flex flex-wrap gap-2 mt-3">
+            <button onclick="lapMotionCopyScript()" class="bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs"><i class="fa-regular fa-copy mr-1"></i>Salin Skrip</button>
+            <button onclick="lapRefresh('lap-motion')" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-solid fa-rotate mr-1"></i>Muat Ulang</button>
+            <button onclick="document.getElementById('lapMotionCodeWrap').hidden=!document.getElementById('lapMotionCodeWrap').hidden" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-solid fa-code mr-1"></i>Lihat Skrip</button>
+          </div>
+          <div id="lapMotionCodeWrap" hidden class="mt-2">
+            <textarea id="lapMotionCode" readonly onclick="this.select()" class="w-full h-40 glass-inner rounded-xl p-2 text-[10px] font-mono text-slate-200 leading-tight">${code.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</textarea>
+          </div>
+        </div>
         <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 mt-3">
           ${lapStatCard('Transaksi Paid', lapFmt(sm.totalTransaksiPaid), 'text-cyan-400')}
           ${lapStatCard('Total By Paid At', lapFmt(sm.totalNominalPaidAt), 'text-emerald-400')}
@@ -910,25 +974,6 @@
             r => [r.user,r.amount].join('\t'), ['user','bank','accountNumber','refNo'],
             {title:'PGA Withdraw', footer: lapMozFooter('TOTAL WD PGA', wdCnt, wdSum)})}
         </div>`);
-    }
-    function lapRunMotion() {
-      lapEnsureConfig(() => {
-        if (!lapConfig || !lapConfig.tokenMotion) { toast('Isi Token Motion di menu Setting dulu'); switchPage('lap-setting'); return; }
-        const sd = lapDateVal('lapMotionStart'), ed = lapDateVal('lapMotionEnd');
-        if (!sd || !ed) { toast('Pilih tanggal'); return; }
-        lapBusy('lapMotion', true, 'Menghubungi API Motion...');
-        google.script.run.withSuccessHandler(res => {
-          lapBusy('lapMotion', false, '');
-          if (!res || !res.success) { toast((res && res.message) || 'Gagal'); return; }
-          lapResults.motionDpPga = res.motionDpPga || [];
-          lapResults.motionPendingError = res.pgaPendingError || [];
-          lapResults.motionWd = res.motionWdPga || [];
-          lapResults._motionMeta = [{ summary: res.summary, truncated: res.truncated }];
-          renderLapPage('lap-motion');
-          toast('Motion: DP ' + lapResults.motionDpPga.length + ' · WD ' + lapResults.motionWd.length);
-        }).withFailureHandler(e => { lapBusy('lapMotion', false, 'Gagal'); toast((e && e.message) || 'Gagal'); })
-          .lapRunMotion(currentSessionToken, sd, ed);
-      });
     }
 
     // ---------- MOZART ----------

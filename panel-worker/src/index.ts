@@ -49,9 +49,9 @@ import {
 	lapGetConfig,
 	lapJobResult,
 	lapJobStart,
+	lapMotionImport,
 	lapMozartImport,
 	lapRunAdmin,
-	lapRunMotion,
 	lapRunMozart,
 	lapSaveConfig,
 } from "./api/lap";
@@ -160,7 +160,8 @@ const ROUTES: Record<string, Handler> = {
 	// laporan harian
 	lapGetConfig: (env, b) => lapGetConfig(env, s(b.token)),
 	lapSaveConfig: (env, b) => lapSaveConfig(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
-	lapRunMotion: (env, b) => lapRunMotion(env, s(b.token), s(b.startDate), s(b.endDate)),
+	lapMotionImport: (env, b) =>
+		lapMotionImport(env, s(b.token), s(b.startDate), s(b.endDate), (b.depoPaidRows ?? []) as unknown[], (b.depoCreateRows ?? []) as unknown[], (b.wdRows ?? []) as unknown[]),
 	lapRunMozart: (env, b) =>
 		lapRunMozart(env, s(b.token), s(b.startDate), s(b.endDate), (b.opts ?? {}) as { depo?: boolean; wd?: boolean; panelId?: number }),
 	lapRunAdmin: (env, b) => lapRunAdmin(env, s(b.token), s(b.startDate), s(b.endDate)),
