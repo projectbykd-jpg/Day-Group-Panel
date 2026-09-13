@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>KD ● Group</title>
-  <link rel="icon" type="image/png" href="https://i.ibb.co/qYd58KcH/image.png">
+  <link rel="icon" type="image/png" href="https://i.ibb.co/r203LHQm/3b266ede-033f-4c5b-a125-77b76028439f.png">
   <!-- Buka koneksi ke CDN lebih awal supaya aset (Tailwind, ikon, font) mulai diunduh
        tanpa nunggu antrean DNS/TLS satu per satu. Aman: cuma "pemanasan" koneksi. -->
   <link rel="preconnect" href="https://cdn.tailwindcss.com">
@@ -42,12 +42,11 @@
     <div class="absolute -bottom-20 -left-20 w-48 h-48 bg-pink-500/15 blur-[70px] rounded-full pointer-events-none"></div>
     
     <div class="text-center relative z-10">
-      <!-- Logo tanpa latar transparan: dibuat MENGISI PENUH kotaknya (object-cover,
-           tanpa padding) supaya terlihat jelas. Kalau diberi padding + latar
-           sendiri seperti sebelumnya, gambar menyusut di tengah dan jadi sulit
-           dikenali. -->
-      <div class="w-24 h-24 mx-auto mb-5 rounded-2xl overflow-hidden border border-cyan-500/40 shadow-xl shadow-cyan-500/20">
-        <img src="https://i.ibb.co/qYd58KcH/image.png" width="96" height="96" decoding="async" referrerpolicy="no-referrer" alt="KD-Group" class="w-full h-full object-cover">
+      <!-- Logo baru punya latar TRANSPARAN (PNG alpha), jadi cukup object-contain
+           tanpa kotak/latar tambahan -- lambang bundar + teks di bawahnya tetap
+           utuh, tidak terpotong seperti kalau pakai object-cover. -->
+      <div class="w-24 h-24 mx-auto mb-5 flex items-center justify-center">
+        <img src="https://i.ibb.co/r203LHQm/3b266ede-033f-4c5b-a125-77b76028439f.png" width="96" height="96" decoding="async" referrerpolicy="no-referrer" alt="KD-Group" class="w-full h-full object-contain drop-shadow-[0_0_15px_rgba(34,211,238,0.5)]">
       </div>
       <h2 class="text-2xl font-extrabold neon-cyan tracking-tight">SECURE ACCESS</h2>
       <p class="text-[11px] text-slate-400 font-bold tracking-[0.3em] mt-1.5">KD GROUP PANEL SYSTEM</p>
@@ -76,8 +75,8 @@
     <div class="w-full lg:w-64 glass-card rounded-3xl p-4 sm:p-5 flex flex-row lg:flex-col justify-between shrink-0 z-30 lg:sticky lg:top-3 lg:self-start lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto sidebar-frozen">
       <div class="flex flex-row lg:flex-col items-center lg:items-stretch gap-4 w-full">
         <div class="flex items-center gap-3 px-1.5 pb-3.5 mb-1 border-b border-white/[0.06] w-full">
-          <div class="w-11 h-11 rounded-xl overflow-hidden border border-white/10 shrink-0">
-            <img src="https://i.ibb.co/qYd58KcH/image.png" width="44" height="44" decoding="async" referrerpolicy="no-referrer" alt="KD-Group" class="w-full h-full object-cover">
+          <div class="w-11 h-11 flex items-center justify-center shrink-0">
+            <img src="https://i.ibb.co/r203LHQm/3b266ede-033f-4c5b-a125-77b76028439f.png" width="44" height="44" decoding="async" referrerpolicy="no-referrer" alt="KD-Group" class="w-full h-full object-contain">
           </div>
           <div class="hidden lg:block overflow-hidden">
             <h3 class="text-[13px] font-extrabold text-white tracking-wide truncate leading-tight">KD-GROUP</h3>
