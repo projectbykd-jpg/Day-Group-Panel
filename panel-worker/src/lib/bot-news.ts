@@ -44,6 +44,11 @@ export async function ensureNewsCategoryColumns(env: Env): Promise<void> {
 		// dipakai sbg label tambahan Blogger & diekspos di JSON publik supaya situs
 		// sendiri (frontend terpisah) bisa render <meta name="keywords"> sendiri.
 		`ALTER TABLE news_article ADD COLUMN keywords TEXT NOT NULL DEFAULT ''`,
+		// meta_description = ringkasan SEO hasil AI (sebelumnya cuma dipakai sesaat
+		// utk searchDescription Blogger, TIDAK pernah disimpan ke DB) -- disimpan
+		// balik supaya situs sendiri juga bisa pakai deskripsi asli, bukan potongan
+		// judul, buat <meta name="description">/Open Graph.
+		`ALTER TABLE news_article ADD COLUMN meta_description TEXT NOT NULL DEFAULT ''`,
 	]) {
 		try {
 			await getTurso(env).prepare(stmt).run();
@@ -1007,9 +1012,9 @@ export async function newsProcessOne(
 		const now = tsNow();
 		await getTurso(env)
 			.prepare(
-				`UPDATE news_article SET status=?, rewritten_html=?, post_url=?, posted_at=?, site_posted_at=?, category=?, keywords=?, image_url=CASE WHEN image_url='' THEN ? ELSE image_url END, error='' WHERE id=?`,
+				`UPDATE news_article SET status=?, rewritten_html=?, post_url=?, posted_at=?, site_posted_at=?, category=?, keywords=?, meta_description=?, image_url=CASE WHEN image_url='' THEN ? ELSE image_url END, error='' WHERE id=?`,
 			)
-			.bind(postUrl ? "posted" : "site", content, postUrl, postUrl ? now : "", postUrl ? "" : now, category, rw.keywords.join(", "), imageUrl, id)
+			.bind(postUrl ? "posted" : "site", content, postUrl, postUrl ? now : "", postUrl ? "" : now, category, rw.keywords.join(", "), rw.metaDescription, imageUrl, id)
 			.run();
 
 		return { done: true, title: rw.title, postUrl: postUrl || undefined, siteOnly: !postUrl };
@@ -1280,9 +1285,9 @@ export async function publicNewsList(env: Env, category: string, page: number, p
 export async function publicNewsDetail(env: Env, id: number) {
 	await ensureNewsCategoryColumns(env);
 	const row = await getTurso(env)
-		.prepare(`SELECT id, title, rewritten_html, image_url, category, source, url, keywords, site_posted_at AS posted_at FROM news_article WHERE id=? AND site_posted_at != ''`)
+		.prepare(`SELECT id, title, rewritten_html, image_url, category, source, url, keywords, meta_description, site_posted_at AS posted_at FROM news_article WHERE id=? AND site_posted_at != ''`)
 		.bind(id)
-		.first<{ id: number; title: string; rewritten_html: string; image_url: string; category: string; source: string; url: string; keywords: string; posted_at: string }>();
+		.first<{ id: number; title: string; rewritten_html: string; image_url: string; category: string; source: string; url: string; keywords: string; meta_description: string; posted_at: string }>();
 	if (!row) return { success: false, message: "Artikel tidak ditemukan." };
 	return { success: true, article: row };
 }
