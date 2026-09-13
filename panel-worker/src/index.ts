@@ -67,7 +67,7 @@ import {
 	botNewsStatus,
 	botNewsToggleSource,
 } from "./api/bot";
-import { botNewsRun, disableGnewsSources, fbDirectRun, newsPullSources, publicNewsBanner, publicNewsDetail, publicNewsList, publicNewsRandom, seedCategorySources } from "./lib/bot-news";
+import { botNewsRun, disableGnewsSources, fbDirectRun, newsPullSources, publicNewsBanner, publicNewsDetail, publicNewsList, publicNewsRandom, publicNewsSitemapXml, seedCategorySources } from "./lib/bot-news";
 
 type Handler = (env: Env, body: Record<string, unknown>) => Promise<unknown>;
 const s = (v: unknown) => String(v ?? "");
@@ -310,6 +310,18 @@ export default {
 				const pageSize = parseInt(url.searchParams.get("pageSize") || "20", 10);
 				const out = await publicNewsList(env, category, page, pageSize);
 				return json(out, 200);
+			} catch (e) {
+				return json({ success: false, message: e instanceof Error ? e.message : String(e) }, 500);
+			}
+		}
+
+		// Sitemap XML artikel "Berita Terkini" -- lihat catatan di publicNewsSitemapXml
+		// soal kenapa ini TIDAK otomatis kepakai Search Console utk lokalstore88.online
+		// tanpa frontend-nya ikut proxy/serve balik file ini di domain sendiri.
+		if (url.pathname === "/public/news-sitemap.xml") {
+			try {
+				const xml = await publicNewsSitemapXml(env);
+				return new Response(xml, { headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=1800", ...CORS_HEADERS } });
 			} catch (e) {
 				return json({ success: false, message: e instanceof Error ? e.message : String(e) }, 500);
 			}

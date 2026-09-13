@@ -908,16 +908,13 @@ export async function newsProcessOne(
 		if (!imageUrl) {
 			imageUrl = await fetchOgImage(String(row.url));
 		}
-		if (imageUrl) {
-			// alt text diisi judul artikel (sebelumnya kosong) -- Google Image Search
-			// & aksesibilitas butuh alt yang deskriptif, bukan cuma dekorasi kosong.
-			content = `<p><img src="${escAttr(imageUrl)}" alt="${escAttr(rw.title)}" style="max-width:100%"></p>\n` + content;
-		}
-
 		// Byline tanggal WAJIB di awal SETIAP artikel (Blogger maupun situs sendiri --
 		// keduanya pakai `content` yang sama ini) -- pemilik minta format persis:
 		// "LokalStore88 <NamaHari>,<tanggal> <bulan> <tahun>." dengan "LokalStore88"
-		// jadi link biru ke Fanspage Facebook.
+		// jadi link biru ke Fanspage Facebook. Prepend INI DULU sebelum gambar (bukan
+		// sesudah) -- supaya urutan akhirnya: gambar paling atas, byline PERSIS DI
+		// BAWAH gambar, baru isi artikel (pemilik minta byline pindah dari atas ke
+		// bawah foto).
 		const fbPageUrlForByline = (cfg.fb_page_url || "").trim();
 		const bylineBrand = fbPageUrlForByline
 			? `<a href="${escAttr(fbPageUrlForByline)}" rel="noopener" target="_blank" style="color:#1877f2;text-decoration:none;font-weight:700">LokalStore88</a>`
@@ -927,6 +924,39 @@ export async function newsProcessOne(
 		// di Blogger), sama seperti perbaikan kotak promo sebelumnya yg sempat
 		// tidak kebaca di tema gelap gara-gara warna solid di-hardcode.
 		content = `<p style="margin:0 0 14px;font-size:13px">${bylineBrand} ${escHtml(tsNowIndonesianDate())}.</p>\n` + content;
+
+		if (imageUrl) {
+			// alt text diisi judul artikel (sebelumnya kosong) -- Google Image Search
+			// & aksesibilitas butuh alt yang deskriptif, bukan cuma dekorasi kosong.
+			content = `<p><img src="${escAttr(imageUrl)}" alt="${escAttr(rw.title)}" style="max-width:100%"></p>\n` + content;
+		}
+
+		// Structured data (schema.org NewsArticle) -- murni data buat mesin
+		// pencari, TIDAK tampil ke pembaca (browser tidak merender isi <script>).
+		// Ini yang dibaca Google utk rich snippet / kandidat Google News, bukan
+		// meta keyword tag (yang sudah tidak dipakai Google sejak lama). Nempel di
+		// `content` yang sama -> otomatis ikut ke Blogger MAUPUN situs sendiri,
+		// tidak perlu ubah apa pun di frontend. Kalau Blogger/tampilan situs
+		// sendiri ternyata menyaring tag <script>, blok ini cuma hilang -- TIDAK
+		// pernah bikin artikel gagal tampil (dibungkus try/catch, murni tambahan).
+		try {
+			const ldJson = {
+				"@context": "https://schema.org",
+				"@type": "NewsArticle",
+				headline: rw.title,
+				description: rw.metaDescription,
+				image: imageUrl ? [imageUrl] : undefined,
+				datePublished: tsNow().replace(" ", "T") + "+07:00",
+				keywords: rw.keywords.length ? rw.keywords.join(", ") : undefined,
+				articleSection: newsCategoryLabel(category),
+				author: { "@type": "Organization", name: "LokalStore88" },
+				publisher: { "@type": "Organization", name: "LokalStore88" },
+				mainEntityOfPage: `${LAPAKSTORE_SITE_URL}/berita/artikel/?id=${id}`,
+			};
+			content += `\n<script type="application/ld+json">${JSON.stringify(ldJson)}</script>`;
+		} catch (e) {
+			console.error("JSON-LD gagal dibangun (dilewati):", e instanceof Error ? e.message : e);
+		}
 
 		// Label: "LapakStore88" (brand sendiri) + kategori otomatis (dari AI) + label
 		// tambahan dari config -- SENGAJA TIDAK menyertakan nama sumber berita lagi
@@ -1349,4 +1379,34 @@ export async function publicNewsRandom(env: Env, category: string, limit: number
 				.all<{ id: number; title: string; image_url: string; category: string }>()
 		).results ?? [];
 	return { success: true, articles: rows };
+}
+
+/** Sitemap XML utk artikel "Berita Terkini" LapakStore88 -- dipakai Google supaya
+ * bisa menemukan & meng-crawl semua artikel yang tayang di situs sendiri (tanpa
+ * ini, Google cuma bisa nemu artikel lewat link internal satu-satu / backlink,
+ * jauh lebih lambat & sering kelewat). CATATAN buat pemilik: file sitemap harus
+ * dibuka DI DOMAIN yang sama dengan artikelnya (aturan sitemap protocol) --
+ * endpoint worker ini (panel-worker.workers.dev) TIDAK bisa langsung dipakai
+ * Search Console utk properti lokalstore88.online, kecuali frontend-nya (repo
+ * terpisah) proxy/fetch XML ini lalu disajikan lewat lokalstore88.online/sitemap.xml
+ * sendiri. Limit 5000 URL/sitemap (jauh di atas kebutuhan sekarang, standar sitemap
+ * protocol maksimal 50.000). */
+export async function publicNewsSitemapXml(env: Env): Promise<string> {
+	await ensureNewsCategoryColumns(env);
+	const rows =
+		(
+			await getTurso(env)
+				.prepare(
+					`SELECT id, site_posted_at FROM news_article WHERE site_posted_at != '' ORDER BY site_posted_at DESC LIMIT 5000`,
+				)
+				.all<{ id: number; site_posted_at: string }>()
+		).results ?? [];
+	const urls = rows
+		.map((r) => {
+			const loc = `${LAPAKSTORE_SITE_URL}/berita/artikel/?id=${r.id}`;
+			const lastmod = String(r.site_posted_at || "").replace(" ", "T") + "+07:00";
+			return `<url><loc>${loc}</loc><lastmod>${lastmod}</lastmod></url>`;
+		})
+		.join("");
+	return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`;
 }
