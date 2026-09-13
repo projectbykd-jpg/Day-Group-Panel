@@ -933,9 +933,13 @@
           + "  let paid=[], create=[];\n"
           + "  for(const vid of vids){\n"
           + "    console.log('%cMotion: deposit paid vendor '+vid+'...','color:#0ff');\n"
-          + "    paid=paid.concat(await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'0',sort:{field:'paid_at',order:'desc'},vendor_id:vid},20));\n"
+          // "sort" DIBUANG -- backend panel tidak butuh data terurut sama sekali
+          // (baca semua baris & filter sendiri), dan kombinasi sort+filter+vendor
+          // di query besar (800an baris/hari) diduga jadi beban paling berat yang
+          // bikin server Motion timeout total. Coba tanpa sort dulu.
+          + "    paid=paid.concat(await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'0',vendor_id:vid},20));\n"
           + "    console.log('%cMotion: deposit create vendor '+vid+'...','color:#0ff');\n"
-          + "    create=create.concat(await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'1',sort:{field:'created_at',order:'desc'},vendor_id:vid},20));\n"
+          + "    create=create.concat(await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'1',vendor_id:vid},20));\n"
           + "  }\n"
         : "  console.log('%cMotion: withdraw...','color:#0ff');\n"
           + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'},100);\n";
