@@ -932,11 +932,11 @@
           + "  let depo=[];\n"
           + "  for(const vid of vids){\n"
           + "    console.log('%cMotion: deposit vendor '+vid+'...','color:#0ff');\n"
-          + "    const part=await pull('/api/deposit/list/pga',{limit:20,count:0,vendor_id:vid},20,'paid_at');\n"
+          + "    const part=await pull('/api/deposit/list/pga',{limit:20,count:0,vendor_id:vid},20);\n"
           + "    depo=depo.concat(part);\n"
           + "  }\n"
         : "  console.log('%cMotion: withdraw...','color:#0ff');\n"
-          + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'},100,'created_at');\n";
+          + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'},100);\n";
       const payload = isDepo
         ? "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,depoPaidRows:depo,depoCreateRows:depo}"
         : "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,wdRows:wd}";
@@ -1032,21 +1032,18 @@
         + "    const isTO=lastErr&&lastErr.name==='AbortError';\n"
         + "    throw new Error(path+(isTO?' TIMEOUT semua cara akses dicoba, Motion tidak merespons sama sekali dari halaman ini. Coba buka menu " + (isDepo ? "RIWAYAT PGA" : "WD REQUEST/RIWAYAT WD PGA") + " dulu di Motion, atau pakai rentang tanggal lebih pendek.':' gagal: '+((lastErr&&lastErr.message)||lastErr)));\n"
         + "  };\n"
-        // pull(path, bodyBase, pageLimit, dateField): ambil BATCH halaman sekaligus
-        // secara paralel (bukan 1-per-1) supaya lebih cepat, TAPI tetap diproses
-        // berurutan sesuai nomor halaman (bukan urutan selesainya fetch) -- data
-        // Motion terurut TERBARU->TERLAMA, jadi begitu ketemu halaman yang sudah
-        // < pageLimit baris ATAU baris terakhirnya sudah lebih lama dari tanggal
-        // MULAI, berhenti (sisa halaman dalam batch yang sama dibuang, hemat
-        // request berikutnya -- beberapa halaman terakhir di batch itu sendiri
-        // tetap "boros" sedikit, trade-off wajar demi kecepatan).\n"
+        // pull(path, bodyBase, pageLimit): tarik SAMPAI HABIS (berhenti hanya
+        // begitu 1 halaman balas kurang dari pageLimit -- itu satu-satunya sinyal
+        // "halaman terakhir" yang PASTI benar dari server, bukan tebakan). Filter
+        // tanggal 100% di backend/panel (bukan di sini) -- lebih lambat utk akun
+        // dengan riwayat panjang, tapi tidak pernah diam-diam kehilangan data.\n"
         // BATCH sempat dinaikkan ke 5 (paralel) biar lebih cepat, TAPI ternyata
         // bikin deposit gagal total (timeout/403 beruntun) -- kemungkinan besar
         // Motion rate-limit/block kalau ada beberapa request BERSAMAAN dari sesi
         // yang sama. Balik ke 1 (satu-per-satu, sama seperti versi yang TERBUKTI
         // jalan sebelumnya) -- lebih lambat tapi jangan sampai gagal total lagi.
         + "  const BATCH=1;\n"
-        + "  const pull=async(path,bd,pageLimit,dateField)=>{const rows=[];\n"
+        + "  const pull=async(path,bd,pageLimit)=>{const rows=[];\n"
         + "    for(let base=0;base<400;base+=BATCH){\n"
         + "      const pages=Array.from({length:BATCH},(_,i)=>base+i);\n"
         + "      const results=await Promise.all(pages.map(p=>post(path,{...bd,page:p,start:p*pageLimit}).then(r=>({p,r})).catch(e=>({p,e}))));\n"
@@ -1059,9 +1056,14 @@
         + "        const j=await r.json();const rr=rowsOf(j);rows.push(...rr);\n"
         + "        document.title='['+path.split('/').pop()+' hal '+(it.p+1)+' · '+rows.length+' baris] MOTION';\n"
         + "        console.log(path,'hal',it.p,'(+'+rr.length+')');\n"
+        // Dulu ada "early-stop" (berhenti begitu 1 halaman sudah lebih lama dari
+        // tanggal mulai) -- DICABUT karena itu ASUMSI urutan data yang tidak
+        // pernah benar-benar diverifikasi (bisa diam-diam kepotong tanpa pesan
+        // error kalau urutannya ternyata tidak selalu terbaru->lama). Sekarang
+        // SELALU tarik sampai benar-benar habis (dateField tidak dipakai lagi di
+        // sini, filter tanggal murni di backend/panel) -- lebih lambat tapi tidak
+        // pernah diam-diam kehilangan data.\n"
         + "        if(rr.length<pageLimit){stop=true;break;}\n"
-        + "        const lastD=String((rr[rr.length-1]&&rr[rr.length-1][dateField])||'').split(' ')[0];\n"
-        + "        if(lastD&&lastD<sd){stop=true;break;}\n"
         + "      }\n"
         + "      if(stop)break;\n"
         + "      await new Promise(r=>setTimeout(r,250));\n"
