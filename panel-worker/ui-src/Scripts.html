@@ -843,7 +843,7 @@
           </div>
           <div class="grid sm:grid-cols-2 gap-3">
             <input id="lapLinkMotion" placeholder="Link Motion (https://motionv2.com)" value="${(c.linkMotion||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
-            <input id="lapTokenMotion" placeholder="Token Motion (x-access-token)" value="${(c.tokenMotion||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
+            <input id="lapTokenMotion" placeholder="Token Motion (opsional — otomatis kebaca dari sesi browser saat Skrip Console jalan)" value="${(c.tokenMotion||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
           </div>
           <div>
             <input id="lapVendorIdMotion" placeholder="Vendor ID Motion (opsional — biarkan kosong, akan terisi otomatis)" value="${(c.vendorIdMotion||'').replace(/"/g,'&quot;')}" class="w-full glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
@@ -936,9 +936,20 @@
       return "(async()=>{\n"
         + "const origTitle=document.title;\n"
         + "try{\n"
-        + "  const O=location.origin, PANEL=" + JSON.stringify(panel) + ", TOKEN=" + JSON.stringify(token) + ", MTOKEN=" + JSON.stringify(mtoken) + "; let VID=" + JSON.stringify(vendorId) + ";\n"
+        + "  const O=location.origin, PANEL=" + JSON.stringify(panel) + ", TOKEN=" + JSON.stringify(token) + "; let VID=" + JSON.stringify(vendorId) + ";\n"
         + "  if(!/motionv2/i.test(O)){alert('Buka skrip ini di TAB MOTION (motionv2.com), bukan di sini.');return;}\n"
-        + "  if(!MTOKEN){alert('Token Motion belum diisi di menu Setting panel.');return;}\n"
+        // Sama seperti Mozart (jalan di browser asli, bukan server), token TIDAK
+        // WAJIB disimpan manual di Setting -- token JWT Motion ada masa berlakunya
+        // (field "exp"), jadi nilai statis di Setting bisa basi. Skrip ini baca
+        // LANGSUNG dari localStorage/sessionStorage tab yang lagi login (situs
+        // Motion sendiri pasti nyimpen token-nya di situ buat kirim request dia
+        // sendiri) -- selalu FRESH, tidak pernah kedaluwarsa selama user masih
+        // login. Setting.tokenMotion cuma jadi cadangan kalau deteksi otomatis
+        // gagal (mis. situs simpan token dengan cara tidak lazim).\n"
+        + "  const isJwt=s=>typeof s==='string'&&/^eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/.test(s);\n"
+        + "  const findToken=()=>{try{for(const store of [localStorage,sessionStorage]){for(let i=0;i<store.length;i++){const k=store.key(i);let v;try{v=store.getItem(k);}catch(e){continue;}if(isJwt(v))return v;try{const p=JSON.parse(v);if(isJwt(p))return p;if(p&&isJwt(p.token))return p.token;if(p&&isJwt(p.access_token))return p.access_token;if(p&&isJwt(p.accessToken))return p.accessToken;}catch(e){}}}}catch(e){}return null;};\n"
+        + "  let MTOKEN=findToken()||" + JSON.stringify(mtoken) + ";\n"
+        + "  if(!MTOKEN){alert('Token Motion tidak ketemu otomatis dari sesi browser ini. Pastikan kamu sudah LOGIN di tab Motion ini, lalu jalankan skrip ini lagi.');return;}\n"
         + "  const p2=n=>('0'+n).slice(-2), td=d=>d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());\n"
         + "  const sd=prompt('Tanggal MULAI (YYYY-MM-DD)',td(new Date())); if(!sd)return;\n"
         + "  const ed=prompt('Tanggal AKHIR (YYYY-MM-DD)',sd); if(!ed)return;\n"
@@ -953,14 +964,20 @@
             // panel (lewat action lapSaveConfig) supaya lain kali tidak perlu lagi.
             ? "  if(!VID){\n"
               + "    console.log('%cVendor ID belum ada -- mendeteksi otomatis...','color:#ff0');\n"
-              + "    const origFetch=window.fetch;\n"
               + "    let sniffed=null;\n"
-              + "    window.fetch=function(u,o){try{if(String(u).indexOf('/api/deposit/list/pga')>-1&&o&&o.body){const b=JSON.parse(o.body);if(b.vendor_id&&!sniffed)sniffed=b.vendor_id;}}catch(e){}return origFetch.apply(this,arguments);};\n"
-              + "    alert('Vendor ID belum diisi di Setting -- OTOMATIS SAJA:\\n\\n1) Klik OK di sini.\\n2) Di halaman ini (RIWAYAT PGA), klik tombol REFRESH/CARI data PGA (atau ganti tanggal filter-nya) SEKALI.\\n3) Tunggu, skrip akan lanjut otomatis begitu terdeteksi (maks 30 detik).');\n"
+              + "    const sniff=(u,bodyStr)=>{try{if(String(u).indexOf('vendor_id')<0&&String(u).indexOf('/api/deposit')<0&&String(u).indexOf('/api/withdraw')<0&&String(u).indexOf('pga')<0)return;if(!bodyStr)return;const b=JSON.parse(bodyStr);if(b&&b.vendor_id&&!sniffed)sniffed=b.vendor_id;}catch(e){}};\n"
+              // Beberapa versi situs Motion pakai fetch(), sebagian lagi XMLHttpRequest --
+              // intip DUA-DUANYA sekaligus supaya tidak tergantung yang mana dipakai.
+              + "    const origFetch=window.fetch;\n"
+              + "    window.fetch=function(u,o){sniff(u,o&&o.body);return origFetch.apply(this,arguments);};\n"
+              + "    const origOpen=XMLHttpRequest.prototype.open, origSend=XMLHttpRequest.prototype.send;\n"
+              + "    XMLHttpRequest.prototype.open=function(m,u){this.__sniffUrl=u;return origOpen.apply(this,arguments);};\n"
+              + "    XMLHttpRequest.prototype.send=function(body){sniff(this.__sniffUrl,typeof body==='string'?body:null);return origSend.apply(this,arguments);};\n"
+              + "    alert('Vendor ID belum diisi di Setting -- OTOMATIS SAJA:\\n\\n1) Klik OK di sini.\\n2) Di halaman ini (RIWAYAT PGA), klik tombol/link REFRESH, CARI, atau APPLY yang menampilkan ulang datanya (boleh juga ganti tanggal filter lalu Apply).\\n3) Tunggu, skrip lanjut otomatis begitu terdeteksi (maks 45 detik). Kalau ada beberapa tombol, coba klik semuanya bergantian.');\n"
               + "    const t0=Date.now();\n"
-              + "    while(!sniffed&&Date.now()-t0<30000){await new Promise(r=>setTimeout(r,400));}\n"
-              + "    window.fetch=origFetch;\n"
-              + "    if(!sniffed){alert('Vendor ID belum kedeteksi. Coba lagi: jalankan skrip ini lagi, lalu klik tombol refresh/cari PGA-nya LEBIH CEPAT setelah klik OK.');return;}\n"
+              + "    while(!sniffed&&Date.now()-t0<45000){await new Promise(r=>setTimeout(r,400));}\n"
+              + "    window.fetch=origFetch; XMLHttpRequest.prototype.open=origOpen; XMLHttpRequest.prototype.send=origSend;\n"
+              + "    if(!sniffed){alert('Vendor ID belum kedeteksi dalam 45 detik. Coba lagi: jalankan skrip ini lagi, lalu SEGERA klik tombol yang menampilkan/refresh data PGA di halaman ini setelah klik OK.');return;}\n"
               + "    VID=sniffed;\n"
               + "    console.log('%cVendor ID terdeteksi: '+VID,'color:#0f0;font-weight:bold');\n"
               + "    try{\n"
@@ -1033,7 +1050,6 @@
     }
     function lapMotionCopyScript(mode) {
       lapEnsureConfig(() => {
-        if (!lapConfig || !lapConfig.tokenMotion) { toast('Isi Token Motion di menu Setting dulu'); switchPage('lap-setting'); return; }
         const code = lapMotionConsoleScript(mode);
         const done = () => toast('Skrip disalin. Buka menu ' + (mode === 'deposit' ? 'RIWAYAT PGA' : 'WD REQUEST') + ' di tab Motion, Console, tempel, Enter.');
         navigator.clipboard.writeText(code).then(done).catch(() => {
