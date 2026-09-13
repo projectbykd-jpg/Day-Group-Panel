@@ -4,3 +4,5 @@
 -- file ini murni dokumentasi skema, TIDAK perlu dijalankan manual.
 ALTER TABLE news_source ADD COLUMN category TEXT NOT NULL DEFAULT 'umum';
 ALTER TABLE news_article ADD COLUMN category TEXT NOT NULL DEFAULT 'umum';
+ALTER TABLE news_article ADD COLUMN site_posted_at TEXT NOT NULL DEFAULT '';
+ALTER TABLE news_article ADD COLUMN keywords TEXT NOT NULL DEFAULT '';

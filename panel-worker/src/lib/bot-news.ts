@@ -40,6 +40,10 @@ export async function ensureNewsCategoryColumns(env: Env): Promise<void> {
 		// sekali (lihat newsProcessOne/botNewsRun) -- pemilik minta situs sendiri boleh
 		// jauh lebih banyak daripada Blogger.
 		`ALTER TABLE news_article ADD COLUMN site_posted_at TEXT NOT NULL DEFAULT ''`,
+		// keywords = kata kunci SEO (dipisah koma) hasil generate AI per-artikel --
+		// dipakai sbg label tambahan Blogger & diekspos di JSON publik supaya situs
+		// sendiri (frontend terpisah) bisa render <meta name="keywords"> sendiri.
+		`ALTER TABLE news_article ADD COLUMN keywords TEXT NOT NULL DEFAULT ''`,
 	]) {
 		try {
 			await getTurso(env).prepare(stmt).run();
@@ -276,6 +280,7 @@ interface Rewritten {
 	html: string;
 	metaDescription: string;
 	category: string;
+	keywords: string[];
 }
 
 export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: { title: string; excerpt: string; source: string; url: string }): Promise<Rewritten> {
@@ -302,7 +307,9 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 		`bukan copy kalimat pertama artikel, tapi rangkuman inti isi artikel. ` +
 		`Sertakan juga "category": kategori artikel ini, PILIH TEPAT SATU dari daftar berikut sesuai topik sebenarnya ` +
 		`(jangan mengarang kategori lain di luar daftar): ${NEWS_CATEGORIES.join(", ")}. ` +
-		`Balas HANYA JSON valid tanpa markdown: {"title": "...", "meta_description": "...", "category": "...", "body_html": "<p>...</p><p>...</p>"}.\n\n` +
+		`Sertakan juga "keywords": array berisi 5-8 kata kunci/frasa pendek berbahasa Indonesia yang RELEVAN dengan topik artikel ` +
+		`ini dan SERING dicari orang di Google (search term populer terkait topiknya, bukan kalimat lengkap) -- untuk SEO. ` +
+		`Balas HANYA JSON valid tanpa markdown: {"title": "...", "meta_description": "...", "category": "...", "keywords": ["...", "..."], "body_html": "<p>...</p><p>...</p>"}.\n\n` +
 		`JUDUL ASLI: ${art.title}\n` +
 		`RINGKASAN: ${art.excerpt || "(tidak ada, tulis ringkas dari judul saja)"}\n` +
 		`SUMBER: ${art.source}`;
@@ -355,6 +362,7 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 	let html = "";
 	let metaDescription = "";
 	let category = "";
+	let keywords: string[] = [];
 
 	// 1) coba parse JSON apa adanya
 	const tryParse = (s: string): boolean => {
@@ -365,6 +373,9 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 				html = String(p.body_html || p.html || "").trim();
 				metaDescription = String(p.meta_description || "").trim();
 				category = String(p.category || "").trim().toLowerCase();
+				if (Array.isArray(p.keywords)) {
+					keywords = p.keywords.map((k: unknown) => String(k || "").trim()).filter(Boolean);
+				}
 				return true;
 			}
 		} catch {
@@ -414,7 +425,14 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 	// pemanggil (newsProcessOne) jatuh balik ke kategori sumbernya (aman,
 	// tidak pernah menyimpan kategori sampah/tidak dikenal ke database).
 	if (!(NEWS_CATEGORIES as readonly string[]).includes(category)) category = "";
-	return { title: title.slice(0, 180), html, metaDescription: metaDescription.slice(0, 155), category };
+	// Keyword cuma pemanis SEO tambahan -- kalau AI tidak balas array yang valid
+	// (mis. lewat jalur fallback regex/teks-polos di atas), biarkan kosong saja,
+	// JANGAN sampai bikin seluruh rewrite gagal cuma gara-gara field ini.
+	keywords = keywords
+		.map((k) => k.replace(/^[#\-*\s]+/, "").trim())
+		.filter((k) => k.length > 1 && k.length <= 60)
+		.slice(0, 8);
+	return { title: title.slice(0, 180), html, metaDescription: metaDescription.slice(0, 155), category, keywords };
 }
 
 // ---------------------------------------------------------------------------
@@ -835,6 +853,49 @@ export async function newsProcessOne(
 				`\n<p style="font-size:14px;margin-top:10px">📰 Baca artikel lainnya di blog kami: ` +
 				`<a href="${escAttr(bloggerSiteUrl)}" rel="noopener" target="_blank"><strong>kunjungi blog</strong></a></p>`;
 		}
+
+		// Internal link acak ("Baca juga") -- diambil dari artikel yang SUDAH
+		// pernah terbit sebelumnya, gabungan dari 2 aset: yang posting ke Blogger
+		// (pakai post_url) MAUPUN yang cuma tayang di situs sendiri (pakai pola URL
+		// LapakStore88 yang sama seperti dipakai fbPostToPage di atas). Tujuannya
+		// internal linking utk SEO -- link SELALU domain milik sendiri, tidak pernah
+		// link acak ke situs luar. Kalau belum ada artikel lain yg pernah tayang
+		// (situs baru), query ini balas kosong -> blok ini dilewati begitu saja,
+		// TIDAK bikin artikel gagal.
+		try {
+			const related = await getTurso(env)
+				.prepare(
+					`SELECT id, title, post_url FROM news_article
+					 WHERE id != ? AND (status = 'posted' OR status = 'site')
+					 ORDER BY RANDOM() LIMIT 3`,
+				)
+				.bind(id)
+				.all<{ id: number; title: string; post_url: string }>();
+			const rows = related.results || [];
+			if (rows.length) {
+				const items = rows
+					.map((r) => {
+						const href = r.post_url ? r.post_url : `${LAPAKSTORE_SITE_URL}/berita/artikel/?id=${r.id}`;
+						return `<li><a href="${escAttr(href)}" rel="noopener">${escHtml(r.title)}</a></li>`;
+					})
+					.join("");
+				content +=
+					`\n<div style="margin-top:18px"><p style="font-size:14px;font-weight:700;margin:0 0 6px">Baca juga:</p>` +
+					`<ul style="margin:0;padding-left:20px;font-size:14px">${items}</ul></div>`;
+			}
+		} catch (e) {
+			console.error("internal link acak gagal (dilewati):", e instanceof Error ? e.message : e);
+		}
+
+		// Kata kunci SEO (hasil generate AI) -- disisipkan sebagai baris kecil di
+		// akhir artikel (tidak mengganggu isi utama) + ikut jadi label Blogger
+		// tambahan di bawah. Kalau AI tidak menghasilkan keyword (mis. jalur
+		// fallback), rw.keywords kosong -> blok ini otomatis dilewati.
+		if (rw.keywords.length) {
+			content +=
+				`\n<p style="font-size:12px;color:#888;margin-top:16px">Kata kunci terkait: ${escHtml(rw.keywords.join(", "))}</p>`;
+		}
+
 		// Feed Google News (dipakai Kompas/Tribunnews) tidak menyertakan gambar
 		// sama sekali -> post-nya tampil tanpa thumbnail di daftar Blogger. Kalau
 		// image_url kosong, coba ambil <meta og:image> dari halaman artikel asli
@@ -871,6 +932,11 @@ export async function newsProcessOne(
 		for (const l of String(cfg.post_labels || "").split(",").map((x) => x.trim()).filter(Boolean)) {
 			if (!labels.includes(l)) labels.push(l);
 		}
+		// Keyword SEO (hasil generate AI) ikut jadi label Blogger tambahan --
+		// dibatasi 4 biar label tidak kebanjiran & tetap didominasi brand/kategori.
+		for (const kw of rw.keywords.slice(0, 4)) {
+			if (!labels.some((l) => l.toLowerCase() === kw.toLowerCase())) labels.push(kw);
+		}
 		// Blogger (dan Facebook auto-share yang menyertainya) TETAP dibatasi
 		// daily_cap milik pemilik akun -- kalau limit sudah tercapai, lewati
 		// langkah ini, tapi artikel TETAP disimpan & tersedia di situs sendiri
@@ -906,9 +972,9 @@ export async function newsProcessOne(
 		const now = tsNow();
 		await getTurso(env)
 			.prepare(
-				`UPDATE news_article SET status=?, rewritten_html=?, post_url=?, posted_at=?, site_posted_at=?, category=?, image_url=CASE WHEN image_url='' THEN ? ELSE image_url END, error='' WHERE id=?`,
+				`UPDATE news_article SET status=?, rewritten_html=?, post_url=?, posted_at=?, site_posted_at=?, category=?, keywords=?, image_url=CASE WHEN image_url='' THEN ? ELSE image_url END, error='' WHERE id=?`,
 			)
-			.bind(postUrl ? "posted" : "site", content, postUrl, postUrl ? now : "", postUrl ? "" : now, category, imageUrl, id)
+			.bind(postUrl ? "posted" : "site", content, postUrl, postUrl ? now : "", postUrl ? "" : now, category, rw.keywords.join(", "), imageUrl, id)
 			.run();
 
 		return { done: true, title: rw.title, postUrl: postUrl || undefined, siteOnly: !postUrl };
@@ -1179,9 +1245,9 @@ export async function publicNewsList(env: Env, category: string, page: number, p
 export async function publicNewsDetail(env: Env, id: number) {
 	await ensureNewsCategoryColumns(env);
 	const row = await getTurso(env)
-		.prepare(`SELECT id, title, rewritten_html, image_url, category, source, url, site_posted_at AS posted_at FROM news_article WHERE id=? AND site_posted_at != ''`)
+		.prepare(`SELECT id, title, rewritten_html, image_url, category, source, url, keywords, site_posted_at AS posted_at FROM news_article WHERE id=? AND site_posted_at != ''`)
 		.bind(id)
-		.first<{ id: number; title: string; rewritten_html: string; image_url: string; category: string; source: string; url: string; posted_at: string }>();
+		.first<{ id: number; title: string; rewritten_html: string; image_url: string; category: string; source: string; url: string; keywords: string; posted_at: string }>();
 	if (!row) return { success: false, message: "Artikel tidak ditemukan." };
 	return { success: true, article: row };
 }
