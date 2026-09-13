@@ -887,10 +887,33 @@
     // Motion (browser asli, bukan IP datacenter), fetch same-origin paginasi
     // penuh (tanpa batas subrequest Worker -- sekalian menghilangkan masalah
     // "data terpotong" pada periode besar), lalu POST hasil mentah ke sini.
-    function lapMotionConsoleScript() {
+    //
+    // Deposit & Withdraw DIPECAH jadi 2 skrip terpisah (bukan 1 skrip yg narik
+    // semuanya) -- ketahuan dari testing bahwa endpoint deposit motionv2.com
+    // TIMEOUT total (semua strategi auth dicoba) kalau dipanggil dari halaman
+    // "WD Request", padahal endpoint withdraw sukses 200 OK persis di halaman
+    // itu dgn kredensial yang sama. Jadi tiap endpoint kelihatannya cuma mau
+    // nyaut dari halaman menu-nya sendiri di situs Motion -- user perlu buka
+    // menu RIWAYAT PGA utk skrip Deposit, dan menu WD REQUEST (atau RIWAYAT WD
+    // PGA) utk skrip Withdraw.
+    function lapMotionConsoleScript(mode) {
       const panel = location.origin;
       const token = currentSessionToken || '';
       const mtoken = ((lapConfig && lapConfig.tokenMotion) || '').replace(/^Bearer\s+/i, '').trim();
+      const isDepo = mode === 'deposit';
+      const pullCalls = isDepo
+        ? "  console.log('%cMotion: deposit paid...','color:#0ff');\n"
+          + "  const paid=await pull('/api/deposit/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0',sort:{field:'paid_at',order:'desc'}});\n"
+          + "  console.log('%cMotion: deposit create...','color:#0ff');\n"
+          + "  const create=await pull('/api/deposit/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'1',sort:{field:'created_at',order:'desc'}});\n"
+        : "  console.log('%cMotion: withdraw...','color:#0ff');\n"
+          + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'});\n";
+      const payload = isDepo
+        ? "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,depoPaidRows:paid,depoCreateRows:create}"
+        : "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,wdRows:wd}";
+      const okMsg = isDepo
+        ? "'Motion (Deposit) terkirim ke panel OK\\nDP '+jr.dp+' · Pending '+jr.pending+'\\n\\nBuka panel -> Lap Motion -> Muat Ulang.'"
+        : "'Motion (Withdraw) terkirim ke panel OK\\nWD '+jr.wd+'\\n\\nBuka panel -> Lap Motion -> Muat Ulang.'";
       return "(async()=>{\n"
         + "const origTitle=document.title;\n"
         + "try{\n"
@@ -924,7 +947,7 @@
         + "      }\n"
         + "    }\n"
         + "    const isTO=lastErr&&lastErr.name==='AbortError';\n"
-        + "    throw new Error(path+(isTO?' TIMEOUT semua cara akses dicoba, Motion tidak merespons sama sekali. Coba lagi beberapa saat lagi, atau pakai rentang tanggal lebih pendek dulu.':' gagal: '+((lastErr&&lastErr.message)||lastErr)));\n"
+        + "    throw new Error(path+(isTO?' TIMEOUT semua cara akses dicoba, Motion tidak merespons sama sekali dari halaman ini. Coba buka menu " + (isDepo ? "RIWAYAT PGA" : "WD REQUEST/RIWAYAT WD PGA") + " dulu di Motion, atau pakai rentang tanggal lebih pendek.':' gagal: '+((lastErr&&lastErr.message)||lastErr)));\n"
         + "  };\n"
         + "  const pull=async(path,bd)=>{const rows=[];for(let p=0;p<400;p++){\n"
         + "    const r=await post(path,{...bd,page:p,start:p*100});\n"
@@ -935,27 +958,22 @@
         + "    console.log(path,bd.filter_by,'hal',p,'(+'+rr.length+')');\n"
         + "    if(rr.length<100)break;\n"
         + "  }return rows;};\n"
-        + "  console.log('%cMotion: withdraw...','color:#0ff');\n"
-        + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'});\n"
-        + "  console.log('%cMotion: deposit paid...','color:#0ff');\n"
-        + "  const paid=await pull('/api/deposit/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0',sort:{field:'paid_at',order:'desc'}});\n"
-        + "  console.log('%cMotion: deposit create...','color:#0ff');\n"
-        + "  const create=await pull('/api/deposit/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'1',sort:{field:'created_at',order:'desc'}});\n"
+        + pullCalls
         + "  document.title=origTitle;\n"
-        + "  const x=await fetchTO(PANEL+'/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,depoPaidRows:paid,depoCreateRows:create,wdRows:wd})},30000);\n"
+        + "  const x=await fetchTO(PANEL+'/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(" + payload + ")},30000);\n"
         + "  const jr=await x.json(); console.log(jr);\n"
-        + "  alert(jr.success?('Motion terkirim ke panel OK\\nDP '+jr.dp+' · Pending '+jr.pending+' · WD '+jr.wd+'\\n\\nBuka panel -> Lap Motion -> Muat Ulang.'):('Gagal: '+(jr.message||'?')));\n"
+        + "  alert(jr.success?(" + okMsg + "):('Gagal: '+(jr.message||'?')));\n"
         + "}catch(e){document.title=origTitle;alert('Gagal: '+((e&&e.message)||e));console.error(e);}\n"
         + "})();";
     }
-    function lapMotionCopyScript() {
+    function lapMotionCopyScript(mode) {
       lapEnsureConfig(() => {
         if (!lapConfig || !lapConfig.tokenMotion) { toast('Isi Token Motion di menu Setting dulu'); switchPage('lap-setting'); return; }
-        const code = lapMotionConsoleScript();
-        const done = () => toast('Skrip disalin. Buka tab Motion, Console, tempel, Enter.');
+        const code = lapMotionConsoleScript(mode);
+        const done = () => toast('Skrip disalin. Buka menu ' + (mode === 'deposit' ? 'RIWAYAT PGA' : 'WD REQUEST') + ' di tab Motion, Console, tempel, Enter.');
         navigator.clipboard.writeText(code).then(done).catch(() => {
-          const ta = document.getElementById('lapMotionCode');
-          if (ta) { ta.focus(); ta.select(); try { document.execCommand('copy'); done(); } catch(e){ toast('Salin manual dari kotak di bawah'); } }
+          const ta = document.getElementById(mode === 'deposit' ? 'lapMotionCodeDeposit' : 'lapMotionCodeWithdraw');
+          if (ta) { document.getElementById('lapMotionCodeWrap').hidden = false; ta.focus(); ta.select(); try { document.execCommand('copy'); done(); } catch(e){ toast('Salin manual dari kotak di bawah'); } }
         });
       });
     }
@@ -965,26 +983,36 @@
       const dp = lapResults.motionDpPga || [], pe = lapResults.motionPendingError || [], wd = lapResults.motionWd || [];
       const wdSum = Number(sm.totalWdAmount) || wd.reduce((n,r) => n + Number(r.amount||0), 0);
       const wdCnt = Number(sm.totalWdRecords) || wd.length;
-      const code = lapMotionConsoleScript();
+      const codeDepo = lapMotionConsoleScript('deposit');
+      const codeWd = lapMotionConsoleScript('withdraw');
+      const escCode = c => c.replace(/[&<>]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[ch]));
       host.innerHTML = lapHeaderCard('fa-bolt-lightning', 'Lap Motion', 'Motion DP PGA · PGA Pending/Error · PGA Withdraw', `
         <div class="glass-inner rounded-2xl p-4 border border-amber-500/20 text-[11px] text-slate-300 leading-relaxed">
           <div class="font-bold text-amber-300 mb-1"><i class="fa-solid fa-shield-halved mr-1"></i>Motion kadang menolak trafik server</div>
           motionv2.com sesekali menantang/menolak request dari Worker (WAF) -- hasilnya data bisa muncul 0 padahal aslinya ada.
-          Tarik data Motion sekarang lewat <b>Console</b> tab Motion (browser asli, bukan server), sama seperti Lap Mozart:
+          Tarik data Motion sekarang lewat <b>Console</b> tab Motion (browser asli, bukan server), sama seperti Lap Mozart --
+          Deposit &amp; Withdraw pakai <b>2 skrip terpisah</b> (endpoint deposit cuma mau nyaut kalau dibuka dari menu <b>RIWAYAT PGA</b>,
+          endpoint withdraw dari menu <b>WD REQUEST</b>/<b>RIWAYAT WD PGA</b>):
           <ol class="list-decimal ml-4 mt-1.5 space-y-1">
-            <li>Klik <b>Salin Skrip</b> di bawah.</li>
             <li>Buka tab <b>Motion</b> (motionv2.com), pastikan sudah login.</li>
+            <li>Untuk DEPOSIT: buka menu <b>RIWAYAT PGA</b> → klik <b>Salin Skrip Deposit</b> di bawah.</li>
+            <li>Untuk WITHDRAW: buka menu <b>WD REQUEST</b> (atau RIWAYAT WD PGA) → klik <b>Salin Skrip Withdraw</b>.</li>
             <li>Tekan <b>F12</b> → tab <b>Console</b>. (Pertama kali Chrome minta ketik <code>allow pasting</code> lalu Enter.)</li>
             <li>Tempel (Ctrl+V) → <b>Enter</b> → isi tanggal → tunggu muncul “terkirim ke panel OK”.</li>
+            <li>Boleh dijalankan salah satu dulu (mis. Withdraw saja) — yang belum dijalankan tetap simpan data lama, tidak ketimpa kosong.</li>
             <li>Balik ke sini → <b>Muat Ulang</b>.</li>
           </ol>
           <div class="flex flex-wrap gap-2 mt-3">
-            <button onclick="lapMotionCopyScript()" class="bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs"><i class="fa-regular fa-copy mr-1"></i>Salin Skrip</button>
+            <button onclick="lapMotionCopyScript('deposit')" class="bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs"><i class="fa-regular fa-copy mr-1"></i>Salin Skrip Deposit</button>
+            <button onclick="lapMotionCopyScript('withdraw')" class="bg-gradient-to-r from-purple-400 to-fuchsia-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs"><i class="fa-regular fa-copy mr-1"></i>Salin Skrip Withdraw</button>
             <button onclick="lapRefresh('lap-motion')" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-solid fa-rotate mr-1"></i>Muat Ulang</button>
             <button onclick="document.getElementById('lapMotionCodeWrap').hidden=!document.getElementById('lapMotionCodeWrap').hidden" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-solid fa-code mr-1"></i>Lihat Skrip</button>
           </div>
-          <div id="lapMotionCodeWrap" hidden class="mt-2">
-            <textarea id="lapMotionCode" readonly onclick="this.select()" class="w-full h-40 glass-inner rounded-xl p-2 text-[10px] font-mono text-slate-200 leading-tight">${code.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</textarea>
+          <div id="lapMotionCodeWrap" hidden class="mt-2 space-y-2">
+            <div class="text-[10px] font-bold text-cyan-300 uppercase">Skrip Deposit</div>
+            <textarea id="lapMotionCodeDeposit" readonly onclick="this.select()" class="w-full h-32 glass-inner rounded-xl p-2 text-[10px] font-mono text-slate-200 leading-tight">${escCode(codeDepo)}</textarea>
+            <div class="text-[10px] font-bold text-fuchsia-300 uppercase">Skrip Withdraw</div>
+            <textarea id="lapMotionCodeWithdraw" readonly onclick="this.select()" class="w-full h-32 glass-inner rounded-xl p-2 text-[10px] font-mono text-slate-200 leading-tight">${escCode(codeWd)}</textarea>
           </div>
         </div>
         <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 mt-3">

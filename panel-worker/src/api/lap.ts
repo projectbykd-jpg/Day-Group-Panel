@@ -174,30 +174,50 @@ export async function lapMotionImport(
 		});
 	}
 
+	// Endpoint deposit motionv2.com cuma mau nyaut kalau skrip dijalankan dari
+	// halaman RIWAYAT PGA, sementara endpoint withdraw cuma nyaut dari halaman
+	// WD REQUEST -- ketahuan dari testing: deposit TIMEOUT total (semua strategi
+	// auth) dari halaman WD Request, padahal withdraw sukses 200 OK persis di
+	// halaman yang sama pakai token+cookie yang sama. Jadi deposit & withdraw
+	// diimpor lewat 2 skrip Console TERPISAH (masing-masing dijalankan di
+	// halamannya sendiri) -- lihat lapMotionConsoleScriptDeposit/Withdraw di
+	// Scripts.html. Satu panggilan ke sini bisa cuma bawa salah satu (yang lain
+	// dikosongkan -- BUKAN array kosong, tapi field tidak dikirim sama sekali
+	// dari skrip, jadi `Array.isArray` di atas balas false = "tidak diimpor kali
+	// ini", BUKAN "datanya kosong"). lapSaveResults meng-UPSERT PER MODUL (baris
+	// terpisah di tabel lap_result), jadi modul yang tidak disertakan di sini
+	// otomatis tidak tersentuh/tidak ketimpa kosong.
+	const hasDepo = Array.isArray(depoPaidRows) || Array.isArray(depoCreateRows);
+	const hasWd = Array.isArray(wdRows);
+	const prevMeta = (((await lapLoadResults(env, s.username))._motionMeta as Rec[] | undefined)?.[0]?.summary as Rec | undefined) || {};
 	const summary = {
-		totalTransaksiPaid,
-		totalNominalPaidAt,
-		totalTransaksiCreate,
-		totalNominalCreatedAt,
-		totalPendingErrorCount: pgaPendingError.length,
-		totalWdRecords: motionWdPga.length,
-		totalWdAmount,
+		totalTransaksiPaid: hasDepo ? totalTransaksiPaid : Number(prevMeta.totalTransaksiPaid || 0),
+		totalNominalPaidAt: hasDepo ? totalNominalPaidAt : Number(prevMeta.totalNominalPaidAt || 0),
+		totalTransaksiCreate: hasDepo ? totalTransaksiCreate : Number(prevMeta.totalTransaksiCreate || 0),
+		totalNominalCreatedAt: hasDepo ? totalNominalCreatedAt : Number(prevMeta.totalNominalCreatedAt || 0),
+		totalPendingErrorCount: hasDepo ? pgaPendingError.length : Number(prevMeta.totalPendingErrorCount || 0),
+		totalWdRecords: hasWd ? motionWdPga.length : Number(prevMeta.totalWdRecords || 0),
+		totalWdAmount: hasWd ? totalWdAmount : Number(prevMeta.totalWdAmount || 0),
 	};
-	await lapSaveResults(env, s.username, {
-		motionDpPga,
-		motionPendingError: pgaPendingError,
-		motionWd: motionWdPga,
-		_motionMeta: [{ summary, source: "browser", at: startDate + "|" + endDate }],
-	});
+	const toSave: Record<string, unknown[]> = { _motionMeta: [{ summary, source: "browser", at: startDate + "|" + endDate }] };
+	if (hasDepo) {
+		toSave.motionDpPga = motionDpPga;
+		toSave.motionPendingError = pgaPendingError;
+	}
+	if (hasWd) toSave.motionWd = motionWdPga;
+	await lapSaveResults(env, s.username, toSave);
 	await logActivity(
 		env,
 		s.username,
 		"LAP MOTION",
-		`Impor browser ${startDate}..${endDate} — DP ${motionDpPga.length}, pending ${pgaPendingError.length}, WD ${motionWdPga.length}`,
+		`Impor browser ${startDate}..${endDate} — ` +
+			(hasDepo ? `DP ${motionDpPga.length}, pending ${pgaPendingError.length}` : "(depo dilewati)") +
+			", " +
+			(hasWd ? `WD ${motionWdPga.length}` : "(wd dilewati)"),
 		"BERHASIL",
 		"",
 	);
-	return { success: true, summary, dp: motionDpPga.length, pending: pgaPendingError.length, wd: motionWdPga.length };
+	return { success: true, summary, dp: motionDpPga.length, pending: pgaPendingError.length, wd: motionWdPga.length, hasDepo, hasWd };
 }
 
 // =========================================================================
