@@ -1096,6 +1096,87 @@
         });
       });
     }
+
+    // ---------- MOTION DEPOSIT "NEBENG" (fallback kalau endpoint deposit lambat/
+    // down dari sisi server Motion) ----------
+    // Skrip ini TIDAK PERNAH bikin request sendiri ke Motion -- cuma memasang
+    // jebakan pasif pada window.fetch & XMLHttpRequest lalu MENDENGARKAN respons
+    // dari request yang situsnya SENDIRI buat (pas user browsing manual: ganti
+    // halaman, ganti Rows per page, klik Apply filter, dst). Karena tidak pernah
+    // menambah beban query baru sama sekali, ini jalan bahkan waktu endpoint
+    // deposit lagi berat/goyah -- selama browsing manual di situsnya sendiri
+    // masih bisa nampilin data (biarpun lambat), datanya ikut tertangkap.
+    function lapMotionHarvestScript() {
+      const panel = location.origin;
+      const token = currentSessionToken || '';
+      return "(function(){\n"
+        + "  if(!/motionv2/i.test(location.origin)){alert('Buka skrip ini di TAB MOTION (motionv2.com), bukan di sini.');return;}\n"
+        + "  if(document.getElementById('__lapNebeng')){alert('Sudah aktif di tab ini.');return;}\n"
+        + "  const PANEL=" + JSON.stringify(panel) + ", TOKEN=" + JSON.stringify(token) + ";\n"
+        + "  const paidMap=new Map(), createMap=new Map();\n"
+        + "  const rowsOf=j=>{if(Array.isArray(j&&j.data))return j.data;const d=j&&j.data&&j.data.data;return Array.isArray(d)?d:[];};\n"
+        + "  const paint=()=>{ const box=document.getElementById('__lapNebengCount'); if(box) box.textContent='Paid: '+paidMap.size+' · Create: '+createMap.size; };\n"
+        + "  const ingest=(bodyStr,json)=>{\n"
+        + "    try{\n"
+        + "      const b=bodyStr?JSON.parse(bodyStr):{};\n"
+        + "      const rows=rowsOf(json);\n"
+        + "      if(!rows.length)return;\n"
+        + "      const map=String(b.filter_by)==='1'?createMap:paidMap;\n"
+        + "      let added=0;\n"
+        + "      for(const r of rows){const k=r.reference_no||r.invoice_no;if(k&&!map.has(k)){map.set(k,r);added++;}}\n"
+        + "      if(added)paint();\n"
+        + "    }catch(e){}\n"
+        + "  };\n"
+        + "  const origFetch=window.fetch;\n"
+        + "  window.fetch=function(u,o){\n"
+        + "    const p=origFetch.apply(this,arguments);\n"
+        + "    if(String(u).indexOf('/api/deposit/list/pga')>-1){\n"
+        + "      p.then(r=>{try{r.clone().json().then(j=>ingest(o&&o.body,j)).catch(()=>{});}catch(e){}}).catch(()=>{});\n"
+        + "    }\n"
+        + "    return p;\n"
+        + "  };\n"
+        + "  const origOpen=XMLHttpRequest.prototype.open, origSend=XMLHttpRequest.prototype.send;\n"
+        + "  XMLHttpRequest.prototype.open=function(m,u){this.__lapUrl=u;return origOpen.apply(this,arguments);};\n"
+        + "  XMLHttpRequest.prototype.send=function(body){\n"
+        + "    this.__lapBody=body;\n"
+        + "    this.addEventListener('load',function(){\n"
+        + "      if(String(this.__lapUrl).indexOf('/api/deposit/list/pga')>-1){\n"
+        + "        try{ingest(this.__lapBody,JSON.parse(this.responseText));}catch(e){}\n"
+        + "      }\n"
+        + "    });\n"
+        + "    return origSend.apply(this,arguments);\n"
+        + "  };\n"
+        // Kotak mengambang -- kasih lihat progres tangkapan & tombol kirim, tanpa
+        // perlu buka Console lagi setelah skrip dijalankan sekali.
+        + "  const el=document.createElement('div');\n"
+        + "  el.id='__lapNebeng';\n"
+        + "  el.style.cssText='position:fixed;bottom:16px;right:16px;z-index:2147483647;background:#0f172a;color:#e2e8f0;padding:14px 16px;border-radius:14px;font:12px/1.4 system-ui,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.5);width:220px';\n"
+        + "  el.innerHTML='<div style=\"font-weight:800;margin-bottom:6px\">\\uD83C\\uDFA3 Nebeng Deposit Motion</div><div id=\"__lapNebengCount\" style=\"font-size:13px;font-weight:700;color:#67e8f9\">Paid: 0 · Create: 0</div><div style=\"margin-top:6px;opacity:.75\">Browsing halaman RIWAYAT PGA seperti biasa (ganti halaman/Rows per page/filter) -- data otomatis tertangkap di sini, TANPA skrip ini bikin request sendiri.</div><button id=\"__lapNebengSend\" style=\"margin-top:10px;width:100%;padding:8px;border:0;border-radius:10px;background:#22d3ee;color:#052e33;font-weight:800;cursor:pointer\">Kirim ke Panel</button><button id=\"__lapNebengClose\" style=\"margin-top:6px;width:100%;padding:6px;border:0;border-radius:10px;background:transparent;color:#94a3b8;cursor:pointer\">Tutup</button>';\n"
+        + "  document.body.appendChild(el);\n"
+        + "  document.getElementById('__lapNebengClose').onclick=()=>el.remove();\n"
+        + "  document.getElementById('__lapNebengSend').onclick=async()=>{\n"
+        + "    if(!paidMap.size&&!createMap.size){alert('Belum ada data tertangkap. Browsing dulu di halaman RIWAYAT PGA (ganti halaman/filter), baru klik Kirim ke Panel.');return;}\n"
+        + "    const p2=n=>('0'+n).slice(-2), td=d=>d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());\n"
+        + "    const sd=prompt('Tanggal MULAI (YYYY-MM-DD) -- buat cocokkan rentang di panel',td(new Date())); if(!sd)return;\n"
+        + "    const ed=prompt('Tanggal AKHIR (YYYY-MM-DD)',sd); if(!ed)return;\n"
+        + "    const paid=Array.from(paidMap.values()), create=Array.from(createMap.values());\n"
+        + "    try{\n"
+        + "      const x=await fetch(PANEL+'/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,depoPaidRows:paid.length?paid:undefined,depoCreateRows:create.length?create:undefined})});\n"
+        + "      const jr=await x.json();\n"
+        + "      alert(jr.success?('Terkirim ke panel OK\\nDP '+jr.dp+' · Pending '+jr.pending+'\\n\\nBuka panel -> Lap Motion -> Muat Ulang.'):('Gagal: '+(jr.message||'?')));\n"
+        + "    }catch(e){alert('Gagal kirim ke panel: '+((e&&e.message)||e));}\n"
+        + "  };\n"
+        + "  paint();\n"
+        + "  console.log('%cNebeng Deposit aktif -- browsing halaman RIWAYAT PGA seperti biasa.','color:#0ff;font-weight:bold');\n"
+        + "})();";
+    }
+    function lapMotionCopyHarvestScript() {
+      lapEnsureConfig(() => {
+        const code = lapMotionHarvestScript();
+        const done = () => toast('Skrip disalin. Buka RIWAYAT PGA di tab Motion, Console, tempel, Enter -- lalu browsing seperti biasa.');
+        navigator.clipboard.writeText(code).then(done).catch(() => toast('Gagal menyalin -- coba lagi'));
+      });
+    }
     function lapRenderMotion(host) {
       const meta = (lapResults._motionMeta && lapResults._motionMeta[0]) || {};
       const sm = meta.summary || {};
@@ -1126,6 +1207,13 @@
             <button onclick="lapMotionCopyScript('withdraw')" class="bg-gradient-to-r from-purple-400 to-fuchsia-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs"><i class="fa-regular fa-copy mr-1"></i>Salin Skrip Withdraw</button>
             <button onclick="lapRefresh('lap-motion')" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-solid fa-rotate mr-1"></i>Muat Ulang</button>
             <button onclick="document.getElementById('lapMotionCodeWrap').hidden=!document.getElementById('lapMotionCodeWrap').hidden" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-solid fa-code mr-1"></i>Lihat Skrip</button>
+          </div>
+          <div class="mt-3 pt-3 border-t border-slate-700/40">
+            <div class="font-bold text-cyan-300 mb-1"><i class="fa-solid fa-fish mr-1"></i>Kalau Deposit tetap lambat/timeout (server Motion lagi berat)</div>
+            Cara cadangan: skrip ini TIDAK bikin request sendiri sama sekali -- cuma "nebeng" diam-diam pas kamu browsing manual (ganti halaman/Rows per page/filter tanggal) di RIWAYAT PGA. Data yang situsnya sendiri berhasil tampilkan otomatis ikut tertangkap, muncul kotak kecil di pojok halaman Motion dengan tombol "Kirim ke Panel".
+            <div class="mt-2">
+              <button onclick="lapMotionCopyHarvestScript()" class="bg-gradient-to-r from-emerald-400 to-teal-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs"><i class="fa-regular fa-copy mr-1"></i>Salin Skrip Nebeng (Deposit)</button>
+            </div>
           </div>
           <div id="lapMotionCodeWrap" hidden class="mt-2 space-y-2">
             <div class="text-[10px] font-bold text-cyan-300 uppercase">Skrip Deposit</div>
