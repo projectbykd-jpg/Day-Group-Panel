@@ -938,6 +938,7 @@
           + "  const d1=sd+' 00:00:00', d2=ed+' 23:59:59';\n"
           + "  const hariIni=td(new Date());\n"
           + "  let paid=[], create=[], fallbackDipakai=false;\n"
+          + "  const tMulai=Date.now();\n"
           + "  for(const vid of vids){\n"
           + "    for(const kind of [{label:'paid',fb:'0',sf:'paid_at',into:0},{label:'create',fb:'1',sf:'created_at',into:1}]){\n"
           + "      console.log('%cMotion: deposit '+kind.label+' vendor '+vid+'...','color:#0ff');\n"
@@ -958,6 +959,7 @@
           + "    }\n"
           + "  }\n"
           + "  if(fallbackDipakai)console.log('%cPERHATIAN: sebagian data diambil lewat jalur cepat tanpa filter tanggal -- isinya HANYA hari ini.','color:#f80;font-weight:bold');\n"
+          + "  console.log('%cMotion: total waktu tarik deposit '+((Date.now()-tMulai)/1000).toFixed(1)+' detik ('+vids.length+' vendor x 2 query)','color:#0f0;font-weight:bold');\n"
         : "  console.log('%cMotion: withdraw...','color:#0ff');\n"
           + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'});\n";
       const payload = isDepo
@@ -1084,7 +1086,12 @@
         + "  const pull=async(path,bd,stopBefore)=>{\n"
         + "    const rows=[], seen=new Set(); let total=null, oldStreak=0;\n"
         + "    for(let p=0;p<500;p++){\n"
+        // Catat lama tiap request supaya kelihatan waktunya habis di mana --
+        // ini yang membedakan "server Motion memang lambat" dari "skrip kita
+        // yang boros"; tanpa angka, semua cuma tebakan.
+        + "      const tReq=Date.now();\n"
         + "      const r=await post(path,{...bd,page:p,start:rows.length});\n"
+        + "      const detik=((Date.now()-tReq)/1000).toFixed(1);\n"
         + "      if(r.status===401||r.status===403){throw new Error('Motion '+r.status+' -- ditolak Motion. Cek Token Motion di Setting panel (salin ulang x-access-token terbaru dari Network tab), atau logout lalu login ulang di tab Motion ini.');}\n"
         + "      if(!r.ok){if(p===0)throw new Error(path+' HTTP '+r.status);break;}\n"
         + "      const j=await r.json();\n"
@@ -1094,7 +1101,7 @@
         + "      let added=0;\n"
         + "      for(const row of rr){const k=String(row.reference_no||row.invoice_no||'');if(k&&seen.has(k))continue;if(k)seen.add(k);rows.push(row);added++;}\n"
         + "      document.title='['+path.split('/').pop()+' hal '+(p+1)+' \u00b7 '+rows.length+(total?'/'+total:'')+' baris] MOTION';\n"
-        + "      console.log(path,'hal',p,'(+'+added+' baru, total '+rows.length+(total?'/'+total:'')+')');\n"
+        + "      console.log(path,'hal',p,'(+'+added+' baru, total '+rows.length+(total?'/'+total:'')+') -- '+detik+' detik');\n"
         + "      if(!added)break;\n"
         + "      if(total!==null&&rows.length>=total)break;\n"
         + "      if(stopBefore){\n"
