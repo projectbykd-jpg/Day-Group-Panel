@@ -914,37 +914,36 @@
       const mtoken = ((lapConfig && lapConfig.tokenMotion) || '').replace(/^Bearer\s+/i, '').trim();
       const vendorId = ((lapConfig && lapConfig.vendorIdMotion) || '').trim();
       const isDepo = mode === 'deposit';
-      // Request TANPA filter tanggal (dulu dikira "bentuk asli"-nya) ternyata cuma
-      // default view halaman sebelum user apply filter -- begitu filter tanggal
-      // beneran dipakai di situsnya sendiri, body-nya balik pakai
-      // date1/date2 (dengan JAM, "00:00:00".."23:59:59")/filter_status/filter_by/
-      // sort PERSIS seperti kode server-side lama, DITAMBAH vendor_id yang memang
-      // wajib. Jadi field yang hilang dari awal cuma vendor_id -- bukan seluruh
-      // date1/date2/filter_by seperti sempat dikira. filter_by:"0"+sort paid_at =
-      // list PAID, filter_by:"1"+sort created_at = list CREATE (dua daftar BEDA
-      // lagi, bukan 1 daftar dipakai dobel).
+      // AKAR MASALAH yang akhirnya ketemu (dari riwayat commit, bukan tebakan):
+      // body deposit TANPA date1/date2 (commit a4a66b0) TERBUKTI SUKSES tarik 837
+      // baris; begitu date1/date2/filter_status/filter_by/sort dibalikin ke body
+      // (commit 996fd15), SEMUA percobaan langsung timeout -- termasuk saat hasil
+      // yang cocok cuma 93 baris. Artinya bukan soal volume hasil, tapi soal
+      // FILTER TANGGAL-nya sendiri yang bikin server Motion nge-scan tanpa index
+      // (jumlah hasil 93 atau 853 sama saja beratnya kalau harus scan semua).
+      // Withdraw tidak kena karena tabelnya jauh lebih kecil.
+      // Solusi: pakai body yang TERBUKTI jalan (vendor_id saja), lalu saring
+      // tanggal di sisi kita (backend panel sudah punya cek `inRange` sendiri).
       const pullCalls = isDepo
         // VID bisa berisi BEBERAPA vendor_id sekaligus (dipisah koma/spasi/baris
         // baru) -- akun yang ngurus banyak website (dropdown "By Website" di
         // Motion) punya vendor_id BEDA per website, jadi tarik data 1-per-1 per
         // vendor lalu digabung, supaya semua website ikut ketarik dalam 1x jalan.
         ? "  const vids=VID.split(/[\\s,]+/).filter(Boolean);\n"
-          + "  const d1=sd+' 00:00:00', d2=ed+' 23:59:59';\n"
-          + "  let paid=[], create=[];\n"
+          + "  let depo=[];\n"
           + "  for(const vid of vids){\n"
-          + "    console.log('%cMotion: deposit paid vendor '+vid+'...','color:#0ff');\n"
-          // "sort" DIBUANG -- backend panel tidak butuh data terurut sama sekali
-          // (baca semua baris & filter sendiri), dan kombinasi sort+filter+vendor
-          // di query besar (800an baris/hari) diduga jadi beban paling berat yang
-          // bikin server Motion timeout total. Coba tanpa sort dulu.
-          + "    paid=paid.concat(await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'0',vendor_id:vid},20));\n"
-          + "    console.log('%cMotion: deposit create vendor '+vid+'...','color:#0ff');\n"
-          + "    create=create.concat(await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'1',vendor_id:vid},20));\n"
+          + "    console.log('%cMotion: deposit vendor '+vid+'...','color:#0ff');\n"
+          + "    depo=depo.concat(await pull('/api/deposit/list/pga',{limit:100,count:0,vendor_id:vid},100,sd));\n"
           + "  }\n"
         : "  console.log('%cMotion: withdraw...','color:#0ff');\n"
           + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'},100);\n";
+      // Deposit: 1 daftar dipakai utk depoPaidRows DAN depoCreateRows -- tanpa
+      // filter_by, server tidak bisa membedakan daftar "paid" vs "create", tapi
+      // tiap barisnya sudah punya created_at DAN paid_at sendiri, jadi backend
+      // panel tetap bisa hitung keduanya (dan rekonsiliasi "TIDAK ADA DI
+      // CREATE/PAID" otomatis tidak pernah salah tuduh).
       const payload = isDepo
-        ? "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,depoPaidRows:paid,depoCreateRows:create}"
+        ? "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,depoPaidRows:depo,depoCreateRows:depo}"
         : "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,wdRows:wd}";
       const okMsg = isDepo
         ? "'Motion (Deposit) terkirim ke panel OK\\nDP '+jr.dp+' · Pending '+jr.pending+'\\n\\nBuka panel -> Lap Motion -> Muat Ulang.'"
@@ -1037,40 +1036,40 @@
         + "    const isTO=lastErr&&lastErr.name==='AbortError';\n"
         + "    throw new Error(path+(isTO?' server Motion tidak merespons sama sekali setelah beberapa kali dicoba (bukan salah token/vendor_id -- body request sudah persis sama dengan situsnya). Coba jalankan skrip ini lagi, atau tunggu beberapa menit lalu coba lagi.':' gagal: '+((lastErr&&lastErr.message)||lastErr)));\n"
         + "  };\n"
-        // pull(path, bodyBase, pageLimit): tarik SAMPAI HABIS (berhenti hanya
-        // begitu 1 halaman balas kurang dari pageLimit -- itu satu-satunya sinyal
-        // "halaman terakhir" yang PASTI benar dari server, bukan tebakan). Filter
-        // tanggal 100% di backend/panel (bukan di sini) -- lebih lambat utk akun
-        // dengan riwayat panjang, tapi tidak pernah diam-diam kehilangan data.\n"
-        // BATCH sempat dinaikkan ke 5 (paralel) biar lebih cepat, TAPI ternyata
-        // bikin deposit gagal total (timeout/403 beruntun) -- kemungkinan besar
-        // Motion rate-limit/block kalau ada beberapa request BERSAMAAN dari sesi
-        // yang sama. Balik ke 1 (satu-per-satu, sama seperti versi yang TERBUKTI
-        // jalan sebelumnya) -- lebih lambat tapi jangan sampai gagal total lagi.
-        + "  const BATCH=1;\n"
-        + "  const pull=async(path,bd,pageLimit)=>{const rows=[];\n"
-        + "    for(let base=0;base<400;base+=BATCH){\n"
-        + "      const pages=Array.from({length:BATCH},(_,i)=>base+i);\n"
-        + "      const results=await Promise.all(pages.map(p=>post(path,{...bd,page:p,start:p*pageLimit}).then(r=>({p,r})).catch(e=>({p,e}))));\n"
-        + "      let stop=false;\n"
-        + "      for(const it of results){\n"
-        + "        if(it.e){if(it.p===0)throw it.e;stop=true;break;}\n"
-        + "        const r=it.r;\n"
-        + "        if(r.status===401||r.status===403){throw new Error('Motion '+r.status+' -- ditolak Motion. Cek Token Motion di Setting panel (salin ulang x-access-token terbaru dari Network tab), atau logout lalu login ulang di tab Motion ini.');}\n"
-        + "        if(!r.ok){if(it.p===0)throw new Error(path+' HTTP '+r.status);stop=true;break;}\n"
-        + "        const j=await r.json();const rr=rowsOf(j);rows.push(...rr);\n"
-        + "        document.title='['+path.split('/').pop()+' hal '+(it.p+1)+' · '+rows.length+' baris] MOTION';\n"
-        + "        console.log(path,'hal',it.p,'(+'+rr.length+')');\n"
-        // Dulu ada "early-stop" (berhenti begitu 1 halaman sudah lebih lama dari
-        // tanggal mulai) -- DICABUT karena itu ASUMSI urutan data yang tidak
-        // pernah benar-benar diverifikasi (bisa diam-diam kepotong tanpa pesan
-        // error kalau urutannya ternyata tidak selalu terbaru->lama). Sekarang
-        // SELALU tarik sampai benar-benar habis (dateField tidak dipakai lagi di
-        // sini, filter tanggal murni di backend/panel) -- lebih lambat tapi tidak
-        // pernah diam-diam kehilangan data.\n"
-        + "        if(rr.length<pageLimit){stop=true;break;}\n"
+        // pull(path, bodyBase, pageLimit, stopBefore):
+        // - offset MANDIRI: `start` dihitung dari jumlah baris yang SUDAH terkumpul,
+        //   bukan nomor_halaman*limit. Jadi kalau server diam-diam membatasi limit
+        //   (mis. kita minta 100 tapi dia cuma kasih 20), paginasi tetap benar &
+        //   tidak ada baris yang kelewat.
+        // - anti-duplikat: baris di-key pakai reference_no/invoice_no, jadi kalau
+        //   server mengabaikan offset & mengulang halaman yang sama, itu ketahuan
+        //   (0 baris BARU) dan loop berhenti, bukan muter selamanya.
+        // - berhenti kalau: halaman balas kosong, tidak ada baris BARU, jumlah
+        //   terkumpul sudah >= total_records dari server, atau (kalau stopBefore
+        //   diisi) sudah 2 halaman BERTURUT-TURUT yang semua barisnya lebih tua
+        //   dari tanggal mulai -- 2 halaman, bukan 1, sebagai jaring pengaman
+        //   kalau urutan datanya ternyata tidak rapi sempurna.
+        + "  const dayOf=r=>String((r&&(r.paid_at||r.created_at||r.approved_at))||'').split(' ')[0];\n"
+        + "  const pull=async(path,bd,pageLimit,stopBefore)=>{\n"
+        + "    const rows=[], seen=new Set(); let total=null, oldStreak=0;\n"
+        + "    for(let p=0;p<500;p++){\n"
+        + "      const r=await post(path,{...bd,page:p,start:rows.length});\n"
+        + "      if(r.status===401||r.status===403){throw new Error('Motion '+r.status+' -- ditolak Motion. Cek Token Motion di Setting panel (salin ulang x-access-token terbaru dari Network tab), atau logout lalu login ulang di tab Motion ini.');}\n"
+        + "      if(!r.ok){if(p===0)throw new Error(path+' HTTP '+r.status);break;}\n"
+        + "      const j=await r.json();\n"
+        + "      if(total===null){const opt=j&&j.data_optional;const t=opt&&opt.total_records;if(t!=null&&!isNaN(Number(t)))total=Number(t);}\n"
+        + "      const rr=rowsOf(j);\n"
+        + "      if(!rr.length)break;\n"
+        + "      let added=0;\n"
+        + "      for(const row of rr){const k=String(row.reference_no||row.invoice_no||'');if(k&&seen.has(k))continue;if(k)seen.add(k);rows.push(row);added++;}\n"
+        + "      document.title='['+path.split('/').pop()+' hal '+(p+1)+' \u00b7 '+rows.length+(total?'/'+total:'')+' baris] MOTION';\n"
+        + "      console.log(path,'hal',p,'(+'+added+' baru, total '+rows.length+(total?'/'+total:'')+')');\n"
+        + "      if(!added)break;\n"
+        + "      if(total!==null&&rows.length>=total)break;\n"
+        + "      if(stopBefore){\n"
+        + "        const days=rr.map(dayOf).filter(Boolean);\n"
+        + "        if(days.length&&days.every(d=>d<stopBefore)){oldStreak++;if(oldStreak>=2)break;}else{oldStreak=0;}\n"
         + "      }\n"
-        + "      if(stop)break;\n"
         + "      await new Promise(r=>setTimeout(r,250));\n"
         + "    }\n"
         + "  return rows;};\n"
