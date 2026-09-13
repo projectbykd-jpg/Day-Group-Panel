@@ -1032,7 +1032,12 @@
         // MULAI, berhenti (sisa halaman dalam batch yang sama dibuang, hemat
         // request berikutnya -- beberapa halaman terakhir di batch itu sendiri
         // tetap "boros" sedikit, trade-off wajar demi kecepatan).\n"
-        + "  const BATCH=5;\n"
+        // BATCH sempat dinaikkan ke 5 (paralel) biar lebih cepat, TAPI ternyata
+        // bikin deposit gagal total (timeout/403 beruntun) -- kemungkinan besar
+        // Motion rate-limit/block kalau ada beberapa request BERSAMAAN dari sesi
+        // yang sama. Balik ke 1 (satu-per-satu, sama seperti versi yang TERBUKTI
+        // jalan sebelumnya) -- lebih lambat tapi jangan sampai gagal total lagi.
+        + "  const BATCH=1;\n"
         + "  const pull=async(path,bd,pageLimit,dateField)=>{const rows=[];\n"
         + "    for(let base=0;base<400;base+=BATCH){\n"
         + "      const pages=Array.from({length:BATCH},(_,i)=>base+i);\n"
@@ -1051,6 +1056,7 @@
         + "        if(lastD&&lastD<sd){stop=true;break;}\n"
         + "      }\n"
         + "      if(stop)break;\n"
+        + "      await new Promise(r=>setTimeout(r,250));\n"
         + "    }\n"
         + "  return rows;};\n"
         + pullCalls
