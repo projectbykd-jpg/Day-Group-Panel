@@ -1,4 +1,4 @@
-// Day-Group Panel — Cloudflare Worker (port dari Apps Script).
+// KD-Group Panel — Cloudflare Worker (port dari Apps Script).
 // Semua panggilan frontend lama google.script.run.<fn>(...) dipetakan ke
 // POST /api  body: { "action": "<fn>", ...args }
 import { CORS_HEADERS, json } from "./lib/respond";

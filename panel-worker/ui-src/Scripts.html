@@ -237,7 +237,7 @@
       const themes = keys.map(k => SITE_THEME_PRESETS[k]).filter(Boolean);
 
       if (!themes.length) {
-        return {keys:[], names:['DAY-GROUP'], primary:'#22d3ee', secondary:'#3b82f6', accent:'#f472b6', bg:'#020617', panel:'#0f172a', fusion:false};
+        return {keys:[], names:['KD-GROUP'], primary:'#22d3ee', secondary:'#3b82f6', accent:'#f472b6', bg:'#020617', panel:'#0f172a', fusion:false};
       }
       if (themes.length === 1) {
         const t = themes[0];
@@ -521,11 +521,11 @@
     const BOT_PAGES = ['bot-dashboard','bot-sources','bot-history','bot-fbdirect','bot-config'];
     const NAV_KEYS = ['home','prediction','activity','admin','invest'].concat(LAP_PAGES).concat(BOT_PAGES);
     const HEADER_KICKER = {
-      home: 'DAY-GROUP PANEL · RESULT HARI INI',
-      prediction: 'DAY-GROUP PANEL · PREDIKSI & KATA PENUTUP',
-      invest: 'DAY-GROUP PANEL · AUTOCHECK INVEST',
-      activity: 'DAY-GROUP PANEL · RIWAYAT AKTIVITAS',
-      admin: 'DAY-GROUP PANEL · ADMIN CONTROL CENTER',
+      home: 'KD-GROUP PANEL · RESULT HARI INI',
+      prediction: 'KD-GROUP PANEL · PREDIKSI & KATA PENUTUP',
+      invest: 'KD-GROUP PANEL · AUTOCHECK INVEST',
+      activity: 'KD-GROUP PANEL · RIWAYAT AKTIVITAS',
+      admin: 'KD-GROUP PANEL · ADMIN CONTROL CENTER',
       'lap-admin': 'LAPORAN HARIAN · LAP ADMIN',
       'lap-motion': 'LAPORAN HARIAN · LAP MOTION',
       'lap-mozart': 'LAPORAN HARIAN · LAP MOZART',
@@ -580,7 +580,7 @@
       });
 
       const kicker = document.getElementById('headerKicker');
-      if (kicker) kicker.textContent = HEADER_KICKER[page] || 'DAY-GROUP PANEL';
+      if (kicker) kicker.textContent = HEADER_KICKER[page] || 'KD-GROUP PANEL';
 
       if (LAP_PAGES.includes(page)) renderLapPage(page);
       if (BOT_PAGES.includes(page)) renderBotSubpage(page);

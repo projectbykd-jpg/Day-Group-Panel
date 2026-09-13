@@ -63,7 +63,7 @@ export async function checkLogin(env: Env, username: string, password: string) {
 
 		const maintenance = await getMaintenance(env);
 		const token = await createSession(env, p.username);
-		await logActivity(env, p.username, "LOGIN", "Login berhasil ke Day-Group Panel", "BERHASIL");
+		await logActivity(env, p.username, "LOGIN", "Login berhasil ke KD-Group Panel", "BERHASIL");
 		if (maintenance.enabled && p.role !== "ADMIN") {
 			await logActivity(
 				env,
