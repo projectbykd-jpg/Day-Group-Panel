@@ -914,31 +914,33 @@
       const mtoken = ((lapConfig && lapConfig.tokenMotion) || '').replace(/^Bearer\s+/i, '').trim();
       const vendorId = ((lapConfig && lapConfig.vendorIdMotion) || '').trim();
       const isDepo = mode === 'deposit';
-      // Deposit cuma butuh 1x pull -- request ASLI (dari Network tab) tidak punya
-      // filter_by/sort sama sekali, jadi tidak ada cara bedakan "list paid" vs
-      // "list create" dari API-nya lagi (beda dari API lama yang dulu dipakai
-      // server-side). Baris yang sama dipakai sbg depoPaidRows & depoCreateRows
-      // (tiap baris toh sudah punya field created_at DAN paid_at sendiri) --
-      // reconciliation "TIDAK ADA DI CREATE/PAID" jadi otomatis tidak pernah
-      // salah tuduh (selalu ketemu dirinya sendiri), sisanya (cek rentang
-      // tanggal) tetap jalan seperti biasa.
+      // Request TANPA filter tanggal (dulu dikira "bentuk asli"-nya) ternyata cuma
+      // default view halaman sebelum user apply filter -- begitu filter tanggal
+      // beneran dipakai di situsnya sendiri, body-nya balik pakai
+      // date1/date2 (dengan JAM, "00:00:00".."23:59:59")/filter_status/filter_by/
+      // sort PERSIS seperti kode server-side lama, DITAMBAH vendor_id yang memang
+      // wajib. Jadi field yang hilang dari awal cuma vendor_id -- bukan seluruh
+      // date1/date2/filter_by seperti sempat dikira. filter_by:"0"+sort paid_at =
+      // list PAID, filter_by:"1"+sort created_at = list CREATE (dua daftar BEDA
+      // lagi, bukan 1 daftar dipakai dobel).
       const pullCalls = isDepo
         // VID bisa berisi BEBERAPA vendor_id sekaligus (dipisah koma/spasi/baris
         // baru) -- akun yang ngurus banyak website (dropdown "By Website" di
         // Motion) punya vendor_id BEDA per website, jadi tarik data 1-per-1 per
         // vendor lalu digabung, supaya semua website ikut ketarik dalam 1x jalan.
-        ? "  console.log('%cMotion: deposit...','color:#0ff');\n"
-          + "  const vids=VID.split(/[\\s,]+/).filter(Boolean);\n"
-          + "  let depo=[];\n"
+        ? "  const vids=VID.split(/[\\s,]+/).filter(Boolean);\n"
+          + "  const d1=sd+' 00:00:00', d2=ed+' 23:59:59';\n"
+          + "  let paid=[], create=[];\n"
           + "  for(const vid of vids){\n"
-          + "    console.log('%cMotion: deposit vendor '+vid+'...','color:#0ff');\n"
-          + "    const part=await pull('/api/deposit/list/pga',{limit:20,count:0,vendor_id:vid},20);\n"
-          + "    depo=depo.concat(part);\n"
+          + "    console.log('%cMotion: deposit paid vendor '+vid+'...','color:#0ff');\n"
+          + "    paid=paid.concat(await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'0',sort:{field:'paid_at',order:'desc'},vendor_id:vid},20));\n"
+          + "    console.log('%cMotion: deposit create vendor '+vid+'...','color:#0ff');\n"
+          + "    create=create.concat(await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'1',sort:{field:'created_at',order:'desc'},vendor_id:vid},20));\n"
           + "  }\n"
         : "  console.log('%cMotion: withdraw...','color:#0ff');\n"
           + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'},100);\n";
       const payload = isDepo
-        ? "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,depoPaidRows:depo,depoCreateRows:depo}"
+        ? "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,depoPaidRows:paid,depoCreateRows:create}"
         : "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,wdRows:wd}";
       const okMsg = isDepo
         ? "'Motion (Deposit) terkirim ke panel OK\\nDP '+jr.dp+' · Pending '+jr.pending+'\\n\\nBuka panel -> Lap Motion -> Muat Ulang.'"
