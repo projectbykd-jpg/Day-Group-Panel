@@ -943,11 +943,15 @@
           + "      console.log('%cMotion: deposit '+kind.label+' vendor '+vid+'...','color:#0ff');\n"
           + "      let rows;\n"
           + "      try{\n"
-          + "        rows=await pull('/api/deposit/list/pga',{limit:100,count:0,date1:d1,date2:d2,filter_by:kind.fb,filter_status:'1',sort:{field:kind.sf,order:'desc'},vendor_id:vid},100,sd);\n"
+          // limit sengaja BESAR (1000): query bertanggal di Motion mahal sekali,
+          // jadi lebih baik dibayar 1-2 kali daripada 9 kali @ beberapa menit.
+          // Aman walau server diam-diam membatasinya -- paginasi di pull()
+          // memakai offset dari jumlah baris yang benar-benar diterima.
+          + "        rows=await pull('/api/deposit/list/pga',{limit:1000,count:0,date1:d1,date2:d2,filter_by:kind.fb,filter_status:'1',sort:{field:kind.sf,order:'desc'},vendor_id:vid},sd);\n"
           + "      }catch(e){\n"
           + "        if(!(sd<=hariIni&&hariIni<=ed))throw e;\n"
           + "        console.log('%cMotion: request bertanggal gagal ('+((e&&e.message)||e)+') -- coba jalur cepat TANPA filter tanggal (hanya data hari ini)','color:#ff0');\n"
-          + "        rows=await pull('/api/deposit/list/pga',{limit:100,count:0,vendor_id:vid},100,sd);\n"
+          + "        rows=await pull('/api/deposit/list/pga',{limit:1000,count:0,vendor_id:vid},sd);\n"
           + "        fallbackDipakai=true;\n"
           + "      }\n"
           + "      if(kind.into===0)paid=paid.concat(rows);else create=create.concat(rows);\n"
@@ -955,7 +959,7 @@
           + "  }\n"
           + "  if(fallbackDipakai)console.log('%cPERHATIAN: sebagian data diambil lewat jalur cepat tanpa filter tanggal -- isinya HANYA hari ini.','color:#f80;font-weight:bold');\n"
         : "  console.log('%cMotion: withdraw...','color:#0ff');\n"
-          + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'},100);\n";
+          + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'});\n";
       const payload = isDepo
         ? "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,depoPaidRows:paid,depoCreateRows:create}"
         : "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,wdRows:wd}";
@@ -980,7 +984,19 @@
         + "  const ed=prompt('Tanggal AKHIR (YYYY-MM-DD)',sd); if(!ed)return;\n"
         + "  const H={'content-type':'application/json','x-access-token':MTOKEN};\n"
         + "  const rowsOf=j=>{if(Array.isArray(j&&j.data))return j.data;const d=j&&j.data&&j.data.data;return Array.isArray(d)?d:[];};\n"
-        + "  const fetchTO=async(url,opts,ms)=>{const ac=new AbortController();const to=setTimeout(()=>ac.abort(),ms);try{return await fetch(url,{...opts,signal:ac.signal});}finally{clearTimeout(to);}};\n"
+        // 4 menit. Query deposit bertanggal di Motion memang bisa jalan
+        // menit-menitan; batas 30 detik yang lama-lah yang bikin selalu "timeout".
+        + "  const TIMEOUT_MS=240000;\n"
+        // Selama menunggu, judul tab dihitung mundur/naik per detik supaya jelas
+        // skripnya masih bekerja -- tanpa ini proses panjang terlihat seperti hang.
+        + "  const fetchTO=async(url,opts,ms)=>{\n"
+        + "    const ac=new AbortController();\n"
+        + "    const to=setTimeout(()=>ac.abort(),ms);\n"
+        + "    const t0=Date.now(), judul=document.title;\n"
+        + "    const tick=setInterval(()=>{document.title='['+Math.round((Date.now()-t0)/1000)+'s menunggu Motion] MOTION';},1000);\n"
+        + "    try{return await fetch(url,{...opts,signal:ac.signal});}\n"
+        + "    finally{clearTimeout(to);clearInterval(tick);document.title=judul;}\n"
+        + "  };\n"
         + (isDepo
             // Vendor ID otomatis dideteksi (BUKAN wajib cari manual di Network tab) --
             // pasang jebakan (monkeypatch) window.fetch, minta user klik tombol
@@ -1025,17 +1041,18 @@
         + "    let lastErr, lastAuthFail=null;\n"
         + "    for(const st of list){\n"
         // Strategi pertama (token header + cookie) itu yang TERBUKTI benar (request
-        // body-nya sudah dicocokkan persis dengan yang situsnya sendiri kirim) --
-        // begitu dia timeout berulang kali, itu bukan lagi soal salah kredensial,
-        // kemungkinan besar server Motion sendiri yang lambat/sesekali tidak
-        // merespons kalau ditanya FRESH (bukan dari cache situsnya). Coba 4x
-        // dengan timeout panjang (30 detik) sebelum nyerah pindah ke strategi lain
-        // (yang belum tentu benar, cuma jaring pengaman terakhir).
-        + "      const attempts=(!winStrat&&st===STRATS[0])?4:1;\n"
+        // body-nya sudah dicocokkan persis dengan yang situsnya sendiri kirim).
+        // PENTING soal DURASI: query deposit BERTANGGAL di sisi Motion memang makan
+        // waktu menit-menitan (di Network tab situsnya sendiri terlihat sampai
+        // ~200 detik) -- situsnya sabar menunggu, sedangkan skrip ini dulu menyerah
+        // di 30 detik lalu salah menyimpulkan "server menolak/blokir". Jadi yang
+        // dilonggarkan adalah BATAS TUNGGU (TIMEOUT_MS), bukan jumlah percobaan:
+        // mengulang query berat yang sama berkali-kali hanya menambah beban server.
+        + "      const attempts=(!winStrat&&st===STRATS[0])?2:1;\n"
         + "      let ok=false;\n"
         + "      for(let a=0;a<attempts&&!ok;a++){\n"
         + "        try{\n"
-        + "          const r=await fetchTO(O+path,{method:'POST',body:JSON.stringify(body),...st.opts},winStrat?25000:30000);\n"
+        + "          const r=await fetchTO(O+path,{method:'POST',body:JSON.stringify(body),...st.opts},TIMEOUT_MS);\n"
         + "          if(r.status===401||r.status===403){lastAuthFail=r;console.log('  strategi \"'+st.label+'\" ditolak: HTTP '+r.status);ok=true;break;}\n"
         + "          if(!winStrat){winStrat=st;console.log('%cMotion: cara akses yang jalan -> '+st.label,'color:#0f0;font-weight:bold');}\n"
         + "          return r;\n"
@@ -1050,7 +1067,7 @@
         + "    const isTO=lastErr&&lastErr.name==='AbortError';\n"
         + "    throw new Error(path+(isTO?' server Motion tidak merespons sama sekali setelah beberapa kali dicoba (bukan salah token/vendor_id -- body request sudah persis sama dengan situsnya). Coba jalankan skrip ini lagi, atau tunggu beberapa menit lalu coba lagi.':' gagal: '+((lastErr&&lastErr.message)||lastErr)));\n"
         + "  };\n"
-        // pull(path, bodyBase, pageLimit, stopBefore):
+        // pull(path, bodyBase, stopBefore):
         // - offset MANDIRI: `start` dihitung dari jumlah baris yang SUDAH terkumpul,
         //   bukan nomor_halaman*limit. Jadi kalau server diam-diam membatasi limit
         //   (mis. kita minta 100 tapi dia cuma kasih 20), paginasi tetap benar &
@@ -1064,7 +1081,7 @@
         //   dari tanggal mulai -- 2 halaman, bukan 1, sebagai jaring pengaman
         //   kalau urutan datanya ternyata tidak rapi sempurna.
         + "  const dayOf=r=>String((r&&(r.paid_at||r.created_at||r.approved_at))||'').split(' ')[0];\n"
-        + "  const pull=async(path,bd,pageLimit,stopBefore)=>{\n"
+        + "  const pull=async(path,bd,stopBefore)=>{\n"
         + "    const rows=[], seen=new Set(); let total=null, oldStreak=0;\n"
         + "    for(let p=0;p<500;p++){\n"
         + "      const r=await post(path,{...bd,page:p,start:rows.length});\n"
