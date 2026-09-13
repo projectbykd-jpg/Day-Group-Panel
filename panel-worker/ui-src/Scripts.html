@@ -1056,7 +1056,7 @@
         + "      for(const it of results){\n"
         + "        if(it.e){if(it.p===0)throw it.e;stop=true;break;}\n"
         + "        const r=it.r;\n"
-        + "        if(r.status===401||r.status===403){throw new Error('Motion '+r.status+' -- ditolak Motion. Coba jalankan skrip ini lagi (token dibaca ulang otomatis dari sesi browser tiap kali jalan); kalau masih 403 terus, coba logout lalu login ulang di tab Motion ini.');}\n"
+        + "        if(r.status===401||r.status===403){throw new Error('Motion '+r.status+' -- ditolak Motion. Cek Token Motion di Setting panel (salin ulang x-access-token terbaru dari Network tab), atau logout lalu login ulang di tab Motion ini.');}\n"
         + "        if(!r.ok){if(it.p===0)throw new Error(path+' HTTP '+r.status);stop=true;break;}\n"
         + "        const j=await r.json();const rr=rowsOf(j);rows.push(...rr);\n"
         + "        document.title='['+path.split('/').pop()+' hal '+(it.p+1)+' · '+rows.length+' baris] MOTION';\n"
