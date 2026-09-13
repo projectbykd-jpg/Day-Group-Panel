@@ -296,13 +296,16 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 		`Berdasarkan ringkasan berikut, tulis artikel BARU yang PANJANG dan MENDALAM, sepanjang ${paraTarget} paragraf ` +
 		`(jangan menyalin kalimat asli, jangan mengarang fakta/angka spesifik yang tidak ada di ringkasan). ` +
 		`Supaya pembahasannya detail dan tidak terasa diulur-ulur, bangun artikel dengan beberapa sudut berikut ` +
-		`(pilih yang relevan dengan topiknya, TIDAK harus semua & TIDAK usah pakai sub-judul eksplisit): ` +
+		`(pilih yang relevan dengan topiknya, TIDAK harus semua): ` +
 		`(1) pembukaan yang menjelaskan inti kejadian, (2) latar belakang/kronologi/konteks sebelumnya, ` +
 		`(3) penjelasan lebih rinci tiap poin penting di ringkasan — pecah jadi beberapa paragraf, jangan digabung jadi satu, ` +
 		`(4) dampak atau relevansinya bagi pembaca/masyarakat/industri terkait, ` +
 		`(5) reaksi atau sudut pandang pihak-pihak terkait (SECARA UMUM/wajar, JANGAN mengarang kutipan/nama yang tidak ada di ringkasan), ` +
 		`(6) penutup yang merangkum & memberi gambaran ke depan. ` +
 		`Tiap paragraf idealnya 3-5 kalimat yang mengalir, bukan poin-poin pendek. ` +
+		`Kalau artikelnya cukup panjang (kira-kira lebih dari 6 paragraf), sisipkan 2-4 sub-judul singkat pakai tag ` +
+		`<h2>...</h2> di body_html untuk memecah bagian-bagian di atas (mis. sebelum bagian latar belakang, dampak, ` +
+		`reaksi, dst) -- ini membantu SEO & pembaca yang skimming, JANGAN pakai <h1> (judul utama sudah ada terpisah). ` +
 		`Sertakan juga "meta_description": ringkasan 1 kalimat (maks 155 karakter) utk cuplikan hasil pencarian Google — ` +
 		`bukan copy kalimat pertama artikel, tapi rangkuman inti isi artikel. ` +
 		`Sertakan juga "category": kategori artikel ini, PILIH TEPAT SATU dari daftar berikut sesuai topik sebenarnya ` +
@@ -906,7 +909,9 @@ export async function newsProcessOne(
 			imageUrl = await fetchOgImage(String(row.url));
 		}
 		if (imageUrl) {
-			content = `<p><img src="${escAttr(imageUrl)}" alt="" style="max-width:100%"></p>\n` + content;
+			// alt text diisi judul artikel (sebelumnya kosong) -- Google Image Search
+			// & aksesibilitas butuh alt yang deskriptif, bukan cuma dekorasi kosong.
+			content = `<p><img src="${escAttr(imageUrl)}" alt="${escAttr(rw.title)}" style="max-width:100%"></p>\n` + content;
 		}
 
 		// Byline tanggal WAJIB di awal SETIAP artikel (Blogger maupun situs sendiri --
