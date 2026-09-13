@@ -847,7 +847,7 @@
           </div>
           <div>
             <input id="lapVendorIdMotion" placeholder="Vendor ID Motion (opsional — biarkan kosong, akan terisi otomatis)" value="${(c.vendorIdMotion||'').replace(/"/g,'&quot;')}" class="w-full glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
-            <p class="text-[10px] text-slate-500 mt-1 leading-relaxed">Boleh dikosongkan — kalau belum diisi, Skrip Deposit akan minta kamu klik tombol refresh/cari data di halaman RIWAYAT PGA sekali, lalu otomatis terdeteksi &amp; tersimpan ke sini sendiri.</p>
+            <p class="text-[10px] text-slate-500 mt-1 leading-relaxed">Boleh dikosongkan — kalau belum diisi, Skrip Deposit akan pandu deteksi otomatis di halaman RIWAYAT PGA. Kalau akun ini ngurus BEBERAPA website (dropdown "By Website"), boleh isi lebih dari satu di sini, dipisah koma (mis. <code>6989ad07...,7a12bc55...</code>) — atau biarkan skrip mendeteksi semuanya sekaligus (pilih tiap website di dropdown lalu refresh, satu-satu, sebelum waktu habis).</p>
           </div>
           <div class="grid sm:grid-cols-2 gap-3">
             <input id="lapLinkMozart" placeholder="Link Mozart (opsional)" value="${(c.linkMozart||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
@@ -923,8 +923,18 @@
       // salah tuduh (selalu ketemu dirinya sendiri), sisanya (cek rentang
       // tanggal) tetap jalan seperti biasa.
       const pullCalls = isDepo
+        // VID bisa berisi BEBERAPA vendor_id sekaligus (dipisah koma/spasi/baris
+        // baru) -- akun yang ngurus banyak website (dropdown "By Website" di
+        // Motion) punya vendor_id BEDA per website, jadi tarik data 1-per-1 per
+        // vendor lalu digabung, supaya semua website ikut ketarik dalam 1x jalan.
         ? "  console.log('%cMotion: deposit...','color:#0ff');\n"
-          + "  const depo=await pull('/api/deposit/list/pga',{limit:20,count:0,vendor_id:VID},20,'paid_at');\n"
+          + "  const vids=VID.split(/[\\s,]+/).filter(Boolean);\n"
+          + "  let depo=[];\n"
+          + "  for(const vid of vids){\n"
+          + "    console.log('%cMotion: deposit vendor '+vid+'...','color:#0ff');\n"
+          + "    const part=await pull('/api/deposit/list/pga',{limit:20,count:0,vendor_id:vid},20,'paid_at');\n"
+          + "    depo=depo.concat(part);\n"
+          + "  }\n"
         : "  console.log('%cMotion: withdraw...','color:#0ff');\n"
           + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'},100,'created_at');\n";
       const payload = isDepo
@@ -964,8 +974,11 @@
             // panel (lewat action lapSaveConfig) supaya lain kali tidak perlu lagi.
             ? "  if(!VID){\n"
               + "    console.log('%cVendor ID belum ada -- mendeteksi otomatis...','color:#ff0');\n"
-              + "    let sniffed=null;\n"
-              + "    const sniff=(u,bodyStr)=>{try{if(String(u).indexOf('vendor_id')<0&&String(u).indexOf('/api/deposit')<0&&String(u).indexOf('/api/withdraw')<0&&String(u).indexOf('pga')<0)return;if(!bodyStr)return;const b=JSON.parse(bodyStr);if(b&&b.vendor_id&&!sniffed)sniffed=b.vendor_id;}catch(e){}};\n"
+              // Set (bukan 1 nilai) -- akun yang ngurus BEBERAPA website (dropdown "By
+              // Website" di Motion) punya vendor_id BEDA per website, jadi ditampung
+              // semua yang ketemu selama jendela deteksi, bukan berhenti di yang pertama.
+              + "    const sniffed=new Set();\n"
+              + "    const sniff=(u,bodyStr)=>{try{if(String(u).indexOf('vendor_id')<0&&String(u).indexOf('/api/deposit')<0&&String(u).indexOf('/api/withdraw')<0&&String(u).indexOf('pga')<0)return;if(!bodyStr)return;const b=JSON.parse(bodyStr);if(b&&b.vendor_id&&!sniffed.has(b.vendor_id)){sniffed.add(b.vendor_id);console.log('%c  + vendor_id ketemu: '+b.vendor_id+' (total '+sniffed.size+')','color:#0f0');}}catch(e){}};\n"
               // Beberapa versi situs Motion pakai fetch(), sebagian lagi XMLHttpRequest --
               // intip DUA-DUANYA sekaligus supaya tidak tergantung yang mana dipakai.
               + "    const origFetch=window.fetch;\n"
@@ -973,13 +986,13 @@
               + "    const origOpen=XMLHttpRequest.prototype.open, origSend=XMLHttpRequest.prototype.send;\n"
               + "    XMLHttpRequest.prototype.open=function(m,u){this.__sniffUrl=u;return origOpen.apply(this,arguments);};\n"
               + "    XMLHttpRequest.prototype.send=function(body){sniff(this.__sniffUrl,typeof body==='string'?body:null);return origSend.apply(this,arguments);};\n"
-              + "    alert('Vendor ID belum diisi di Setting -- OTOMATIS SAJA:\\n\\n1) Klik OK di sini.\\n2) Di halaman ini (RIWAYAT PGA), klik tombol/link REFRESH, CARI, atau APPLY yang menampilkan ulang datanya (boleh juga ganti tanggal filter lalu Apply).\\n3) Tunggu, skrip lanjut otomatis begitu terdeteksi (maks 45 detik). Kalau ada beberapa tombol, coba klik semuanya bergantian.');\n"
+              + "    alert('Vendor ID belum diisi di Setting -- OTOMATIS SAJA:\\n\\n1) Klik OK di sini.\\n2) Di halaman ini (RIWAYAT PGA), KALAU ada dropdown \"By Website\", pilih SATU-SATU tiap website yang ada lalu klik REFRESH/CARI/APPLY tiap kali ganti (kalau cuma 1 website, klik refresh sekali saja sudah cukup).\\n3) Tunggu sampai semua sudah dicoba, skrip lanjut otomatis maksimal 60 detik.');\n"
               + "    const t0=Date.now();\n"
-              + "    while(!sniffed&&Date.now()-t0<45000){await new Promise(r=>setTimeout(r,400));}\n"
+              + "    while(Date.now()-t0<60000){await new Promise(r=>setTimeout(r,400));}\n"
               + "    window.fetch=origFetch; XMLHttpRequest.prototype.open=origOpen; XMLHttpRequest.prototype.send=origSend;\n"
-              + "    if(!sniffed){alert('Vendor ID belum kedeteksi dalam 45 detik. Coba lagi: jalankan skrip ini lagi, lalu SEGERA klik tombol yang menampilkan/refresh data PGA di halaman ini setelah klik OK.');return;}\n"
-              + "    VID=sniffed;\n"
-              + "    console.log('%cVendor ID terdeteksi: '+VID,'color:#0f0;font-weight:bold');\n"
+              + "    if(!sniffed.size){alert('Vendor ID belum kedeteksi dalam 60 detik. Coba lagi: jalankan skrip ini lagi, lalu SEGERA klik tombol refresh/cari PGA-nya (atau ganti website di dropdown-nya) setelah klik OK.');return;}\n"
+              + "    VID=Array.from(sniffed).join(',');\n"
+              + "    console.log('%cVendor ID terdeteksi ('+sniffed.size+' website): '+VID,'color:#0f0;font-weight:bold');\n"
               + "    try{\n"
               + "      await fetchTO(PANEL+'/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'lapSaveConfig',token:TOKEN,data:{vendorIdMotion:VID}})},15000);\n"
               + "      console.log('%cVendor ID otomatis tersimpan ke Setting panel -- lain kali tidak perlu deteksi lagi.','color:#0f0');\n"
