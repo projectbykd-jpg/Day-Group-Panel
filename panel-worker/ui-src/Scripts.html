@@ -845,6 +845,10 @@
             <input id="lapLinkMotion" placeholder="Link Motion (https://motionv2.com)" value="${(c.linkMotion||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
             <input id="lapTokenMotion" placeholder="Token Motion (x-access-token)" value="${(c.tokenMotion||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
           </div>
+          <div>
+            <input id="lapVendorIdMotion" placeholder="Vendor ID Motion (wajib utk Skrip Deposit — lihat cara ambil di bawah)" value="${(c.vendorIdMotion||'').replace(/"/g,'&quot;')}" class="w-full glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
+            <p class="text-[10px] text-slate-500 mt-1 leading-relaxed">Cara ambil: di Motion buka menu <b>RIWAYAT PGA</b> → F12 → tab <b>Network</b> → cari request <code>deposit/list/pga</code> yang statusnya 200 → tab Payload → salin nilai <code>vendor_id</code>.</p>
+          </div>
           <div class="grid sm:grid-cols-2 gap-3">
             <input id="lapLinkMozart" placeholder="Link Mozart (opsional)" value="${(c.linkMozart||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
             <input id="lapTokenMozart" placeholder="Cookie Mozart — TIDAK dipakai lagi (pakai skrip di menu Lap Mozart)" value="${(c.tokenMozart||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
@@ -863,6 +867,7 @@
         cookiesAdmin: document.getElementById('lapCookieAdmin').value.trim(),
         linkMotion: document.getElementById('lapLinkMotion').value.trim(),
         tokenMotion: document.getElementById('lapTokenMotion').value.trim(),
+        vendorIdMotion: document.getElementById('lapVendorIdMotion').value.trim(),
         linkMozart: document.getElementById('lapLinkMozart').value.trim(),
         tokenMozart: document.getElementById('lapTokenMozart').value.trim(),
         mozartAccounts: (document.getElementById('lapMozartAccounts') && document.getElementById('lapMozartAccounts').value.trim()) || ''
@@ -896,20 +901,34 @@
     // nyaut dari halaman menu-nya sendiri di situs Motion -- user perlu buka
     // menu RIWAYAT PGA utk skrip Deposit, dan menu WD REQUEST (atau RIWAYAT WD
     // PGA) utk skrip Withdraw.
+    // PENTING (ketahuan dari bandingkan request ASLI situs vs skrip lewat Network
+    // tab): endpoint deposit (/api/deposit/list/pga) request body-nya SAMA SEKALI
+    // BEDA dari withdraw -- WAJIB field "vendor_id", limit 20, dan TIDAK PERNAH
+    // ada date1/date2/filter_status/filter_by/sort di body aslinya (filter tanggal
+    // dilakukan di CLIENT, bukan server). Tanpa vendor_id, request deposit HANG
+    // total (server kemungkinan coba scan tanpa index vendor) -- makanya dulu
+    // dikira soal auth/WAF, padahal cuma field wajib yang hilang.
     function lapMotionConsoleScript(mode) {
       const panel = location.origin;
       const token = currentSessionToken || '';
       const mtoken = ((lapConfig && lapConfig.tokenMotion) || '').replace(/^Bearer\s+/i, '').trim();
+      const vendorId = ((lapConfig && lapConfig.vendorIdMotion) || '').trim();
       const isDepo = mode === 'deposit';
+      // Deposit cuma butuh 1x pull -- request ASLI (dari Network tab) tidak punya
+      // filter_by/sort sama sekali, jadi tidak ada cara bedakan "list paid" vs
+      // "list create" dari API-nya lagi (beda dari API lama yang dulu dipakai
+      // server-side). Baris yang sama dipakai sbg depoPaidRows & depoCreateRows
+      // (tiap baris toh sudah punya field created_at DAN paid_at sendiri) --
+      // reconciliation "TIDAK ADA DI CREATE/PAID" jadi otomatis tidak pernah
+      // salah tuduh (selalu ketemu dirinya sendiri), sisanya (cek rentang
+      // tanggal) tetap jalan seperti biasa.
       const pullCalls = isDepo
-        ? "  console.log('%cMotion: deposit paid...','color:#0ff');\n"
-          + "  const paid=await pull('/api/deposit/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0',sort:{field:'paid_at',order:'desc'}});\n"
-          + "  console.log('%cMotion: deposit create...','color:#0ff');\n"
-          + "  const create=await pull('/api/deposit/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'1',sort:{field:'created_at',order:'desc'}});\n"
+        ? "  console.log('%cMotion: deposit...','color:#0ff');\n"
+          + "  const depo=await pull('/api/deposit/list/pga',{limit:20,count:0,vendor_id:VID},20,'paid_at');\n"
         : "  console.log('%cMotion: withdraw...','color:#0ff');\n"
-          + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'});\n";
+          + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'},100,'created_at');\n";
       const payload = isDepo
-        ? "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,depoPaidRows:paid,depoCreateRows:create}"
+        ? "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,depoPaidRows:depo,depoCreateRows:depo}"
         : "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,wdRows:wd}";
       const okMsg = isDepo
         ? "'Motion (Deposit) terkirim ke panel OK\\nDP '+jr.dp+' · Pending '+jr.pending+'\\n\\nBuka panel -> Lap Motion -> Muat Ulang.'"
@@ -917,9 +936,10 @@
       return "(async()=>{\n"
         + "const origTitle=document.title;\n"
         + "try{\n"
-        + "  const O=location.origin, PANEL=" + JSON.stringify(panel) + ", TOKEN=" + JSON.stringify(token) + ", MTOKEN=" + JSON.stringify(mtoken) + ";\n"
+        + "  const O=location.origin, PANEL=" + JSON.stringify(panel) + ", TOKEN=" + JSON.stringify(token) + ", MTOKEN=" + JSON.stringify(mtoken) + ", VID=" + JSON.stringify(vendorId) + ";\n"
         + "  if(!/motionv2/i.test(O)){alert('Buka skrip ini di TAB MOTION (motionv2.com), bukan di sini.');return;}\n"
         + "  if(!MTOKEN){alert('Token Motion belum diisi di menu Setting panel.');return;}\n"
+        + (isDepo ? "  if(!VID){alert('Vendor ID Motion belum diisi di menu Setting panel (wajib utk Deposit). Lihat petunjuk cara ambilnya di Setting.');return;}\n" : "")
         + "  const p2=n=>('0'+n).slice(-2), td=d=>d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());\n"
         + "  const sd=prompt('Tanggal MULAI (YYYY-MM-DD)',td(new Date())); if(!sd)return;\n"
         + "  const ed=prompt('Tanggal AKHIR (YYYY-MM-DD)',sd); if(!ed)return;\n"
@@ -951,14 +971,20 @@
         + "    const isTO=lastErr&&lastErr.name==='AbortError';\n"
         + "    throw new Error(path+(isTO?' TIMEOUT semua cara akses dicoba, Motion tidak merespons sama sekali dari halaman ini. Coba buka menu " + (isDepo ? "RIWAYAT PGA" : "WD REQUEST/RIWAYAT WD PGA") + " dulu di Motion, atau pakai rentang tanggal lebih pendek.':' gagal: '+((lastErr&&lastErr.message)||lastErr)));\n"
         + "  };\n"
-        + "  const pull=async(path,bd)=>{const rows=[];for(let p=0;p<400;p++){\n"
-        + "    const r=await post(path,{...bd,page:p,start:p*100});\n"
-        + "    if(r.status===401||r.status===403){throw new Error('Motion '+r.status+' -- token salah/kedaluwarsa atau diblokir. Cek Token Motion di Setting.');}\n"
+        // pull(path, bodyBase, pageLimit, dateField): dateField dipakai buat early-stop --
+        // data Motion terurut TERBARU -> TERLAMA, jadi begitu 1 halaman penuh sudah
+        // lebih lama dari tanggal MULAI yang diminta, halaman selanjutnya pasti lebih
+        // lama lagi -> berhenti (hemat request, tidak perlu tarik SEMUA riwayat tiap kali).
+        + "  const pull=async(path,bd,pageLimit,dateField)=>{const rows=[];for(let p=0;p<400;p++){\n"
+        + "    const r=await post(path,{...bd,page:p,start:p*pageLimit});\n"
+        + "    if(r.status===401||r.status===403){throw new Error('Motion '+r.status+' -- token/vendor_id salah/kedaluwarsa atau diblokir. Cek Setting.');}\n"
         + "    if(!r.ok){if(p===0)throw new Error(path+' HTTP '+r.status);break;}\n"
         + "    const j=await r.json();const rr=rowsOf(j);rows.push(...rr);\n"
         + "    document.title='['+path.split('/').pop()+' hal '+(p+1)+' · '+rows.length+' baris] MOTION';\n"
-        + "    console.log(path,bd.filter_by,'hal',p,'(+'+rr.length+')');\n"
-        + "    if(rr.length<100)break;\n"
+        + "    console.log(path,'hal',p,'(+'+rr.length+')');\n"
+        + "    if(rr.length<pageLimit)break;\n"
+        + "    const lastD=String((rr[rr.length-1]&&rr[rr.length-1][dateField])||'').split(' ')[0];\n"
+        + "    if(lastD&&lastD<sd)break;\n"
         + "  }return rows;};\n"
         + pullCalls
         + "  document.title=origTitle;\n"

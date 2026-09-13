@@ -9,6 +9,7 @@ export interface LapCreds {
 	cookieAdmin: string;
 	linkMotion: string;
 	tokenMotion: string;
+	vendorIdMotion: string;
 	linkMozart: string;
 	cookieMozart: string;
 	mozartAccounts: string;
@@ -19,12 +20,35 @@ const EMPTY: LapCreds = {
 	cookieAdmin: "",
 	linkMotion: "",
 	tokenMotion: "",
+	vendorIdMotion: "",
 	linkMozart: "",
 	cookieMozart: "",
 	mozartAccounts: "",
 };
 
+// vendor_id_motion ditambahkan belakangan -- migrasi malas (lazy), sama pola
+// dengan ensureNewsCategoryColumns di bot-news.ts: dicoba sekali per cold-start
+// isolate, aman dipanggil berkali² (duplicate column diabaikan).
+// KENAPA field ini perlu: endpoint deposit motionv2.com (/api/deposit/list/pga)
+// WAJIB disertai "vendor_id" di body request -- tanpa itu request HANG/timeout
+// total (kemungkinan server coba scan tanpa index vendor), BUKAN dibalas error
+// jelas. Ketahuan dari membandingkan body request skrip vs body request ASLI
+// yang situsnya sendiri kirim (lihat Network tab): asli = {page,start,limit,
+// count,vendor_id}, TANPA date1/date2/filter_status/filter_by/sort sama sekali
+// (skrip Console filter tanggal di sisi client, bukan server).
+let lapVendorColumnEnsured = false;
+async function ensureLapVendorColumn(env: Env): Promise<void> {
+	if (lapVendorColumnEnsured) return;
+	try {
+		await getTurso(env).prepare(`ALTER TABLE lap_credentials ADD COLUMN vendor_id_motion TEXT NOT NULL DEFAULT ''`).run();
+	} catch {
+		/* kolom sudah ada -> abaikan */
+	}
+	lapVendorColumnEnsured = true;
+}
+
 export async function lapLoadCreds(env: Env, username: string): Promise<LapCreds> {
+	await ensureLapVendorColumn(env);
 	const r = await getTurso(env).prepare(`SELECT * FROM lap_credentials WHERE username = ?`)
 		.bind(username)
 		.first<Record<string, string>>();
@@ -34,6 +58,7 @@ export async function lapLoadCreds(env: Env, username: string): Promise<LapCreds
 		cookieAdmin: String(r.cookie_admin || ""),
 		linkMotion: String(r.link_motion || ""),
 		tokenMotion: String(r.token_motion || ""),
+		vendorIdMotion: String(r.vendor_id_motion || ""),
 		linkMozart: String(r.link_mozart || ""),
 		cookieMozart: String(r.cookie_mozart || ""),
 		mozartAccounts: String(r.mozart_accounts || ""),
@@ -41,6 +66,7 @@ export async function lapLoadCreds(env: Env, username: string): Promise<LapCreds
 }
 
 export async function lapSaveCreds(env: Env, username: string, data: Partial<LapCreds>): Promise<LapCreds> {
+	await ensureLapVendorColumn(env);
 	const cur = await lapLoadCreds(env, username);
 	const linkAdminRaw = pick(data.linkAdmin, cur.linkAdmin);
 	const linkMotionRaw = pick(data.linkMotion, cur.linkMotion);
@@ -52,17 +78,19 @@ export async function lapSaveCreds(env: Env, username: string, data: Partial<Lap
 		cookieAdmin: pick(data.cookieAdmin, cur.cookieAdmin),
 		linkMotion: linkMotionRaw ? hostOnly(linkMotionRaw) : "",
 		tokenMotion: pick(data.tokenMotion, cur.tokenMotion),
+		vendorIdMotion: pick(data.vendorIdMotion, cur.vendorIdMotion),
 		linkMozart: linkMozartRaw ? hostOnly(linkMozartRaw) : "",
 		cookieMozart: pick(data.cookieMozart, cur.cookieMozart),
 		mozartAccounts: data.mozartAccounts === undefined ? cur.mozartAccounts : String(data.mozartAccounts),
 	};
 	await getTurso(env).prepare(
 		`INSERT INTO lap_credentials
-		   (username, link_admin, cookie_admin, link_motion, token_motion, link_mozart, cookie_mozart, mozart_accounts, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		   (username, link_admin, cookie_admin, link_motion, token_motion, vendor_id_motion, link_mozart, cookie_mozart, mozart_accounts, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(username) DO UPDATE SET
 		   link_admin=excluded.link_admin, cookie_admin=excluded.cookie_admin,
 		   link_motion=excluded.link_motion, token_motion=excluded.token_motion,
+		   vendor_id_motion=excluded.vendor_id_motion,
 		   link_mozart=excluded.link_mozart, cookie_mozart=excluded.cookie_mozart,
 		   mozart_accounts=excluded.mozart_accounts,
 		   updated_at=excluded.updated_at`,
@@ -73,6 +101,7 @@ export async function lapSaveCreds(env: Env, username: string, data: Partial<Lap
 			next.cookieAdmin,
 			next.linkMotion,
 			next.tokenMotion,
+			next.vendorIdMotion,
 			next.linkMozart,
 			next.cookieMozart,
 			next.mozartAccounts,
