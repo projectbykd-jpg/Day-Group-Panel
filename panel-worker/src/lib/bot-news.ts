@@ -362,26 +362,37 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 	// Coba SEMUA groq_key dulu (Groq = provider UTAMA sekarang). Balik "" kalau
 	// semuanya gagal (BUKAN throw) supaya pemanggil bisa jatuh ke Gemini kalau
 	// gemini_key masih tersimpan sbg jaring pengaman.
+	// PERBAIKAN: model default lama "llama-3.3-70b-versatile" sudah DIHAPUS/
+	// tidak diakses lagi oleh Groq (balas 404 model_not_found) -- semua artikel
+	// jadi gagal terus-menerus. Kalau groq_model kosong, coba beberapa model
+	// Groq yang masih aktif berurutan (bukan cuma 1) supaya kalau satu model
+	// suatu saat ikut di-deprecate lagi, tidak langsung mati total lagi seperti
+	// kejadian ini -- mirip fallback multi-model yang sudah ada utk Gemini.
+	const groqModels = [...new Set([cfg.groq_model, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it"].filter(Boolean))] as string[];
 	const tryGroq = async (): Promise<{ text: string; err: string }> => {
 		let groqErr = "";
 		for (const gk of groqKeys) {
-			try {
-				const gr = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-					method: "POST",
-					headers: { "Content-Type": "application/json", Authorization: `Bearer ${gk}` },
-					body: JSON.stringify({
-						model: cfg.groq_model || "llama-3.3-70b-versatile",
-						messages: [{ role: "user", content: prompt }],
-						temperature: 0.85,
-						response_format: { type: "json_object" },
-					}),
-				});
-				const gBody: any = await gr.json();
-				const content = gBody?.choices?.[0]?.message?.content;
-				if (gr.ok && content) return { text: content, err: "" };
-				groqErr = "HTTP " + gr.status + " " + JSON.stringify(gBody?.error || gBody).slice(0, 200);
-			} catch (e) {
-				groqErr = e instanceof Error ? e.message : String(e);
+			for (const gm of groqModels) {
+				try {
+					const gr = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+						method: "POST",
+						headers: { "Content-Type": "application/json", Authorization: `Bearer ${gk}` },
+						body: JSON.stringify({
+							model: gm,
+							messages: [{ role: "user", content: prompt }],
+							temperature: 0.85,
+							response_format: { type: "json_object" },
+						}),
+					});
+					const gBody: any = await gr.json();
+					const content = gBody?.choices?.[0]?.message?.content;
+					if (gr.ok && content) return { text: content, err: "" };
+					groqErr = "HTTP " + gr.status + " " + JSON.stringify(gBody?.error || gBody).slice(0, 200);
+					// model_not_found -> percuma diulang di key lain dgn model sama, tapi
+					// coba model berikutnya di key yg SAMA masih worth dicoba.
+				} catch (e) {
+					groqErr = e instanceof Error ? e.message : String(e);
+				}
 			}
 		}
 		return { text: "", err: groqErr };
@@ -1295,11 +1306,16 @@ async function recoverStuckProcessing(env: Env): Promise<number> {
 	// sama query di atas. Sapu SEKALI di sini juga -- artikel LAMA yang errornya
 	// jelas-jelas sesuatu yang seharusnya transient, kembalikan ke 'new' supaya
 	// ikut dicoba lagi, bukan nyangkut selamanya.
+	// PERBAIKAN: model Groq default lama sempat tidak valid (model_not_found)
+	// dan bikin banyak artikel kadung ditandai error PERMANEN -- sapu juga
+	// pola ini sekali supaya otomatis dicoba ulang begitu fix model di atas
+	// aktif, tidak nyangkut selamanya menunggu recovery manual.
 	const r2 = await getTurso(env)
 		.prepare(
 			`UPDATE news_article SET status='new', error='' WHERE status='error' AND (` +
 				`error LIKE '%too many subrequests%' OR error LIKE '%location is not supported%' OR ` +
-				`error LIKE '%rateLimitExceeded%' OR error LIKE '%RESOURCE_EXHAUSTED%')`,
+				`error LIKE '%rateLimitExceeded%' OR error LIKE '%RESOURCE_EXHAUSTED%' OR ` +
+				`error LIKE '%model_not_found%' OR error LIKE '%does not exist or you do not have access%')`,
 		)
 		.run();
 	return r.meta.changes + r2.meta.changes;
