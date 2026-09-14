@@ -388,8 +388,49 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 				? "finishReason=" + body.candidates[0].finishReason
 				: JSON.stringify(body?.error || body).slice(0, 200));
 	}
-	if (!j) throw new Error(`Gemini gagal semua model/key (${attempts.length} percobaan): ` + lastErr);
-	let text: string = j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "";
+	let text: string;
+	if (j) {
+		text = j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "";
+	} else {
+		// Gemini gagal total (biasanya geo-block/rate-limit) -- coba Groq sbg
+		// jalur cadangan KEDUA. Groq (groq.com) API-nya kompatibel format OpenAI
+		// (endpoint & bentuk respons beda dari Gemini), quota-nya TERPISAH total
+		// dari Gemini jadi ini benar-benar jalur alternatif, bukan cuma retry.
+		// Kalau groq_key juga kosong/gagal, tetap lempar error Gemini spt semula.
+		const groqKeys = String(cfg.groq_key || "").split(/[,\n]+/).map((s) => s.trim()).filter(Boolean);
+		let groqText = "";
+		let groqErr = "";
+		for (const gk of groqKeys) {
+			try {
+				const gr = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+					method: "POST",
+					headers: { "Content-Type": "application/json", Authorization: `Bearer ${gk}` },
+					body: JSON.stringify({
+						model: cfg.groq_model || "llama-3.3-70b-versatile",
+						messages: [{ role: "user", content: prompt }],
+						temperature: 0.85,
+						response_format: { type: "json_object" },
+					}),
+				});
+				const gBody: any = await gr.json();
+				const content = gBody?.choices?.[0]?.message?.content;
+				if (gr.ok && content) {
+					groqText = content;
+					break;
+				}
+				groqErr = "HTTP " + gr.status + " " + JSON.stringify(gBody?.error || gBody).slice(0, 200);
+			} catch (e) {
+				groqErr = e instanceof Error ? e.message : String(e);
+			}
+		}
+		if (!groqText) {
+			throw new Error(
+				`Gemini gagal semua model/key (${attempts.length} percobaan): ${lastErr}` +
+					(groqKeys.length ? ` | Groq (cadangan) juga gagal: ${groqErr}` : ""),
+			);
+		}
+		text = groqText;
+	}
 	text = text.replace(/^﻿/, "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 
 	let title = "";
@@ -1412,6 +1453,7 @@ export async function botNewsSnapshot(env: Env) {
 			post_labels: cfg.post_labels || "",
 			gemini_model: cfg.gemini_model || "gemini-flash-latest",
 			has_gemini_key: !!cfg.gemini_key,
+			has_groq_key: !!cfg.groq_key,
 			has_blogger: !!(cfg.blogger_refresh_token && cfg.blogger_blog_id),
 			blog_id: cfg.blogger_blog_id || "",
 			blogger_site_url: cfg.blogger_site_url || "",
