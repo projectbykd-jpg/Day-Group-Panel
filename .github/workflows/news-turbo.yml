@@ -1,0 +1,36 @@
+name: BOT NEWS turbo (bypass limit Cloudflare)
+
+# Jalan di GitHub Actions (server GitHub, GRATIS), bukan di Cloudflare Worker --
+# jadi TIDAK kena limit "50 subrequest/invocation" Cloudflare Free yang bikin
+# proses banyak artikel sekaligus gagal ("Too many subrequests"). Ini jalur
+# TAMBAHAN, bukan pengganti: Cron Trigger Cloudflare & cron eksternal
+# (cron-job.org) yang sudah ada tetap jalan seperti biasa sbg jaring pengaman.
+on:
+  schedule:
+    # Tiap 10 menit. GitHub Actions cron sering telat beberapa menit di jam
+    # sibuk (di luar kendali kita) -- itu normal, bukan tanda error.
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {} # tombol "Run workflow" manual di tab Actions
+
+concurrency:
+  group: bot-news-turbo
+  cancel-in-progress: false # jangan tabrak run yang masih jalan, antre saja
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies (hanya yang dibutuhkan script ini)
+        working-directory: panel-worker
+        run: npm install --no-save @libsql/client tsx
+      - name: Proses artikel ke Blogger & Situs Sendiri
+        working-directory: panel-worker
+        env:
+          TURSO_URL: ${{ secrets.TURSO_URL }}
+          TURSO_TOKEN: ${{ secrets.TURSO_TOKEN }}
+        run: npx tsx scripts/gh-turbo-run.ts
