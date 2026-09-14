@@ -24,6 +24,18 @@ function newsCategoryLabel(cat: string): string {
 	return NEWS_CATEGORY_LABELS[cat] || NEWS_CATEGORY_LABELS.umum;
 }
 
+// Pola error yang sifatnya SEMENTARA (geo-block Gemini/Blogger, rate-limit,
+// ATAU limit subrequest Cloudflare per-invocation "Too many subrequests" --
+// ini muncul lagi setelah nambah Groq sbg fallback karena tiap artikel yang
+// gagal total di Gemini kini nyoba 1 fetch tambahan ke Groq, kadang keburu
+// kelewat 50 subrequest/invocation). Dipakai di SEMUA titik tangkap error
+// (Blogger, FB langsung, FB template) supaya artikel yang kena ini direset
+// balik ke 'new'/'processing' TIDAK PERNAH ditandai 'error' permanen --
+// tick berikutnya (kemungkinan lewat edge/invocation lain yang lebih longgar)
+// otomatis coba lagi. Ini akar masalah yang sama persis dgn bug geo-block
+// yang sudah pernah diperbaiki sebelumnya, cuma pesan errornya beda.
+const TRANSIENT_ERROR_RE = /location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED|user-?Rate ?Limit|too many subrequests/i;
+
 // Kolom category ditambahkan belakangan -- migrasi malas (lazy), sama seperti
 // fb_template_caption di bawah: dicoba sekali per cold-start isolate, aman
 // dipanggil berkali² (duplicate column diabaikan), tidak perlu skrip migrasi
@@ -723,7 +735,7 @@ export async function fbDirectProcessOne(env: Env): Promise<{ done: boolean; tit
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
 		// Transient (geo-block/rate-limit) -> JANGAN tandai selesai, biarkan dicoba lagi.
-		if (/location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED/i.test(msg)) {
+		if (TRANSIENT_ERROR_RE.test(msg)) {
 			return { done: true, error: msg + " (akan dicoba lagi otomatis)" };
 		}
 		// Error lain (mis. token FB kadaluwarsa) -> tandai supaya tidak diulang
@@ -860,7 +872,7 @@ export async function fbTemplateGenerate(
 		return { done: true, title: String(row.title), imageUrl, caption };
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
-		if (/location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED/i.test(msg)) {
+		if (TRANSIENT_ERROR_RE.test(msg)) {
 			return { done: false, error: msg + " (coba lagi sebentar)" };
 		}
 		await getTurso(env).prepare(`UPDATE news_article SET fb_direct_posted_at = 'error' WHERE id = ?`).bind(id).run();
@@ -1156,7 +1168,7 @@ export async function newsProcessOne(
 		// Sama dgn geo-block Gemini: rate limit Blogger (429 rateLimitExceeded/
 		// RESOURCE_EXHAUSTED) sifatnya SEMENTARA (reda dlm hitungan menit) -- JANGAN
 		// tandai error permanen, biar dicoba lagi otomatis tick berikutnya.
-		if (/location is not supported/i.test(msg) || /rateLimitExceeded|RESOURCE_EXHAUSTED|user-?Rate ?Limit/i.test(msg)) {
+		if (TRANSIENT_ERROR_RE.test(msg)) {
 			// BUG YANG DIPERBAIKI: komentar di atas bilang "biarkan 'new'" tapi baris ini
 			// dulu TIDAK PERNAH mengembalikan status artikel -- padahal claim di atas
 			// (UPDATE ... status='processing') sudah mengubahnya duluan. Akibatnya tiap
@@ -1263,7 +1275,20 @@ async function recoverStuckProcessing(env: Env): Promise<number> {
 		.prepare(`UPDATE news_article SET status='new' WHERE status='processing' AND claimed_at != '' AND claimed_at < ?`)
 		.bind(cutoff)
 		.run();
-	return r.meta.changes;
+	// PERBAIKAN: sebelum "too many subrequests" ikut dianggap transient (lihat
+	// TRANSIENT_ERROR_RE), artikel yang kena error itu KETERLANJUR ditandai
+	// status='error' PERMANEN (bukan 'processing'), jadi tidak pernah ke-sapu
+	// sama query di atas. Sapu SEKALI di sini juga -- artikel LAMA yang errornya
+	// jelas-jelas sesuatu yang seharusnya transient, kembalikan ke 'new' supaya
+	// ikut dicoba lagi, bukan nyangkut selamanya.
+	const r2 = await getTurso(env)
+		.prepare(
+			`UPDATE news_article SET status='new', error='' WHERE status='error' AND (` +
+				`error LIKE '%too many subrequests%' OR error LIKE '%location is not supported%' OR ` +
+				`error LIKE '%rateLimitExceeded%' OR error LIKE '%RESOURCE_EXHAUSTED%')`,
+		)
+		.run();
+	return r.meta.changes + r2.meta.changes;
 }
 
 /** Entry cron: /__cron?job=news */
@@ -1366,7 +1391,7 @@ export async function botNewsRun(
 		if (r.error) lastError = r.error;
 		// Geo-block sementara di edge ini -> hentikan tick, jangan ulang artikel yang
 		// sama berkali-kali (edge-nya sama sepanjang 1 invocation).
-		if (r.error && /location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED/i.test(r.error)) break;
+		if (r.error && TRANSIENT_ERROR_RE.test(r.error)) break;
 	}
 	// ---- Loop 2: SITUS SENDIRI -- 100% terpisah, postToBlogger SELALU false di
 	// sini (tidak pernah coba posting Blogger sama sekali), pace-nya cuma dari
@@ -1377,7 +1402,7 @@ export async function botNewsRun(
 		if (!r.done) break; // tidak ada artikel 'new' lagi
 		if (r.siteOnly) siteOnly++;
 		if (r.error) lastError = r.error;
-		if (r.error && /location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED/i.test(r.error)) break;
+		if (r.error && TRANSIENT_ERROR_RE.test(r.error)) break;
 	}
 	const capped = postedSoFar >= cap;
 	const parts: string[] = [`Feed +${pull.added} artikel baru`];
