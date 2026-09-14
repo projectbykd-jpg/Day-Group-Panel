@@ -127,13 +127,18 @@ const GH_HEADERS = (token: string) => ({
 	"X-GitHub-Api-Version": "2022-11-28",
 });
 
-export async function botNewsRunViaGithub(env: Env, token: string, count?: number, target?: string) {
-	const s = await gate(env, token);
+/**
+ * Inti pemicu GitHub Actions -- TIDAK melakukan auth sendiri (dipisah dari
+ * botNewsRunViaGithub di bawah supaya bisa dipakai jalur lain yang otentikasinya
+ * beda, lihat dispatchNewsTurboFromCron di index.ts yang dipakai cron eksternal
+ * lewat CRON_KEY, bukan sesi login).
+ */
+export async function dispatchNewsTurbo(env: Env, count?: number, target?: string): Promise<{ targetLabel: string; n: number }> {
 	if (!env.GH_TOKEN) {
 		throw new Error("GitHub Actions belum dikonfigurasi (secret GH_TOKEN). Hubungi admin.");
 	}
 	// count kosong/0 = kosongkan input di panel = ikuti Artikel/Proses di
-	// Konfigurasi Lanjutan & jalan sampai antrean habis (lihat gh-turbo-run.ts).
+	// Setting & jalan sampai antrean habis (lihat gh-turbo-run.ts).
 	const n = count && count > 0 ? Math.floor(count) : 0;
 	const tgt = target === "blogger" || target === "site" ? target : "both";
 	const inputs: Record<string, string> = {};
@@ -158,12 +163,18 @@ export async function botNewsRunViaGithub(env: Env, token: string, count?: numbe
 		throw new Error(`Gagal memicu GitHub Actions (HTTP ${resp.status})${hint}${detail}`);
 	}
 	const targetLabel = tgt === "blogger" ? "Blogger" : tgt === "site" ? "Website Sendiri" : "Blogger + Website Sendiri";
+	return { targetLabel, n };
+}
+
+export async function botNewsRunViaGithub(env: Env, token: string, count?: number, target?: string) {
+	const s = await gate(env, token);
+	const { targetLabel, n } = await dispatchNewsTurbo(env, count, target);
 	await logActivity(env, s.username, "BOT NEWS RUN (GitHub)", `Memicu workflow news-turbo.yml secara manual -> ${targetLabel}${n ? ` (${n} artikel)` : ""}`, "BERHASIL", "");
 	return {
 		success: true,
 		message: n
 			? `Dipicu! Target ${n} artikel ke ${targetLabel}. Hasilnya masuk 1-2 menit lagi, klik REFRESH nanti.`
-			: `Dipicu! Proses ke ${targetLabel} sesuai pengaturan Konfigurasi Lanjutan. Hasilnya masuk 1-2 menit lagi, klik REFRESH nanti.`,
+			: `Dipicu! Proses ke ${targetLabel} sesuai pengaturan Setting. Hasilnya masuk 1-2 menit lagi, klik REFRESH nanti.`,
 	};
 }
 

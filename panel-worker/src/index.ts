@@ -59,6 +59,7 @@ import {
 	botFbRunNow,
 	botFbTemplateGenerate,
 	botNewsAddSource,
+	dispatchNewsTurbo,
 	botNewsDeleteSource,
 	botNewsGithubRunStatus,
 	botNewsRunNow,
@@ -470,6 +471,21 @@ export default {
 				// (biasanya sekali/hari via Cron Trigger native, lihat scheduled()).
 				if (job === "newsprune") {
 					out.newsprune = await newsPruneQueueDaily(env);
+				}
+				// PERBAIKAN: jadwal `schedule:` bawaan GitHub Actions TERBUKTI tidak bisa
+				// diandalkan buat interval ketat (terbukti lewat cron.yml yang sudah lama
+				// ada -- di-set tiap 5 menit tapi kadang cuma jalan sekali per BEBERAPA
+				// JAM, murni keterbatasan penjadwal internal GitHub, bukan bug kita).
+				// Job ini gantikan itu: cuma "memencet tombol" workflow_dispatch
+				// news-turbo.yml (via dispatchNewsTurbo, GH API, ~1 fetch, sangat ringan)
+				// -- prosesnya sendiri TETAP di GitHub Actions (bebas limit subrequest),
+				// tapi PEMICUNYA dari cron eksternal (cron-job.org) yang jauh lebih
+				// presisi drpd jadwal internal GitHub. count/target opsional dari query
+				// string, sama seperti job=news dulu.
+				if (job === "githubnews") {
+					const qCount = url.searchParams.get("count");
+					const qTarget = url.searchParams.get("target") || undefined;
+					out.githubnews = await dispatchNewsTurbo(env, qCount ? Number(qCount) : undefined, qTarget);
 				}
 				// Job TERPISAH sengaja TIDAK ikut "all" -- dipanggil cron sendiri tiap
 				// 10 menit (1 artikel/panggilan), independen dari jadwal Blogger.
