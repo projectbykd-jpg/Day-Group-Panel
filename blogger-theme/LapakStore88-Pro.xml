@@ -4015,7 +4015,7 @@ h1,h2,h3,h4,h5,h6,.post-title,.post-title a,.widget-title,.section-title h2,.sec
 @media (max-width:980px){#header-wrap .container{padding:0}#nav-search{display:none !important}.show-search{display:block !important}.header-menu{display:none !important}}
 
 /* Hero berita utama (markup disisip lewat b:includable Blog1/main, lihat class lp-hero-*) */
-.lp-hero-section{max-width:1180px;margin:0 auto;padding:22px 20px 8px;display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:18px;align-items:stretch}
+.lp-hero-section{max-width:1180px;margin:0 auto;padding:22px 20px 8px;display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:18px;align-items:stretch}
 .lp-hero-card{position:relative;display:block;overflow:hidden;border-radius:18px;border:1px solid rgba(148,163,184,.14);aspect-ratio:16/9;text-decoration:none;background:linear-gradient(135deg,#132640,#0a1524)}
 .lp-hero-card img{width:100%;height:100%;object-fit:cover;display:block}
 .lp-hero-overlay{position:absolute;left:0;right:0;bottom:0;padding:20px 22px;display:flex;flex-direction:column;gap:8px;background:linear-gradient(0deg,rgba(3,7,14,.94) 0%,rgba(3,7,14,.72) 45%,rgba(3,7,14,0) 100%)}
@@ -4086,6 +4086,15 @@ a.view-all:hover{background:linear-gradient(135deg,#fde047,#f59e0b) !important;c
 /* Pagination & tombol umum */
 .blog-pager a,.pagination a{background:#0b1524 !important;color:#f8fafc !important;border:1px solid rgba(148,163,184,.14) !important}
 .blog-pager a:hover,.pagination a:hover{background:linear-gradient(135deg,#fde047,#f59e0b) !important;color:#07111f !important;border-color:transparent !important}
+
+/* Breadcrumb halaman artikel -- aslinya height:34px baris tunggal (fixed), tapi
+   label/judul artikel Indonesia sering panjang & jadi 2-3 baris -- teks yang
+   melebihi 34px dulu meluber ke luar kotak, kelihatan "nyangkut" sendirian di
+   atas judul tanpa rapi. Ganti jadi tinggi otomatis + kartu gelap. */
+#breadcrumb{height:auto !important;line-height:1.6 !important;padding:10px 16px !important;background:#0b1524 !important;color:#91a0b5 !important;border:1px solid rgba(148,163,184,.14);border-radius:10px}
+#breadcrumb a{color:#91a0b5}
+#breadcrumb a:hover{color:#f0a91e}
+#breadcrumb .current{color:#dbe4f0}
 
 /* Halaman artikel tunggal */
 .item-post-wrap,.post-body,.entry-content{color:#dbe4f0 !important}
