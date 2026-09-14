@@ -4337,6 +4337,7 @@ Tindakan ini tidak dapat dibatalkan.`,
     // UI -- satu-satunya jalur manual sekarang lewat GitHub (botNewsRunGithub
     // di bawah), tidak kena limit itu sama sekali.
     var botGithubPollTimer = null;
+    var botGithubLastSeenRunId = null; // run id 'completed' terakhir yang SUDAH ditampilkan -- cegah re-tampil/re-refresh berulang tiap loadBotNews() dipanggil (dulu bikin loop tak terhenti, lihat botGithubPollStatus)
     function botGithubProgressShow(label, pct){
       var box = document.getElementById('botGithubProgress');
       var bar = document.getElementById('botGithubProgressBar');
@@ -4370,12 +4371,25 @@ Tindakan ini tidak dapat dibatalkan.`,
           if(!run){ return; } // belum pernah ada run sama sekali -- diam saja
           botGithubProgressLink(run.htmlUrl);
           if(run.status === 'completed'){
+            // PENTING: sudah pernah dilaporkan run id ini sebelumnya (mis. kita
+            // baru sekadar buka Dashboard, bukan baru saja memicu run) -> diam
+            // saja, JANGAN tampilkan/refresh lagi. Sebelumnya di sini manggil
+            // loadBotNews(), yang mana MEMANGGIL LAGI botGithubPollStatus() ->
+            // lihat status 'completed' lagi -> panggil loadBotNews() lagi ->
+            // ...tanpa henti (itu sumber kedap-kedipnya, bukan cuma kosmetik,
+            // benar2 loop rekursif tanpa jeda).
+            if (botGithubLastSeenRunId === run.id) return;
+            botGithubLastSeenRunId = run.id;
             var ok = run.conclusion === 'success';
             botGithubProgressShow((ok?'Selesai (run #'+run.runNumber+')':'Gagal (run #'+run.runNumber+', cek log GitHub)'), 100);
-            if(ok) loadBotNews(); else toast('Run GitHub Actions terakhir gagal -- cek tab Actions di GitHub.');
             botGithubProgressHideSoon();
+            // Refresh angka dashboard TANPA lewat loadBotNews() (itu yang
+            // memicu poll ini lagi) -- panggil botNewsStatus langsung.
+            google.script.run.withSuccessHandler(applyBotNews).withFailureHandler(function(){}).botNewsStatus(currentSessionToken);
+            if(!ok) toast('Run GitHub Actions terakhir gagal -- cek tab Actions di GitHub.');
             return; // berhenti poll, sudah selesai
           }
+          botGithubLastSeenRunId = null; // masih berjalan -- kalau nanti selesai, anggap baru lagi (biar dilaporkan)
           botGithubProgressShow(run.status==='queued' ? 'Antre di GitHub...' : 'Sedang diproses di GitHub...', run.status==='queued'?20:65);
           if(Date.now() < deadline){ botGithubPollTimer = setTimeout(tick, 4000); }
         }).withFailureHandler(function(){ /* diam -- jangan ganggu dashboard cuma krn polling gagal sesekali */ }).botNewsGithubRunStatus(currentSessionToken);
