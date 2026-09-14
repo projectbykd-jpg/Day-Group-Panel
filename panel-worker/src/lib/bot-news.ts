@@ -1,7 +1,7 @@
 // Modul NEWS untuk Role BOT: tarik feed berita -> rewrite via Gemini ->
 // posting ke Blogger. Semua state di Turso (bot_kv / news_source / news_article).
 import { getTurso } from "./turso";
-import { tsNow, tsNowIndonesianDate } from "./time";
+import { tsNow, tsNowIndonesianDate, tsPlusMinutes } from "./time";
 
 // Dipakai dropdown "Tambah Sumber" (panel) & filter kategori di endpoint publik
 // /public/news. Daftar cocok dengan kategori RSS Liputan6 yang sudah dicek --
@@ -53,6 +53,12 @@ export async function ensureNewsCategoryColumns(env: Env): Promise<void> {
 		// sendiri (lihat publicNewsHit). Dipakai buat "Terpopuler" yang JUJUR
 		// (berdasar pembaca beneran), bukan sekadar artikel terbaru.
 		`ALTER TABLE news_article ADD COLUMN views INTEGER NOT NULL DEFAULT 0`,
+		// claimed_at = kapan status artikel diubah jadi 'processing' (lihat
+		// newsProcessOne) -- dipakai recoverStuckProcessing() utk membedakan
+		// artikel yang BENERAN sedang diproses invocation lain (baru saja
+		// diklaim) dari yang NYANGKUT permanen (klaim lama tapi tidak pernah
+		// selesai/gagal dengan benar, mis. proses mati mendadak di tengah jalan).
+		`ALTER TABLE news_article ADD COLUMN claimed_at TEXT NOT NULL DEFAULT ''`,
 	]) {
 		try {
 			await getTurso(env).prepare(stmt).run();
@@ -867,7 +873,7 @@ export async function newsProcessOne(
 	// dobel (dobel post Blogger, atau dobel di situs sendiri). UPDATE ... WHERE
 	// status='new' ini atomik di level SQLite -- kalau invocation lain sudah
 	// lebih dulu mengklaim, changes=0 di sini dan kita mundur dgn aman.
-	const claim = await getTurso(env).prepare(`UPDATE news_article SET status='processing' WHERE id=? AND status='new'`).bind(id).run();
+	const claim = await getTurso(env).prepare(`UPDATE news_article SET status='processing', claimed_at=? WHERE id=? AND status='new'`).bind(tsNow(), id).run();
 	if (!claim.meta.changes) return { done: false };
 	try {
 		const rw = await geminiRewrite(env, cfg, {
@@ -1098,6 +1104,18 @@ export async function newsProcessOne(
 		// RESOURCE_EXHAUSTED) sifatnya SEMENTARA (reda dlm hitungan menit) -- JANGAN
 		// tandai error permanen, biar dicoba lagi otomatis tick berikutnya.
 		if (/location is not supported/i.test(msg) || /rateLimitExceeded|RESOURCE_EXHAUSTED|user-?Rate ?Limit/i.test(msg)) {
+			// BUG YANG DIPERBAIKI: komentar di atas bilang "biarkan 'new'" tapi baris ini
+			// dulu TIDAK PERNAH mengembalikan status artikel -- padahal claim di atas
+			// (UPDATE ... status='processing') sudah mengubahnya duluan. Akibatnya tiap
+			// kali geo-block/rate-limit kena, artikel itu nyangkut PERMANEN di
+			// status='processing' (SELECT pemilih artikel cuma lihat status='new'),
+			// hilang dari antrean selama-lamanya walau errornya cuma sementara. Ini
+			// penyebab utama "situs sendiri gak bisa posting banyak" -- makin sering
+			// geo-block kena, makin banyak artikel yang "termakan" diam-diam tanpa
+			// pernah benar-benar gagal ATAU berhasil. Reset eksplisit ke 'new' di sini
+			// supaya tick berikutnya (kemungkinan lewat edge Cloudflare lain) beneran
+			// mencobanya lagi, sesuai yang sudah diniatkan dari awal.
+			await getTurso(env).prepare(`UPDATE news_article SET status='new' WHERE id=? AND status='processing'`).bind(id).run();
 			return { done: true, error: msg + " (akan dicoba lagi otomatis)" };
 		}
 		await getTurso(env).prepare(`UPDATE news_article SET status='error', error=? WHERE id=?`).bind(msg.slice(0, 400), id).run();
@@ -1178,6 +1196,23 @@ export async function newsPruneQueueDaily(env: Env): Promise<{ pruned: number; k
 	return { pruned: del.meta.changes, kept: keepIds.length, mode: "fallback5" };
 }
 
+// Sembuhkan artikel yang nyangkut di status='processing' (lihat catatan bug di
+// newsProcessOne: dulu geo-block/rate-limit Gemini bikin baris permanen
+// nyangkut karena tidak pernah dikembalikan ke 'new'). Ambang 3 menit JAUH di
+// atas waktu proses 1 artikel yang sebenarnya (~8 detik, lihat catatan di
+// botNewsRun) -- jadi aman dari race dengan invocation LAIN yang mungkin
+// benar-benar sedang memproses baris itu (klaimnya baru), hanya menyembuhkan
+// yang klaimnya sudah lama & jelas tidak pernah selesai.
+async function recoverStuckProcessing(env: Env): Promise<number> {
+	await ensureNewsCategoryColumns(env);
+	const cutoff = tsPlusMinutes(-3);
+	const r = await getTurso(env)
+		.prepare(`UPDATE news_article SET status='new' WHERE status='processing' AND claimed_at != '' AND claimed_at < ?`)
+		.bind(cutoff)
+		.run();
+	return r.meta.changes;
+}
+
 /** Entry cron: /__cron?job=news */
 // Batas keras utk sekali panggil (tombol "Proses Sekarang" manual TERMASUK):
 // tiap artikel makan ~4-8 subrequest (Gemini + Blogger + Turso). Cloudflare Free
@@ -1255,6 +1290,11 @@ export async function botNewsRun(
 	// newsPullSources tanpa proses apa pun sesudahnya (aman sendiri, ~10
 	// subrequest), dipanggil cron eksternal terpisah dari job=news.
 	const pull = { added: 0, scanned: 0 };
+
+	// 1 subrequest ekstra tapi murah & penting -- sembuhkan artikel yang nyangkut
+	// dari tick sebelumnya (lihat recoverStuckProcessing) SEBELUM memilih artikel
+	// baru, supaya langsung ikut kepilih lagi di run yang sama kalau ada slot.
+	await recoverStuckProcessing(env);
 
 	const cap = Number(cfg.daily_cap || "8");
 	// Query 1x, lalu update di memori -> bukan 1 query/iterasi (hemat subrequest).
