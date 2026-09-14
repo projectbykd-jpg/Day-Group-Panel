@@ -34,7 +34,12 @@ function newsCategoryLabel(cat: string): string {
 // tick berikutnya (kemungkinan lewat edge/invocation lain yang lebih longgar)
 // otomatis coba lagi. Ini akar masalah yang sama persis dgn bug geo-block
 // yang sudah pernah diperbaiki sebelumnya, cuma pesan errornya beda.
-const TRANSIENT_ERROR_RE = /location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED|user-?Rate ?Limit|too many subrequests/i;
+// "Failed to generate JSON"/json_validate_failed = Groq's strict JSON mode
+// kadang gagal parse output modelnya sendiri utk artikel TERTENTU (hiccup,
+// bukan model/key-nya rusak permanen) -- artikel lain dgn model & key SAMA
+// biasa tetap sukses. Perlakukan sbg transient jg spy artikel ini dicoba lagi
+// (bukan macet error selamanya), bukan dianggap semua provider mati total.
+const TRANSIENT_ERROR_RE = /location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED|user-?Rate ?Limit|too many subrequests|failed to generate json|json_validate_failed/i;
 
 // Kolom category ditambahkan belakangan -- migrasi malas (lazy), sama seperti
 // fb_template_caption di bawah: dicoba sekali per cold-start isolate, aman
@@ -404,21 +409,24 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 				groqErr = res.err;
 			}
 			// Semua kandidat statis gagal -- tanya Groq model apa yg benar-benar
-			// bisa diakses key ini.
+			// bisa diakses key ini. Coba SAMPAI 3 kandidat dari hasil discovery
+			// (bukan cuma 1) -- beberapa model di akun bisa "blocked at the
+			// project level" (dibatasi admin project Groq-nya), jadi kalau
+			// kandidat pertama kena blokir, masih ada 2 cadangan lain sebelum
+			// menyerah.
 			try {
 				const lr = await fetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: `Bearer ${gk}` } });
 				const lBody: any = await lr.json();
 				const ids: string[] = Array.isArray(lBody?.data) ? lBody.data.map((m: any) => String(m?.id || "")) : [];
-				const candidate = ids.find((id) => id && !tried.has(id) && !/whisper|tts|guard|moderation|prompt-guard/i.test(id));
-				if (candidate) {
+				const candidates = ids.filter((id) => id && !tried.has(id) && !/whisper|tts|guard|moderation|prompt-guard/i.test(id)).slice(0, 3);
+				if (!ids.length) groqErr = "Tidak ada model chat yang bisa diakses key Groq ini -- cek console.groq.com/keys / limits akun.";
+				for (const candidate of candidates) {
 					const res = await groqCallModel(gk, candidate);
 					if (res.ok) {
 						await botCfgSet(env, { groq_model: candidate }).catch(() => {});
 						return { text: res.text, err: "" };
 					}
 					groqErr = res.err;
-				} else if (!ids.length) {
-					groqErr = "Tidak ada model chat yang bisa diakses key Groq ini -- cek console.groq.com/keys / limits akun.";
 				}
 			} catch (e) {
 				groqErr = e instanceof Error ? e.message : String(e);
@@ -1344,7 +1352,9 @@ async function recoverStuckProcessing(env: Env): Promise<number> {
 			`UPDATE news_article SET status='new', error='' WHERE status='error' AND (` +
 				`error LIKE '%too many subrequests%' OR error LIKE '%location is not supported%' OR ` +
 				`error LIKE '%rateLimitExceeded%' OR error LIKE '%RESOURCE_EXHAUSTED%' OR ` +
-				`error LIKE '%model_not_found%' OR error LIKE '%does not exist or you do not have access%')`,
+				`error LIKE '%model_not_found%' OR error LIKE '%does not exist or you do not have access%' OR ` +
+				`error LIKE '%decommissioned%' OR error LIKE '%blocked at the project level%' OR ` +
+				`error LIKE '%Failed to generate JSON%' OR error LIKE '%json_validate_failed%')`,
 		)
 		.run();
 	return r.meta.changes + r2.meta.changes;
