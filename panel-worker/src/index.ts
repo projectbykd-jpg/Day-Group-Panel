@@ -442,7 +442,18 @@ export default {
 					out.invest = "pumped";
 				}
 				if (job === "news" || job === "all") {
-					out.news = await botNewsRun(env);
+					// mode/count OPSIONAL (dari query string) -- dipakai kalau cron
+					// EKSTERNAL manggil job=news khusus mode=blogger atau mode=site
+					// SENDIRI-SENDIRI (2 invocation terpisah, masing² dapat jatah 50
+					// subrequest sendiri -> throughput lebih besar drpd job=all/Cron
+					// Trigger bawaan yang gabung keduanya dalam SAFE_COMBINED_BUDGET).
+					// Tidak dikirim = perilaku lama (mode="both", persis Cron Trigger).
+					const qMode = url.searchParams.get("mode");
+					const qCount = url.searchParams.get("count");
+					const runOpts: Parameters<typeof botNewsRun>[1] = {};
+					if (qMode === "blogger" || qMode === "site" || qMode === "both") runOpts.mode = qMode;
+					if (qCount) runOpts.count = Number(qCount);
+					out.news = await botNewsRun(env, runOpts);
 				}
 				// Job KHUSUS tarik RSS -- SENGAJA TIDAK ikut "all"/"news" lagi (lihat
 				// komentar di botNewsRun): gabung pull+proses dalam 1 invocation kena
