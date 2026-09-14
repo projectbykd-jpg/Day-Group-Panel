@@ -6244,7 +6244,7 @@ var monthFormat = ["January", "February", "March", "April", "May", "June", "July
               <b:widget-setting name='numItemsToShow'>5</b:widget-setting>
               <b:widget-setting name='showThumbnails'>false</b:widget-setting>
               <b:widget-setting name='showSnippets'>false</b:widget-setting>
-              <b:widget-setting name='timeRange'>LAST_7_DAYS</b:widget-setting>
+              <b:widget-setting name='timeRange'>LAST_WEEK</b:widget-setting>
             </b:widget-settings>
             <b:includable id='main' var='this'>
       <b:include name='widget-title'/>
