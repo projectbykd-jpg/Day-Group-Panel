@@ -39,7 +39,8 @@ function newsCategoryLabel(cat: string): string {
 // bukan model/key-nya rusak permanen) -- artikel lain dgn model & key SAMA
 // biasa tetap sukses. Perlakukan sbg transient jg spy artikel ini dicoba lagi
 // (bukan macet error selamanya), bukan dianggap semua provider mati total.
-const TRANSIENT_ERROR_RE = /location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED|user-?Rate ?Limit|too many subrequests|failed to generate json|json_validate_failed/i;
+const TRANSIENT_ERROR_RE =
+	/location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED|user-?Rate ?Limit|too many subrequests|failed to generate json|json_validate_failed|terlalu pendek/i;
 
 // Kolom category ditambahkan belakangan -- migrasi malas (lazy), sama seperti
 // fb_template_caption di bawah: dicoba sekali per cold-start isolate, aman
@@ -418,7 +419,17 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 				const lr = await fetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: `Bearer ${gk}` } });
 				const lBody: any = await lr.json();
 				const ids: string[] = Array.isArray(lBody?.data) ? lBody.data.map((m: any) => String(m?.id || "")) : [];
-				const candidates = ids.filter((id) => id && !tried.has(id) && !/whisper|tts|guard|moderation|prompt-guard/i.test(id)).slice(0, 3);
+				// PERBAIKAN: filter lama cuma buang model non-chat (whisper/tts/guard) --
+				// tapi "compound"/"compound-mini" (model AGENT/routing Groq, dirancang
+				// buat tool-use & web search, BUKAN penulisan artikel) ikut kepilih &
+				// hasilnya artikel jadi 1 paragraf pendek/kalimat ngaco (terbukti dari
+				// pengecekan langsung). Buang juga model beginian, dan DAHULUKAN model
+				// "llama"/"qwen"/"gpt-oss"/"kimi" (general-purpose, cocok utk nulis
+				// artikel panjang) drpd model lain yang tidak dikenal namanya.
+				const isBadForWriting = (id: string) => /whisper|tts|guard|moderation|prompt-guard|compound|safety|embed/i.test(id);
+				const isKnownGoodWriter = (id: string) => /llama|qwen|gpt-oss|kimi|mixtral|gemma/i.test(id);
+				const usable = ids.filter((id) => id && !tried.has(id) && !isBadForWriting(id));
+				const candidates = [...usable.filter(isKnownGoodWriter), ...usable.filter((id) => !isKnownGoodWriter(id))].slice(0, 3);
 				if (!ids.length) groqErr = "Tidak ada model chat yang bisa diakses key Groq ini -- cek console.groq.com/keys / limits akun.";
 				for (const candidate of candidates) {
 					const res = await groqCallModel(gk, candidate);
@@ -563,6 +574,18 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 
 	if (!html || /^\s*\{[\s\S]*"body_html"/.test(html)) {
 		throw new Error("Gemini balas format tidak bisa dibaca (bukan artikel).");
+	}
+	// PERBAIKAN: sebelum ini, artikel 1 paragraf pendek (atau kalimat ngaco dari
+	// model kualitas rendah, mis. model "agent/routing" yg salah kepilih) tetap
+	// LOLOS & terbit apa adanya -- tidak ada validasi panjang sama sekali.
+	// Prompt minta ${paraTarget} paragraf (target pMin..pMax, biasanya 8-14);
+	// kalau hasilnya jauh di bawah itu, besar kemungkinan modelnya tidak becus
+	// ikuti instruksi -- tolak & coba lagi (retryable), JANGAN diterbitkan
+	// apa adanya.
+	const plainWordCount = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().split(" ").filter(Boolean).length;
+	const MIN_WORDS = 120; // ~1-2 paragraf pendek jauh di bawah ini -- jelas bukan artikel 8-14 paragraf
+	if (plainWordCount < MIN_WORDS) {
+		throw new Error(`AI balas artikel terlalu pendek (${plainWordCount} kata, target ${paraTarget} paragraf) -- kemungkinan model yang dipakai kualitasnya rendah/salah/tidak ikuti instruksi.`);
 	}
 	if (!title) title = art.title;
 	if (!metaDescription) {

@@ -1,12 +1,18 @@
-// Dijalankan lewat GitHub Actions cron (BUKAN Cloudflare Worker) -- panggil
-// ULANG botNewsRun() ASLI dari src/lib/bot-news.ts, TIDAK ADA logic yang
+// Dijalankan lewat GitHub Actions (BUKAN Cloudflare Worker) -- panggil ULANG
+// botNewsRun() ASLI dari src/lib/bot-news.ts, TIDAK ADA logic yang
 // diduplikasi/ditulis ulang di sini sama sekali (biar tidak pernah ketinggalan
 // kalau bot-news.ts diubah lagi nanti). Alasan file ini ada: Cloudflare Worker
 // Free plan cuma boleh 50 subrequest/invocation, jadi satu kali panggil
-// botNewsRun() dibatasi ketat (count maks 5). GitHub Actions TIDAK punya
-// limit semacam itu -- jadi di sini botNewsRun() dipanggil BERULANG KALI
-// dalam 1 kali jalan job, sampai antrean 'new' habis atau daily_cap Blogger
-// kena, supaya semua backlog bisa kepublish dalam satu run cepat.
+// botNewsRun() dibatasi ketat. GitHub Actions TIDAK punya limit semacam itu --
+// jadi di sini botNewsRun() dipanggil BERULANG KALI dalam 1 kali jalan job.
+//
+// Dua mode:
+// 1. Terjadwal (RUN_COUNT kosong, tiap 10 menit) -- loop sampai antrean 'new'
+//    habis / daily_cap Blogger kena, pakai per_run/site_per_run dari
+//    Konfigurasi Lanjutan (panel) persis seperti yang pemilik atur.
+// 2. Dipicu tombol panel dengan angka custom (RUN_COUNT terisi) -- proses
+//    TEPAT sejumlah itu (Blogger & Situs Sendiri masing-masing), lalu
+//    berhenti, TIDAK peduli per_run/site_per_run tersimpan.
 //
 // Cara pakai: `npx tsx scripts/gh-turbo-run.ts` dengan env TURSO_URL &
 // TURSO_TOKEN ter-set (lihat .github/workflows/news-turbo.yml).
@@ -17,39 +23,34 @@ const env = {
 	TURSO_TOKEN: process.env.TURSO_TOKEN,
 } as any;
 
-// PERBAIKAN: sebelumnya di sini SELALU kirim count=5 tiap panggilan -- itu
-// bikin field "Artikel per proses cron" (per_run) & "Artikel per proses situs
-// sendiri" (site_per_run) di Konfigurasi Lanjutan (panel) JADI TIDAK PERNAH
-// DIPAKAI lagi (opts.count di botNewsRun SELALU menang atas cfg.per_run/
-// cfg.site_per_run kalau diisi -- lihat botNewsRun: "countOverride ||
-// cfg.per_run"). Sekarang count SENGAJA TIDAK dikirim sama sekali -> botNewsRun
-// otomatis pakai per_run/site_per_run PERSIS seperti yang pemilik atur di
-// panel (dan di sini TIDAK ada limit MAX_RUN_COUNT=5 lagi krn limit itu cuma
-// aktif kalau count eksplisit dikirim -- di GitHub Actions boleh berapa pun
-// besarnya, tidak ada limit subrequest Cloudflare yang perlu dijaga).
 const MAX_ROUNDS = Number(process.env.MAX_ROUNDS || 12);
+const runCountRaw = String(process.env.RUN_COUNT || "").trim();
+const runCount = runCountRaw ? Math.max(1, Math.floor(Number(runCountRaw))) : 0;
 
-async function runBlogger(): Promise<number> {
+/**
+ * botNewsRun() SENGAJA mengunci opts.count ke maksimal 5/panggilan
+ * (MAX_RUN_COUNT, lihat bot-news.ts) -- itu batas keamanan utk invocation
+ * Cloudflare sinkron, TIDAK diubah di sini (jangan lemahkan pagar itu, masih
+ * dipakai tombol manual "PROSES KE BLOGGER"/"PROSES KE SITUS SENDIRI" yang
+ * lama). Jadi target custom besar (mis. 50) tetap harus dicicil per 5 --
+ * di GitHub Actions ini AMAN diulang banyak kali (tidak ada limit
+ * subrequest), beda dgn di Cloudflare.
+ */
+async function runLoop(mode: "blogger" | "site"): Promise<number> {
+	const target = runCount || null; // null = tanpa batas total, ikut cfg + MAX_ROUNDS
 	let total = 0;
 	for (let i = 1; i <= MAX_ROUNDS; i++) {
-		const r = await botNewsRun(env, { force: true, mode: "blogger" });
-		console.log(`[blogger ${i}/${MAX_ROUNDS}] posted=${r.posted} capped=${r.capped} :: ${r.message}`);
-		total += r.posted;
-		// capped = daily_cap Blogger tercapai (bukan error) -> lanjut ke loop situs.
-		// posted===0 tanpa capped = antrean 'new' sudah habis ATAU macet di error
-		// yang sama terus (tidak ada gunanya diulang lagi di round berikutnya).
-		if (r.capped || r.posted === 0) break;
-	}
-	return total;
-}
-
-async function runSite(): Promise<number> {
-	let total = 0;
-	for (let i = 1; i <= MAX_ROUNDS; i++) {
-		const r = await botNewsRun(env, { force: true, mode: "site" });
-		console.log(`[situs ${i}/${MAX_ROUNDS}] siteOnly=${r.siteOnly} :: ${r.message}`);
-		total += r.siteOnly;
-		if (r.siteOnly === 0) break;
+		const remaining = target != null ? target - total : null;
+		if (remaining != null && remaining <= 0) break;
+		const opts: Parameters<typeof botNewsRun>[1] = { force: true, mode };
+		if (remaining != null) opts.count = Math.min(5, remaining);
+		const r = await botNewsRun(env, opts);
+		const got = mode === "blogger" ? r.posted : r.siteOnly;
+		const tag = target != null ? `custom target=${target}` : `${i}/${MAX_ROUNDS}`;
+		console.log(`[${mode} ${tag}] got=${got} capped=${r.capped} :: ${r.message}`);
+		total += got;
+		if (mode === "blogger" && r.capped) break; // daily_cap Blogger tercapai
+		if (got === 0) break; // antrean 'new' habis ATAU macet di error yang sama terus
 	}
 	return total;
 }
@@ -73,8 +74,9 @@ async function main() {
 	if (token.length < 50) {
 		throw new Error(`TURSO_TOKEN kependekan (${token.length} karakter) utk sebuah JWT asli -- cek lagi, mungkin ketuker dengan TURSO_URL atau ke-potong pas paste.`);
 	}
-	const posted = await runBlogger();
-	const siteOnly = await runSite();
+	if (runCount) console.log(`[diag] RUN_COUNT custom = ${runCount} (dipicu tombol panel, bukan jadwal otomatis)`);
+	const posted = await runLoop("blogger");
+	const siteOnly = await runLoop("site");
 	console.log(`\n=== SELESAI: ${posted} artikel ke Blogger, ${siteOnly} artikel ke situs sendiri ===`);
 }
 
