@@ -3971,6 +3971,133 @@ z-index: 4;
     }
 }
 
+/* =========================================================
+   LAPAKSTORE88 BRAND HEADER
+   ========================================================= */
+
+.header-widget{
+  display:flex !important;
+  align-items:center !important;
+  gap:12px !important;
+  min-width:0;
+}
+
+.header-widget .header-image-wrapper{
+  flex:0 0 auto;
+  display:flex !important;
+  align-items:center;
+}
+
+.header-widget .header-image-wrapper img{
+  display:block;
+  width:auto;
+  max-width:100%;
+  max-height:52px;
+  object-fit:contain;
+}
+
+.lapak-brand{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  line-height:1;
+  white-space:nowrap;
+}
+
+.lapak-brand-name{
+  display:flex;
+  align-items:center;
+  gap:0;
+  font-size:22px;
+  font-weight:800;
+  line-height:1.05;
+  letter-spacing:-.5px;
+}
+
+.brand-lapak{
+  color:#f8fafc;
+}
+
+.brand-store88{
+  background:linear-gradient(135deg,#fde047 0%,#f59e0b 100%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  color:transparent;
+}
+
+.lapak-brand-tagline{
+  margin-top:5px;
+  color:#94a3b8;
+  font-size:8.5px;
+  font-weight:700;
+  letter-spacing:1.7px;
+  line-height:1.2;
+}
+
+/* Header utama tetap fleksibel agar brand tidak menabrak search */
+#header-wrap .container{
+  display:flex !important;
+  align-items:center !important;
+  gap:16px;
+}
+
+.header-logo{
+  flex:0 1 auto !important;
+  min-width:0;
+  margin:0 !important;
+}
+
+#main-logo{
+  width:auto !important;
+  max-width:100% !important;
+}
+
+#nav-search{
+  flex:1 1 420px !important;
+  min-width:180px;
+}
+
+/* Tablet */
+@media (max-width:980px){
+  .header-widget{
+    gap:9px !important;
+  }
+
+  .lapak-brand-name{
+    font-size:19px;
+  }
+
+  .lapak-brand-tagline{
+    font-size:7.5px;
+    letter-spacing:1.35px;
+  }
+
+  .header-widget .header-image-wrapper img{
+    max-height:46px;
+  }
+}
+
+/* HP */
+@media (max-width:680px){
+  .header-widget{
+    gap:8px !important;
+  }
+
+  .lapak-brand-name{
+    font-size:17px;
+  }
+
+  .lapak-brand-tagline{
+    font-size:7px;
+    letter-spacing:1px;
+  }
+
+  .header-widget .header-image-wrapper img{
+    max-height:40px;
+  }
+}
+
 /* ===========================================================================
    LAPAKSTORE88 SITE MATCH -- reskin tema Blogger ini biar senada sama
    lokalstore88.online (dark navy + emas), ditaruh PALING BAWAH b:skin supaya
@@ -4109,6 +4236,377 @@ a.view-all:hover{background:linear-gradient(135deg,#fde047,#f59e0b) !important;c
 .post-body img{border-radius:16px}
 .post-body a{color:#38bdf8}
 
+
+/* =========================================================
+   LAPAKSTORE88 — STABLE HOMEPAGE LAYOUT
+   Hero dipindahkan ke sibling #main-wrapper oleh JS sebelum
+   script utama/Sticky Sidebar berjalan. Tanpa display:contents.
+   ========================================================= */
+
+/* The script adds .lp-home-layout only when the homepage hero exists. */
+.lp-home-layout{
+  display:grid !important;
+  grid-template-columns:minmax(0,1fr) 320px !important;
+  column-gap:30px !important;
+  row-gap:24px !important;
+  align-items:start !important;
+}
+
+/* Row 1: hero spans the complete content width. */
+.lp-home-layout > .lp-hero-section{
+  grid-column:1 / -1 !important;
+  grid-row:1 !important;
+  width:100% !important;
+  max-width:none !important;
+  min-width:0 !important;
+  margin:0 !important;
+  padding:0 0 22px !important;
+  display:grid !important;
+  grid-template-columns:minmax(0,2fr) minmax(300px,1fr) !important;
+  gap:18px !important;
+  align-items:stretch !important;
+  box-sizing:border-box !important;
+}
+
+/* Keep the section label with the hero instead of inside the feed column. */
+.lp-home-layout > .lp-hero-section::before{
+  content:'POSTINGAN TERBARU' !important;
+  grid-column:1 / -1 !important;
+  display:block !important;
+  height:32px !important;
+  line-height:32px !important;
+  padding:0 13px !important;
+  margin:0 !important;
+  border-radius:6px !important;
+  background:#0b1524 !important;
+  border-bottom:2px solid #f0a91e !important;
+  color:#f8fafc !important;
+  font-size:11px !important;
+  font-weight:800 !important;
+  letter-spacing:.04em !important;
+  text-transform:uppercase !important;
+  box-sizing:border-box !important;
+}
+
+.lp-home-layout > .lp-hero-section .lp-hero-card{
+  width:100% !important;
+  min-width:0 !important;
+  height:auto !important;
+  aspect-ratio:16 / 8.5 !important;
+  max-height:none !important;
+}
+.lp-home-layout > .lp-hero-section .lp-hero-card img{
+  width:100% !important;
+  height:100% !important;
+  object-fit:cover !important;
+  display:block !important;
+}
+
+.lp-home-layout > .lp-hero-section .lp-headline-list{
+  width:100% !important;
+  min-width:0 !important;
+  height:100% !important;
+  max-height:none !important;
+  overflow:hidden !important;
+  display:flex !important;
+  flex-direction:column !important;
+  margin:0 !important;
+  padding:6px 16px !important;
+  box-sizing:border-box !important;
+}
+.lp-home-layout > .lp-hero-section .lp-headline-item{
+  min-width:0 !important;
+  flex:1 1 0 !important;
+  justify-content:center !important;
+  padding:10px 0 !important;
+}
+.lp-home-layout > .lp-hero-section .lp-headline-title{
+  display:-webkit-box !important;
+  -webkit-line-clamp:3 !important;
+  -webkit-box-orient:vertical !important;
+  overflow:hidden !important;
+  line-height:1.4 !important;
+  overflow-wrap:anywhere !important;
+  word-break:normal !important;
+}
+
+/* Row 2: normal feed and sidebar remain true siblings. */
+.lp-home-layout > #main-wrapper{
+  grid-column:1 !important;
+  grid-row:2 !important;
+  float:none !important;
+  width:auto !important;
+  max-width:none !important;
+  min-width:0 !important;
+  overflow:visible !important;
+  box-sizing:border-box !important;
+}
+.lp-home-layout > #sidebar-wrapper{
+  grid-column:2 !important;
+  grid-row:2 !important;
+  float:none !important;
+  width:100% !important;
+  max-width:100% !important;
+  min-width:0 !important;
+  margin:0 !important;
+  padding:0 !important;
+  overflow:visible !important;
+  box-sizing:border-box !important;
+  align-self:start !important;
+}
+.lp-home-layout > #sidebar-wrapper .widget{
+  width:100% !important;
+  max-width:100% !important;
+  min-width:0 !important;
+}
+
+/* The old 'Recent Posts' headline stays inside Blog1; hide it so it does not
+   become a third layout row above the regular feed. */
+.lp-home-layout > #main-wrapper .home-posts-headline{
+  display:none !important;
+}
+
+.lp-home-layout > #main-wrapper .blog-posts,
+.lp-home-layout > #main-wrapper .grid-posts,
+.lp-home-layout > #main-wrapper .index-post{
+  width:100% !important;
+  max-width:none !important;
+  min-width:0 !important;
+}
+
+/* Center the category pills instead of pinning them to the left edge. */
+#top-bar .container{
+  justify-content:center !important;
+}
+.top-bar-nav{
+  float:none !important;
+  margin-left:auto !important;
+  margin-right:auto !important;
+}
+.top-bar-nav ul{
+  justify-content:center !important;
+}
+
+@media (max-width:900px){
+  .lp-home-layout{
+    grid-template-columns:minmax(0,1fr) 280px !important;
+    column-gap:18px !important;
+  }
+  .lp-home-layout > .lp-hero-section{
+    grid-template-columns:minmax(0,1.65fr) minmax(240px,1fr) !important;
+  }
+}
+
+@media (max-width:760px){
+  .lp-home-layout{
+    grid-template-columns:minmax(0,1fr) !important;
+    row-gap:18px !important;
+  }
+  .lp-home-layout > .lp-hero-section{
+    grid-column:1 !important;
+    grid-row:1 !important;
+    grid-template-columns:1fr !important;
+    padding-bottom:4px !important;
+  }
+  .lp-home-layout > .lp-hero-section .lp-hero-card{
+    aspect-ratio:16 / 10 !important;
+  }
+  .lp-home-layout > .lp-hero-section .lp-headline-list{
+    height:auto !important;
+  }
+  .lp-home-layout > .lp-hero-section .lp-headline-item{
+    flex:0 0 auto !important;
+  }
+  .lp-home-layout > #main-wrapper{
+    grid-column:1 !important;
+    grid-row:2 !important;
+  }
+  .lp-home-layout > #sidebar-wrapper{
+    grid-column:1 !important;
+    grid-row:3 !important;
+  }
+}
+
+
+/* =========================================================
+   SINGLE POST - RELATED POSTS + COMMENTS
+   LAPAKSTORE88 DARK NAVY / GOLD
+   ========================================================= */
+
+/* ---------- Related Posts ---------- */
+#related-wrap{
+  width:100%;
+  overflow:hidden;
+  background:#0b1524 !important;
+  border:1px solid rgba(148,163,184,.14) !important;
+  border-radius:16px !important;
+  margin:0 0 24px !important;
+  padding:0 !important;
+  box-sizing:border-box;
+}
+
+#related-wrap .title-wrap{
+  float:none !important;
+  width:100% !important;
+  height:auto !important;
+  min-height:46px;
+  display:flex !important;
+  align-items:center;
+  background:#0b1524 !important;
+  border:none !important;
+  border-bottom:2px solid #f0a91e !important;
+  margin:0 !important;
+  padding:0 !important;
+}
+
+#related-wrap .title-wrap > h3{
+  float:none !important;
+  height:auto !important;
+  line-height:1.3 !important;
+  padding:14px 16px !important;
+  margin:0 !important;
+  color:#f8fafc !important;
+  font-size:12px !important;
+  font-weight:800 !important;
+  text-transform:uppercase;
+  letter-spacing:.03em;
+}
+
+#related-wrap .related-ready{
+  float:none !important;
+  width:100% !important;
+  padding:16px 10px !important;
+  background:#0b1524 !important;
+}
+
+#related-wrap ul.related-posts{
+  width:100%;
+  margin:0 !important;
+  padding:0 !important;
+}
+
+#related-wrap .related-posts .related-item{
+  box-sizing:border-box;
+}
+
+#related-wrap .related-posts .post-title{
+  margin:0 !important;
+  line-height:1.45 !important;
+}
+
+#related-wrap .related-posts .post-title a{
+  color:#f8fafc !important;
+  font-weight:700 !important;
+  text-decoration:none !important;
+  transition:color .2s ease;
+}
+
+#related-wrap .related-posts .post-title a:hover{
+  color:#f0a91e !important;
+}
+
+#related-wrap .related-posts .post-meta .post-date{
+  color:#94a3b8 !important;
+  font-size:11px !important;
+}
+
+/* ---------- Comments container ---------- */
+.blog-post-comments{
+  width:100%;
+  overflow:hidden;
+  background:#0b1524 !important;
+  border:1px solid rgba(148,163,184,.14) !important;
+  border-radius:16px !important;
+  margin:0 0 24px !important;
+  padding:0 !important;
+  box-sizing:border-box;
+}
+
+.blog-post-comments .comments-title{
+  margin:0 !important;
+  padding:0 !important;
+}
+
+.blog-post-comments .comments-title.title-wrap{
+  float:none !important;
+  width:100% !important;
+  height:auto !important;
+  min-height:46px;
+  display:flex !important;
+  align-items:center;
+  background:#0b1524 !important;
+  border:none !important;
+  border-bottom:2px solid #f0a91e !important;
+}
+
+.blog-post-comments .comments-title h3{
+  float:none !important;
+  height:auto !important;
+  line-height:1.3 !important;
+  padding:14px 16px !important;
+  margin:0 !important;
+  color:#f8fafc !important;
+  font-size:12px !important;
+  font-weight:800 !important;
+  text-transform:uppercase;
+  letter-spacing:.03em;
+}
+
+/* ---------- Native Blogger comments ---------- */
+#comments{
+  background:#0b1524 !important;
+  color:#dbe4f0 !important;
+  padding:16px !important;
+  margin:0 !important;
+}
+
+#comments,
+#comments p,
+#comments .comment-body,
+#comments .comment-content,
+#comments .comment-footer{
+  color:#dbe4f0 !important;
+}
+
+#comments a{
+  color:#f0a91e;
+}
+
+#comments .comment{
+  border-color:rgba(148,163,184,.14) !important;
+}
+
+#comments input,
+#comments textarea{
+  background:#07111f !important;
+  color:#f8fafc !important;
+  border:1px solid rgba(148,163,184,.18) !important;
+  border-radius:10px !important;
+}
+
+#comments input::placeholder,
+#comments textarea::placeholder{
+  color:#64748b !important;
+}
+
+#comments .comment-actions a:hover,
+#comments a:hover{
+  color:#fde047 !important;
+}
+
+/* ---------- General title-wrap inside Single Post ---------- */
+.item-post-wrap .title-wrap{
+  background:#0b1524 !important;
+  border:none !important;
+  border-bottom:2px solid #f0a91e !important;
+  color:#f8fafc !important;
+}
+
+.item-post-wrap .title-wrap > h3{
+  color:#f8fafc !important;
+}
+
+\n\n/* LAPAKSTORE88 BRAND + SINGLE POST DARK FIX */\n.header-widget{display:flex !important;align-items:center !important;gap:12px !important;min-width:0}\n.header-widget .header-image-wrapper{flex:0 0 auto;display:flex !important;align-items:center}\n.header-widget .header-image-wrapper img{display:block;width:auto;max-width:100%;max-height:52px;object-fit:contain}\n.lapak-brand{min-width:0;display:flex;flex-direction:column;justify-content:center;line-height:1;white-space:nowrap}\n.lapak-brand-name{display:flex;align-items:center;font-size:22px;font-weight:800;line-height:1.05;letter-spacing:-.5px}\n.brand-lapak{color:#f8fafc}\n.brand-store88{background:linear-gradient(135deg,#fde047 0%,#f59e0b 100%);-webkit-background-clip:text;background-clip:text;color:transparent}\n.lapak-brand-tagline{margin-top:5px;color:#94a3b8;font-size:8.5px;font-weight:700;letter-spacing:1.7px;line-height:1.2}\n#header-wrap .container{display:flex !important;align-items:center !important;gap:16px}\n.header-logo{flex:0 1 auto !important;min-width:0;margin:0 !important}\n#main-logo{width:auto !important;max-width:100% !important}\n#nav-search{flex:1 1 420px !important;min-width:180px}\n#related-wrap,#related-wrap .related-ready{background:#0b1524 !important}\n#related-wrap{width:100%;overflow:hidden;border:1px solid rgba(148,163,184,.14) !important;border-radius:16px !important;margin:0 0 24px !important;padding:0 !important}\n#related-wrap .title-wrap,.blog-post-comments .comments-title.title-wrap,.item-post-wrap .title-wrap{float:none !important;width:100% !important;height:auto !important;min-height:46px;display:flex !important;align-items:center;background:#0b1524 !important;border:none !important;border-bottom:2px solid #f0a91e !important;margin:0 !important;padding:0 !important}\n#related-wrap .title-wrap>h3,.blog-post-comments .comments-title h3,.item-post-wrap .title-wrap>h3{float:none !important;height:auto !important;line-height:1.3 !important;padding:14px 16px !important;margin:0 !important;color:#f8fafc !important;font-size:12px !important;font-weight:800 !important;text-transform:uppercase;letter-spacing:.03em}\n#related-wrap .related-ready{float:none !important;width:100% !important;padding:16px 10px !important}\n#related-wrap .related-posts .post-title a{color:#f8fafc !important;font-weight:700 !important;text-decoration:none !important}\n#related-wrap .related-posts .post-title a:hover{color:#f0a91e !important}\n#related-wrap .related-posts .post-meta .post-date{color:#94a3b8 !important}\n.blog-post-comments{width:100%;overflow:hidden;background:#0b1524 !important;border:1px solid rgba(148,163,184,.14) !important;border-radius:16px !important;margin:0 0 24px !important;padding:0 !important}\n#comments{background:#0b1524 !important;color:#dbe4f0 !important;padding:16px !important;margin:0 !important}\n#comments,#comments p,#comments .comment-body,#comments .comment-content,#comments .comment-footer{color:#dbe4f0 !important}\n#comments a{color:#f0a91e}\n#comments .comment{border-color:rgba(148,163,184,.14) !important}\n#comments input,#comments textarea{background:#07111f !important;color:#f8fafc !important;border:1px solid rgba(148,163,184,.18) !important;border-radius:10px !important}\n#comments input::placeholder,#comments textarea::placeholder{color:#64748b !important}\n@media (max-width:680px){.lapak-brand-name{font-size:17px}.lapak-brand-tagline{font-size:7px;letter-spacing:1px}.header-widget .header-image-wrapper img{max-height:40px}}\n
 ]]></b:skin>
 
 <style>
@@ -5048,12 +5546,20 @@ var monthFormat = ["January", "February", "March", "April", "May", "June", "July
                   <b:widget-setting name='displayWidth'>640</b:widget-setting>
                 </b:widget-settings>
                 <b:includable id='main' var='this'>
-      <div class='header-widget'>
-        <b:include cond='data:imagePlacement in {&quot;REPLACE&quot;, &quot;BEFORE_DESCRIPTION&quot;}' name='image'/>
-        <b:include cond='data:imagePlacement == &quot;BEHIND&quot;' name='title'/>
-<b:include cond='not data:view.isSingleItem' name='super.description'/>
+  <div class='header-widget'>
+    <b:include cond='data:imagePlacement in {&quot;REPLACE&quot;, &quot;BEFORE_DESCRIPTION&quot;}' name='image'/>
+
+    <div class='lapak-brand'>
+      <div class='lapak-brand-name'>
+        <span class='brand-lapak'>Lapak</span><span class='brand-store88'>Store88</span>
       </div>
-    </b:includable>
+      <div class='lapak-brand-tagline'>PORTAL BERITA TERKINI</div>
+    </div>
+
+    <b:include cond='data:imagePlacement == &quot;BEHIND&quot;' name='title'/>
+    <b:include cond='not data:view.isSingleItem' name='super.description'/>
+  </div>
+</b:includable>
                 <b:includable id='behindImageStyle'>
     <b:if cond='data:sourceUrl'>
       <b:include cond='data:this.image' data='{                    image: data:this.image,                    selector: &quot;.header-widget&quot;                  }' name='responsiveImageStyle'/>
@@ -5082,7 +5588,7 @@ var monthFormat = ["January", "February", "March", "April", "May", "June", "July
     </h1>
   </b:includable>
               </b:widget>
-              <b:widget id='Image50' locked='false' title='Fakta Hari Ini 24' type='Image' visible='true'>
+              <b:widget id='Image50' locked='false' title='Fakta Hari Ini 24' type='Image' version='2' visible='true'>
                 <b:widget-settings>
                   <b:widget-setting name='displayUrl'>https://image2url.com/r2/default/images/1773218034881-063310a6-0b53-44f4-955f-ebc506f0f9d5.png</b:widget-setting>
                   <b:widget-setting name='displayHeight'>201</b:widget-setting>
@@ -5135,7 +5641,7 @@ var monthFormat = ["January", "February", "March", "April", "May", "June", "July
       </div>
       <div id='nav-search'>
         <form class='search-form' expr:action='data:blog.searchUrl' role='search'>
-          <input autocomplete='off' class='search-input' placeholder='Berita apa yang ingin anda baca hari ini?' name='q' type='search' value=''/>
+          <input autocomplete='off' class='search-input' name='q' placeholder='Berita apa yang ingin anda baca hari ini?' type='search' value=''/>
           <button aria-label='Cari' class='nav-search-submit' type='submit'><i class='fa fa-search'/></button>
           <span class='hide-search'/>
         </form>
@@ -5151,30 +5657,30 @@ var monthFormat = ["January", "February", "March", "April", "May", "June", "July
         <b:section class='top-bar-nav' id='top-bar-nav' maxwidgets='1' name='Top Navigation' showaddelement='yes'>
           <b:widget id='LinkList72' locked='true' title='Kategori Berita' type='LinkList' version='2' visible='true'>
             <b:widget-settings>
-              <b:widget-setting name='sorting'>NONE</b:widget-setting>
-              <b:widget-setting name='link-0'>/</b:widget-setting>
-              <b:widget-setting name='text-0'>Home</b:widget-setting>
-              <b:widget-setting name='link-1'>/search/label/Umum</b:widget-setting>
-              <b:widget-setting name='text-1'>Umum</b:widget-setting>
-              <b:widget-setting name='link-2'>/search/label/Nasional</b:widget-setting>
-              <b:widget-setting name='text-2'>Nasional</b:widget-setting>
-              <b:widget-setting name='link-3'>/search/label/Bisnis</b:widget-setting>
-              <b:widget-setting name='text-3'>Bisnis</b:widget-setting>
-              <b:widget-setting name='link-4'>/search/label/Olahraga</b:widget-setting>
-              <b:widget-setting name='text-4'>Olahraga</b:widget-setting>
-              <b:widget-setting name='link-5'>/search/label/Bola</b:widget-setting>
-              <b:widget-setting name='text-5'>Bola</b:widget-setting>
-              <b:widget-setting name='link-6'>/search/label/Hiburan</b:widget-setting>
-              <b:widget-setting name='text-6'>Hiburan</b:widget-setting>
-              <b:widget-setting name='link-7'>/search/label/Teknologi</b:widget-setting>
-              <b:widget-setting name='text-7'>Teknologi</b:widget-setting>
-              <b:widget-setting name='link-8'>/search/label/Otomotif</b:widget-setting>
-              <b:widget-setting name='text-8'>Otomotif</b:widget-setting>
-              <b:widget-setting name='link-9'>/search/label/Kesehatan</b:widget-setting>
-              <b:widget-setting name='text-9'>Kesehatan</b:widget-setting>
-              <b:widget-setting name='link-10'>/search/label/Lifestyle</b:widget-setting>
               <b:widget-setting name='text-10'>Lifestyle</b:widget-setting>
+              <b:widget-setting name='sorting'>NONE</b:widget-setting>
+              <b:widget-setting name='link-1'>/search/label/Umum</b:widget-setting>
+              <b:widget-setting name='link-2'>/search/label/Nasional</b:widget-setting>
+              <b:widget-setting name='link-0'>/</b:widget-setting>
               <b:widget-setting name='link-11'>/search/label/Selebritis</b:widget-setting>
+              <b:widget-setting name='link-10'>/search/label/Lifestyle</b:widget-setting>
+              <b:widget-setting name='text-9'>Kesehatan</b:widget-setting>
+              <b:widget-setting name='link-9'>/search/label/Kesehatan</b:widget-setting>
+              <b:widget-setting name='text-8'>Otomotif</b:widget-setting>
+              <b:widget-setting name='link-7'>/search/label/Teknologi</b:widget-setting>
+              <b:widget-setting name='link-8'>/search/label/Otomotif</b:widget-setting>
+              <b:widget-setting name='link-5'>/search/label/Bola</b:widget-setting>
+              <b:widget-setting name='link-6'>/search/label/Hiburan</b:widget-setting>
+              <b:widget-setting name='link-3'>/search/label/Bisnis</b:widget-setting>
+              <b:widget-setting name='link-4'>/search/label/Olahraga</b:widget-setting>
+              <b:widget-setting name='text-1'>Umum</b:widget-setting>
+              <b:widget-setting name='text-0'>Home</b:widget-setting>
+              <b:widget-setting name='text-3'>Bisnis</b:widget-setting>
+              <b:widget-setting name='text-2'>Nasional</b:widget-setting>
+              <b:widget-setting name='text-5'>Bola</b:widget-setting>
+              <b:widget-setting name='text-4'>Olahraga</b:widget-setting>
+              <b:widget-setting name='text-7'>Teknologi</b:widget-setting>
+              <b:widget-setting name='text-6'>Hiburan</b:widget-setting>
               <b:widget-setting name='text-11'>Selebritis</b:widget-setting>
             </b:widget-settings>
             <b:includable id='main'>
@@ -5269,7 +5775,7 @@ var monthFormat = ["January", "February", "March", "April", "May", "June", "July
             <b:includable id='main' var='this'>
 <b:include name='homePostsHeadline'/>
               <b:include name='searchMessage'/>
-              <b:if cond='data:view.isHomepage'>
+              <b:if cond='data:view.isHomepage or data:view.isLabelSearch'>
                 <div class='lp-hero-section'>
                   <b:loop index='i' values='data:posts' var='post'>
                     <b:if cond='data:i == 0'>
@@ -5312,9 +5818,9 @@ var monthFormat = ["January", "February", "March", "April", "May", "June", "July
                 <b:class cond='data:view.isSingleItem' name='item-post-wrap'/>
                 <b:tag class='grid-posts' cond='data:view.isMultipleItems' name='div'>
                   <b:loop index='i' values='data:posts' var='post'>
-                    <b:if cond='not data:view.isHomepage or data:i &gt; 4'>
-                      <b:include data='post' name='postCommentsAndAd'/>
-                    </b:if>
+                    <b:if cond='(not data:view.isHomepage and not data:view.isLabelSearch) or data:i &gt; 4'>
+  <b:include data='post' name='postCommentsAndAd'/>
+</b:if>
                   </b:loop>
                 </b:tag>
               </div>
@@ -5585,14 +6091,25 @@ var monthFormat = ["January", "February", "March", "April", "May", "June", "July
               <b:comment>Disabled</b:comment> 
             </b:includable>
             <b:includable id='homePostsHeadline'>
-              <b:if cond='data:view.isHomepage'>
-                <div class='home-posts-headline title-wrap Label'>           
-                  <h3 class='title'><data:messages.recentPosts/></h3>  
-                  <a class='view-all' href='/search'><data:messages.showMore/></a>   
-                </div>
-                <div class='clearfix'/>
-              </b:if>
-            </b:includable>
+  <b:if cond='data:view.isHomepage or data:view.isLabelSearch'>
+    <div class='home-posts-headline title-wrap Label'>
+
+      <h3 class='title'>
+        <b:if cond='data:view.isLabelSearch'>
+          POSTINGAN TERBARU: <data:view.search.label/>
+          <b:else/>
+          POSTINGAN TERBARU
+        </b:if>
+      </h3>
+
+      <a class='view-all' href='/search'>
+        <data:messages.showMore/>
+      </a>
+
+    </div>
+    <div class='clearfix'/>
+  </b:if>
+</b:includable>
             <b:includable id='iframeComments' var='post'>
               <b:if cond='data:post.allowIframeComments'>
                 <script expr:src='data:post.iframeCommentSrc' type='text/javascript'/>
@@ -6207,9 +6724,10 @@ var monthFormat = ["January", "February", "March", "April", "May", "June", "July
       visibility: visible;
       opacity: 1;
     }
+	
   </style>
   <!-- LINT.ThenChange(//depot/google3/java/com/google/blogger/b2/layouts/widgets/v2-style.css) -->
-</b:includable>
+            </b:includable>
           </b:widget>
         </b:section>
         
@@ -6694,12 +7212,7 @@ var monthFormat = ["January", "February", "March", "April", "May", "June", "July
             <b:widget-settings>
               <b:widget-setting name='sorting'>ALPHA</b:widget-setting>
               <b:widget-setting name='display'>LIST</b:widget-setting>
-              <!-- PERBAIKAN: sebelumnya isinya label bawaan tema pembelian (Business,
-                   Photography, Sports, Technology) yang TIDAK PERNAH ada di blog ini,
-                   jadi kotak ini kelihatan kosong. Diganti ke kategori berita yang
-                   beneran dipakai (sama persis dgn label yang otomatis ditempel BOT NEWS,
-                   lihat newsCategoryLabel di panel-worker). -->
-              <b:widget-setting name='selectedLabelsList'>Umum,Nasional,Bisnis,Olahraga,Bola,Hiburan,Teknologi,Otomotif,Kesehatan,Lifestyle,Selebritis</b:widget-setting>
+              <b:widget-setting name='selectedLabelsList'>Bisnis,Bola,Hiburan,Kesehatan,Lifestyle,Nasional,Olahraga,Otomotif,Selebritis,Teknologi,Umum</b:widget-setting>
               <b:widget-setting name='showType'>USER_SELECTED</b:widget-setting>
               <b:widget-setting name='showFreqNumbers'>true</b:widget-setting>
             </b:widget-settings>
@@ -8738,6 +9251,36 @@ height: 100%;
 </b:if>
 <!-- Main Scripts -->
 <script src='https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js' type='text/javascript'/>
+<script type='text/javascript'>
+//<![CDATA[
+(function(){
+  function relocateLapakHero(){
+    var wrapper = document.getElementById('content-wrapper');
+    if(!wrapper) return;
+    var container = wrapper.querySelector(':scope > .container');
+    if(!container) container = wrapper.querySelector('.container');
+    if(!container) return;
+
+    var hero = container.querySelector('.lp-hero-section');
+    var main = container.querySelector('#main-wrapper');
+    var sidebar = container.querySelector('#sidebar-wrapper');
+    if(!hero || !main || !sidebar) return;
+
+    /* Move the hero out of Blog1/#main-wrapper so the browser sees a real
+       sibling layout: HERO row 1, MAIN + SIDEBAR row 2. */
+    if(hero.parentNode !== container){
+      container.insertBefore(hero, main);
+    }
+    container.classList.add('lp-home-layout');
+  }
+
+  /* This script is deliberately executed before the theme's main JS and
+     Theia Sticky Sidebar initialization below. */
+  try{ relocateLapakHero(); }catch(e){}
+})();
+//]]>
+</script>
+
 <script type='text/javascript'>
 //<![CDATA[
 /*! Owl carousel by Bartosz Wojciechowski/David Deutsch | v2.0.0 - http://owlcarousel2.github.io/OwlCarousel2 */
