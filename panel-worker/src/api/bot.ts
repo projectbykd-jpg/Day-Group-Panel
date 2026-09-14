@@ -26,7 +26,7 @@ export async function botNewsSaveConfig(env: Env, token: string, data: Record<st
 		"enabled", "per_run", "daily_cap", "site_per_run", "attribution", "rewrite_style", "gemini_model", "gemini_key", "groq_key", "groq_model",
 		"blogger_blog_id", "para_min", "para_max", "promo_url", "promo_text", "post_labels",
 		"fb_enabled", "fb_page_id", "fb_page_token", "fb_direct_enabled", "fb_direct_daily_cap", "fb_page_url", "blogger_site_url",
-		"news_banner_enabled", "news_banner_image", "news_banner_url", "news_banner_text",
+		"news_banner_enabled", "news_banner_image", "news_banner_url", "news_banner_text", "auto_interval_minutes",
 	];
 	for (const k of allow) {
 		if (Object.prototype.hasOwnProperty.call(data, k)) {
@@ -127,7 +127,7 @@ const GH_HEADERS = (token: string) => ({
 	"X-GitHub-Api-Version": "2022-11-28",
 });
 
-export async function botNewsRunViaGithub(env: Env, token: string, count?: number) {
+export async function botNewsRunViaGithub(env: Env, token: string, count?: number, target?: string) {
 	const s = await gate(env, token);
 	if (!env.GH_TOKEN) {
 		throw new Error("GitHub Actions belum dikonfigurasi (secret GH_TOKEN). Hubungi admin.");
@@ -135,10 +135,14 @@ export async function botNewsRunViaGithub(env: Env, token: string, count?: numbe
 	// count kosong/0 = kosongkan input di panel = ikuti Artikel/Proses di
 	// Konfigurasi Lanjutan & jalan sampai antrean habis (lihat gh-turbo-run.ts).
 	const n = count && count > 0 ? Math.floor(count) : 0;
+	const tgt = target === "blogger" || target === "site" ? target : "both";
+	const inputs: Record<string, string> = {};
+	if (n) inputs.count = String(n);
+	if (tgt !== "both") inputs.target = tgt;
 	const resp = await fetch(`https://api.github.com/repos/${NEWS_TURBO_REPO}/actions/workflows/news-turbo.yml/dispatches`, {
 		method: "POST",
 		headers: GH_HEADERS(env.GH_TOKEN),
-		body: JSON.stringify({ ref: "main", inputs: n ? { count: String(n) } : {} }),
+		body: JSON.stringify({ ref: "main", inputs }),
 	});
 	if (resp.status !== 204) {
 		const body = await resp.text();
@@ -153,12 +157,13 @@ export async function botNewsRunViaGithub(env: Env, token: string, count?: numbe
 		}
 		throw new Error(`Gagal memicu GitHub Actions (HTTP ${resp.status})${hint}${detail}`);
 	}
-	await logActivity(env, s.username, "BOT NEWS RUN (GitHub)", `Memicu workflow news-turbo.yml secara manual${n ? ` (custom ${n} artikel)` : ""}`, "BERHASIL", "");
+	const targetLabel = tgt === "blogger" ? "Blogger" : tgt === "site" ? "Website Sendiri" : "Blogger + Website Sendiri";
+	await logActivity(env, s.username, "BOT NEWS RUN (GitHub)", `Memicu workflow news-turbo.yml secara manual -> ${targetLabel}${n ? ` (${n} artikel)` : ""}`, "BERHASIL", "");
 	return {
 		success: true,
 		message: n
-			? `Dipicu! Target ${n} artikel (Blogger + Situs Sendiri). Hasilnya masuk 1-2 menit lagi, klik REFRESH nanti.`
-			: "Dipicu! Proses SELURUH antrean sesuai pengaturan Konfigurasi Lanjutan. Hasilnya masuk 1-2 menit lagi, klik REFRESH nanti.",
+			? `Dipicu! Target ${n} artikel ke ${targetLabel}. Hasilnya masuk 1-2 menit lagi, klik REFRESH nanti.`
+			: `Dipicu! Proses ke ${targetLabel} sesuai pengaturan Konfigurasi Lanjutan. Hasilnya masuk 1-2 menit lagi, klik REFRESH nanti.`,
 	};
 }
 

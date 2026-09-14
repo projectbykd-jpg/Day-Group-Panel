@@ -192,7 +192,7 @@ const ROUTES: Record<string, Handler> = {
 	botNewsDeleteSource: (env, b) => botNewsDeleteSource(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
 	botNewsRunNow: (env, b) => botNewsRunNow(env, s(b.token), b.count != null ? Number(b.count) : undefined),
 	botNewsRunSiteNow: (env, b) => botNewsRunSiteNow(env, s(b.token), b.count != null ? Number(b.count) : undefined),
-	botNewsRunViaGithub: (env, b) => botNewsRunViaGithub(env, s(b.token), b.count != null ? Number(b.count) : undefined),
+	botNewsRunViaGithub: (env, b) => botNewsRunViaGithub(env, s(b.token), b.count != null ? Number(b.count) : undefined, b.target != null ? s(b.target) : undefined),
 	botNewsGithubRunStatus: (env, b) => botNewsGithubRunStatus(env, s(b.token)),
 	botFbRunNow: (env, b) => botFbRunNow(env, s(b.token)),
 	botFbTemplateGenerate: (env, b) => botFbTemplateGenerate(env, s(b.token)),

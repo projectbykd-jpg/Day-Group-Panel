@@ -7,15 +7,25 @@ name: BOT NEWS turbo (bypass limit Cloudflare)
 # (cron-job.org) yang sudah ada tetap jalan seperti biasa sbg jaring pengaman.
 on:
   schedule:
-    # Tiap 10 menit. GitHub Actions cron sering telat beberapa menit di jam
-    # sibuk (di luar kendali kita) -- itu normal, bukan tanda error.
-    - cron: "*/10 * * * *"
+    # Tiap 5 menit -- granularitas TERKECIL yang GitHub izinkan. Interval
+    # POSTING SEBENARNYA diatur dari panel (Setting > Interval auto-post),
+    # bukan dari angka cron ini -- gh-turbo-run.ts cek sendiri apakah sudah
+    # waktunya (lihat "PACING" di file itu) dan lewati tick ini kalau belum.
+    # GitHub Actions cron sering telat beberapa menit di jam sibuk (di luar
+    # kendali kita) -- itu normal, bukan tanda error.
+    - cron: "*/5 * * * *"
   workflow_dispatch: # tombol "Run workflow" manual di tab Actions, JUGA dipicu tombol panel
     inputs:
       count:
-        description: "Jumlah artikel (Blogger + Situs Sendiri masing-masing) -- kosongkan = ikut Artikel/Proses di Konfigurasi Lanjutan & jalan sampai antrean habis"
+        description: "Jumlah artikel -- kosongkan = ikut Artikel/Proses di Setting & jalan sampai antrean habis"
         required: false
         type: string
+      target:
+        description: "Kirim ke mana"
+        required: false
+        type: choice
+        default: both
+        options: [both, blogger, site]
 
 concurrency:
   group: bot-news-turbo
@@ -39,4 +49,5 @@ jobs:
           TURSO_URL: ${{ secrets.TURSO_URL }}
           TURSO_TOKEN: ${{ secrets.TURSO_TOKEN }}
           RUN_COUNT: ${{ github.event.inputs.count }}
+          RUN_TARGET: ${{ github.event.inputs.target }}
         run: npx tsx scripts/gh-turbo-run.ts

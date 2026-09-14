@@ -154,7 +154,7 @@
                 <i class="fa-brands fa-facebook text-blue-400 text-sm shrink-0"></i><span class="tracking-wider">Template FB</span>
               </button>
               <button onclick="switchPage('bot-config')" id="nav-bot-config" class="bot-only sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer">
-                <i class="fa-solid fa-sliders text-slate-300 text-sm shrink-0"></i><span class="tracking-wider">Konfigurasi Lanjutan</span>
+                <i class="fa-solid fa-sliders text-slate-300 text-sm shrink-0"></i><span class="tracking-wider">Setting</span>
               </button>
             </div>
           </div>
@@ -740,12 +740,23 @@
         <!-- ============ SUB-HALAMAN: DASHBOARD ============ -->
         <div id="bot-sec-dashboard" class="flex flex-col gap-5">
           <div class="glass-card rounded-[2rem] p-6 flex flex-col gap-5">
-            <div class="flex items-center justify-between gap-3 flex-wrap">
-              <div class="panel-section-title"><i class="fa-solid fa-gauge-high text-emerald-400 text-sm"></i> RINGKASAN</div>
-              <div class="flex items-center gap-2 flex-wrap">
-                <input id="botRunCount" type="number" min="1" placeholder="Semua" class="glass-inner rounded-xl px-3 py-2.5 text-slate-100 text-xs font-bold w-20" title="Jumlah artikel Blogger + Situs Sendiri (masing-masing) untuk run ini saja. Kosongkan = pakai 'Artikel per proses' di Konfigurasi Lanjutan & jalan sampai antrean habis.">
-                <button onclick="botNewsRunGithub()" class="bg-gradient-to-r from-purple-400 to-fuchsia-500 text-slate-950 text-xs font-bold px-4 py-2.5 rounded-xl" title="Proses antrean (Blogger + Situs Sendiri) lewat GitHub Actions -- tidak kena limit 'Too many subrequests'. Hasilnya masuk 1-2 menit kemudian, bukan instan -- tinggal tunggu, progress kelihatan di bawah."><i class="fa-brands fa-github mr-1"></i>PROSES VIA GITHUB</button>
-                <button onclick="loadBotNews()" class="btn-secondary text-xs font-bold px-4 py-2.5 rounded-xl"><i class="fa-solid fa-rotate mr-1"></i>REFRESH</button>
+            <div class="flex items-start justify-between gap-4 flex-wrap">
+              <div class="panel-section-title pt-2.5"><i class="fa-solid fa-gauge-high text-emerald-400 text-sm"></i> RINGKASAN</div>
+              <div class="flex items-end gap-2 flex-wrap">
+                <label class="flex flex-col gap-1">
+                  <span class="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Send ke</span>
+                  <select id="botRunTarget" class="glass-inner rounded-xl px-3 py-2.5 text-slate-100 text-xs font-bold">
+                    <option value="both" class="bg-slate-900">Blogger + Website Sendiri</option>
+                    <option value="blogger" class="bg-slate-900">Blogger saja</option>
+                    <option value="site" class="bg-slate-900">Website Sendiri saja</option>
+                  </select>
+                </label>
+                <label class="flex flex-col gap-1">
+                  <span class="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Jumlah artikel</span>
+                  <input id="botRunCount" type="number" min="1" placeholder="Semua" class="glass-inner rounded-xl px-3 py-2.5 text-slate-100 text-xs font-bold w-24" title="Kosongkan = pakai 'Artikel per proses' di Setting & jalan sampai antrean habis.">
+                </label>
+                <button onclick="botNewsRunGithub()" class="bg-gradient-to-r from-purple-400 to-fuchsia-500 text-slate-950 text-xs font-bold px-4 py-2.5 rounded-xl" title="Diproses lewat GitHub Actions -- tidak kena limit 'Too many subrequests'. Hasilnya masuk 1-2 menit kemudian, bukan instan -- tinggal tunggu, progress kelihatan di bawah."><i class="fa-brands fa-github mr-1"></i>PROSES</button>
+                <button onclick="loadBotNews()" class="btn-secondary text-xs font-bold px-4 py-2.5 rounded-xl" title="Refresh angka & status"><i class="fa-solid fa-rotate"></i></button>
               </div>
             </div>
 
@@ -771,30 +782,35 @@
         <!-- ============ SUB-HALAMAN: SUMBER BERITA ============ -->
         <div id="bot-sec-sources" class="flex flex-col gap-5" style="display:none">
           <div class="glass-card rounded-[2rem] p-6 flex flex-col gap-4">
-            <div class="panel-section-title"><i class="fa-solid fa-rss text-cyan-400 text-sm"></i> SUMBER BERITA</div>
+            <div>
+              <div class="panel-section-title"><i class="fa-solid fa-rss text-cyan-400 text-sm"></i> SUMBER BERITA</div>
+              <p class="text-[11px] text-slate-500 mt-1">Feed RSS/Google News yang ditarik otomatis buat mengisi antrean artikel.</p>
+            </div>
             <div id="botSourceList" class="flex flex-col gap-2"></div>
-            <div class="mini-card flex flex-wrap gap-2 items-center">
-              <span class="text-[10px] text-slate-500 font-bold uppercase tracking-wider w-full sm:w-auto">Tambah sumber</span>
-              <input id="botSrcName" class="glass-inner rounded-xl px-3 py-2 text-slate-100 text-xs flex-1 min-w-[120px]" placeholder="Nama">
-              <select id="botSrcKind" class="glass-inner rounded-xl px-3 py-2 text-slate-100 text-xs">
-                <option value="rss" class="bg-slate-900">RSS</option>
-                <option value="gnews" class="bg-slate-900">Google News</option>
-              </select>
-              <select id="botSrcCategory" class="glass-inner rounded-xl px-3 py-2 text-slate-100 text-xs" title="Kategori artikel dari sumber ini -- dipakai halaman kategori di Berita Terkini (LapakStore88)">
-                <option value="umum" class="bg-slate-900">Umum</option>
-                <option value="nasional" class="bg-slate-900">Nasional</option>
-                <option value="bisnis" class="bg-slate-900">Bisnis</option>
-                <option value="olahraga" class="bg-slate-900">Olahraga</option>
-                <option value="bola" class="bg-slate-900">Bola</option>
-                <option value="hiburan" class="bg-slate-900">Hiburan</option>
-                <option value="selebritis" class="bg-slate-900">Selebritis</option>
-                <option value="teknologi" class="bg-slate-900">Teknologi</option>
-                <option value="otomotif" class="bg-slate-900">Otomotif</option>
-                <option value="kesehatan" class="bg-slate-900">Kesehatan</option>
-                <option value="lifestyle" class="bg-slate-900">Lifestyle</option>
-              </select>
-              <input id="botSrcUrl" class="glass-inner rounded-xl px-3 py-2 text-slate-100 text-xs flex-1 min-w-[160px]" placeholder="URL feed">
-              <button onclick="addBotSource()" class="btn-secondary text-xs font-bold px-3 py-2 rounded-xl">Tambah</button>
+            <div class="cfg-group">
+              <div class="cfg-group-title"><i class="fa-solid fa-plus text-cyan-300"></i>Tambah Sumber</div>
+              <div class="grid sm:grid-cols-2 gap-3">
+                <label class="cfg-field">Nama sumber<input id="botSrcName" class="cfg-input" placeholder="mis. Detik Sepakbola"></label>
+                <label class="cfg-field">URL feed<input id="botSrcUrl" class="cfg-input" placeholder="https://..."></label>
+                <label class="cfg-field">Jenis<select id="botSrcKind" class="cfg-input">
+                  <option value="rss" class="bg-slate-900">RSS</option>
+                  <option value="gnews" class="bg-slate-900">Google News</option>
+                </select></label>
+                <label class="cfg-field">Kategori<select id="botSrcCategory" class="cfg-input" title="Dipakai halaman kategori di Berita Terkini (LapakStore88)">
+                  <option value="umum" class="bg-slate-900">Umum</option>
+                  <option value="nasional" class="bg-slate-900">Nasional</option>
+                  <option value="bisnis" class="bg-slate-900">Bisnis</option>
+                  <option value="olahraga" class="bg-slate-900">Olahraga</option>
+                  <option value="bola" class="bg-slate-900">Bola</option>
+                  <option value="hiburan" class="bg-slate-900">Hiburan</option>
+                  <option value="selebritis" class="bg-slate-900">Selebritis</option>
+                  <option value="teknologi" class="bg-slate-900">Teknologi</option>
+                  <option value="otomotif" class="bg-slate-900">Otomotif</option>
+                  <option value="kesehatan" class="bg-slate-900">Kesehatan</option>
+                  <option value="lifestyle" class="bg-slate-900">Lifestyle</option>
+                </select></label>
+              </div>
+              <button onclick="addBotSource()" class="btn-secondary text-xs font-bold px-4 py-2.5 rounded-xl self-start"><i class="fa-solid fa-plus mr-1"></i>Tambah Sumber</button>
             </div>
           </div>
         </div>
@@ -867,46 +883,86 @@
         <!-- ============ SUB-HALAMAN: KONFIGURASI LANJUTAN ============ -->
         <div id="bot-sec-config" class="flex flex-col gap-5" style="display:none">
           <div class="glass-card rounded-[2rem] p-6 flex flex-col gap-4">
-            <div class="panel-section-title"><i class="fa-solid fa-sliders text-slate-300 text-sm"></i> KONFIGURASI LANJUTAN</div>
-            <div class="grid sm:grid-cols-2 gap-3">
-              <input type="checkbox" id="botEnabled" class="hidden">
-              <label class="flex items-center gap-2 text-xs text-slate-300 sm:col-span-2"><input type="checkbox" id="botAttribution"> Cantumkan sumber + backlink</label>
-              <label class="text-xs text-slate-400">Artikel per proses cron<input id="botPerRun" type="number" min="1" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs"></label>
-              <label class="text-xs text-slate-400">Batas artikel / hari (Blogger)<input id="botDailyCap" type="number" min="1" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs"></label>
-              <label class="text-xs text-slate-400">Paragraf minimal<input id="botParaMin" type="number" min="1" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs"></label>
-              <label class="text-xs text-slate-400">Paragraf maksimal<input id="botParaMax" type="number" min="1" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs"></label>
-              <label class="text-xs text-slate-400 sm:col-span-2">Label/Tag postingan (pisah koma)<input id="botLabels" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs" placeholder="LapakStore88"></label>
-              <label class="text-xs text-slate-400 sm:col-span-2">Link promo (kosongkan = tidak dipasang)<input id="botPromoUrl" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs" placeholder="https://lokalstore88.online/"></label>
-              <label class="text-xs text-slate-400 sm:col-span-2">Teks promo<input id="botPromoText" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs" placeholder="Toko produk Aplikasi Premium Termurah"></label>
-              <label class="text-xs text-slate-400 sm:col-span-2">Model Gemini<input id="botModel" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs" placeholder="gemini-flash-latest"></label>
-              <label class="text-xs text-slate-400 sm:col-span-2">Gaya penulisan ulang (prompt)<textarea id="botStyle" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs" rows="3"></textarea></label>
-              <label class="text-xs text-slate-400 sm:col-span-2">Ganti Gemini API key -- boleh lebih dari satu, pisahkan dengan koma, biar kuota gabungan &amp; otomatis pindah key kalau satu habis jatah (kosongkan = tidak diubah)<input id="botGeminiKey" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs" placeholder="key1,key2,key3"></label>
-              <label class="text-xs text-slate-400 sm:col-span-2">Groq API key -- provider UTAMA sekarang (dicoba lebih dulu drpd Gemini, tidak kena geo-block spt Gemini), boleh lebih dari satu dipisah koma. Gemini di atas cuma jadi jaring pengaman kalau Groq bermasalah -- kosongkan Gemini API key kalau mau Groq satu-satunya (kosongkan field ini = tidak diubah)<input id="botGroqKey" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs" placeholder="gsk_..."></label>
-              <label class="text-xs text-slate-400 sm:col-span-2">Blogger Blog ID<input id="botBlogId" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs"></label>
-              <label class="text-xs text-slate-400 sm:col-span-2">Link situs Blogger (dipromosikan otomatis di tiap artikel, termasuk yang tayang di Berita Terkini)<input id="botBloggerSiteUrl" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs" placeholder="https://lokalstore88.blogspot.com"></label>
-
-              <div class="sm:col-span-2 border-t border-white/5 pt-3 mt-1">
-                <div class="text-xs font-bold text-emerald-300"><i class="fa-solid fa-globe mr-1.5"></i>AUTO-POST KE SITUS SENDIRI (lokalstore88.online / Berita Terkini)</div>
-                <p class="text-[10px] text-slate-500 mt-1">Jalur & pace TERPISAH TOTAL dari pengaturan Blogger di atas -- TIDAK ada batas harian, dan artikel yang sudah posting ke Blogger tidak ikut dobel tampil di sini.</p>
-              </div>
-              <label class="text-xs text-slate-400 sm:col-span-2">Artikel per proses (0 = matikan auto-post ke situs sendiri)<input id="botSitePerRun" type="number" min="0" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs"></label>
-
-              <div class="sm:col-span-2 border-t border-white/5 pt-3 mt-1 flex items-center justify-between">
-                <label class="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" id="botFbEnabled"> Auto-share tiap post ke Facebook Page</label>
-                <span id="botFbHint" class="text-[10px] text-slate-500"></span>
-              </div>
-              <label class="text-xs text-slate-400">Facebook Page ID<input id="botFbPageId" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs"></label>
-              <label class="text-xs text-slate-400">Ganti Page Access Token (kosongkan = tidak diubah)<input id="botFbToken" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs" placeholder="••••••"></label>
-              <label class="text-xs text-slate-400 sm:col-span-2">Link Fanspage Facebook (dipasang otomatis di tiap artikel Blogger)<input id="botFbPageUrl" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs" placeholder="https://www.facebook.com/profile.php?id=..."></label>
-              <div class="sm:col-span-2 border-t border-white/5 pt-3 mt-1">
-                <label class="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" id="botNewsBannerEnabled"> Tampilkan banner promosi di sidebar Berita Terkini (LapakStore88)</label>
-              </div>
-              <label class="text-xs text-slate-400 sm:col-span-2">Gambar banner (URL)<input id="botNewsBannerImage" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs" placeholder="https://..."></label>
-              <label class="text-xs text-slate-400 sm:col-span-2">Link tujuan banner<input id="botNewsBannerUrl" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs" placeholder="https://lokalstore88.online/produk.html"></label>
-              <label class="text-xs text-slate-400 sm:col-span-2">Teks banner<input id="botNewsBannerText" class="glass-inner rounded-xl px-3 py-2 w-full mt-1 text-slate-100 text-xs" placeholder="Diskon aplikasi premium minggu ini!"></label>
+            <div>
+              <div class="panel-section-title"><i class="fa-solid fa-sliders text-slate-300 text-sm"></i> SETTING</div>
+              <p class="text-[11px] text-slate-500 mt-1">Dikelompokkan per topik biar gampang dicari. Semua field opsional -- kosongkan yang tidak mau diubah.</p>
             </div>
-            <div class="flex items-center gap-2">
-              <button onclick="saveBotNewsConfig()" class="btn-primary text-xs font-bold px-4 py-2 rounded-xl"><i class="fa-solid fa-floppy-disk mr-1"></i>SIMPAN</button>
+            <input type="checkbox" id="botEnabled" class="hidden">
+
+            <div class="cfg-group cfg-group-accent-emerald">
+              <div class="cfg-group-title text-emerald-300"><i class="fa-solid fa-repeat"></i>Jadwal Auto-Post Otomatis</div>
+              <span class="cfg-hint">Berlaku utk proses OTOMATIS yang jalan sendiri di background (bukan tombol PROSES manual di Dashboard). Jumlah artikelnya ikut "Artikel per proses" di bawah (Blogger &amp; Situs Sendiri masing-masing punya jatah sendiri).</span>
+              <label class="cfg-field">Interval auto-post (menit)<input id="botAutoInterval" type="number" min="1" class="cfg-input" placeholder="10"></label>
+            </div>
+
+            <div class="cfg-group">
+              <div class="cfg-group-title"><i class="fa-solid fa-clock text-amber-300"></i>Jadwal &amp; Batas Blogger</div>
+              <div class="grid sm:grid-cols-2 gap-3">
+                <label class="cfg-field">Artikel per proses (cron)<input id="botPerRun" type="number" min="1" class="cfg-input"></label>
+                <label class="cfg-field">Batas artikel / hari<input id="botDailyCap" type="number" min="1" class="cfg-input"></label>
+              </div>
+              <label class="flex items-center gap-2 text-xs text-slate-300 mt-1"><input type="checkbox" id="botAttribution"> Cantumkan sumber + backlink di tiap artikel</label>
+            </div>
+
+            <div class="cfg-group">
+              <div class="cfg-group-title"><i class="fa-solid fa-pen-nib text-cyan-300"></i>Gaya Penulisan AI</div>
+              <div class="grid sm:grid-cols-2 gap-3">
+                <label class="cfg-field">Paragraf minimal<input id="botParaMin" type="number" min="1" class="cfg-input"></label>
+                <label class="cfg-field">Paragraf maksimal<input id="botParaMax" type="number" min="1" class="cfg-input"></label>
+              </div>
+              <label class="cfg-field">Gaya penulisan ulang (prompt)<textarea id="botStyle" class="cfg-input" rows="3"></textarea></label>
+              <label class="cfg-field">Label/Tag postingan (pisah koma)<input id="botLabels" class="cfg-input" placeholder="LapakStore88"></label>
+            </div>
+
+            <div class="cfg-group">
+              <div class="cfg-group-title"><i class="fa-solid fa-bullhorn text-rose-300"></i>Kotak Promo di Artikel</div>
+              <span class="cfg-hint">Kosongkan link = kotak promo tidak dipasang sama sekali.</span>
+              <label class="cfg-field">Link promo<input id="botPromoUrl" class="cfg-input" placeholder="https://lokalstore88.online/"></label>
+              <label class="cfg-field">Teks promo<input id="botPromoText" class="cfg-input" placeholder="Toko produk Aplikasi Premium Termurah"></label>
+            </div>
+
+            <div class="cfg-group">
+              <div class="cfg-group-title"><i class="fa-solid fa-brain text-fuchsia-300"></i>Provider AI (Groq &amp; Gemini)</div>
+              <span class="cfg-hint">Groq dicoba lebih dulu (tidak kena geo-block spt Gemini). Gemini cuma jaring pengaman kalau Groq bermasalah -- kosongkan Gemini key kalau mau Groq satu-satunya. Isi field key = ganti, kosongkan = tidak diubah. Boleh lebih dari satu key dipisah koma.</span>
+              <label class="cfg-field">Groq API key<input id="botGroqKey" class="cfg-input" placeholder="gsk_..."></label>
+              <label class="cfg-field">Gemini API key (cadangan)<input id="botGeminiKey" class="cfg-input" placeholder="key1,key2,key3"></label>
+              <label class="cfg-field">Model Gemini<input id="botModel" class="cfg-input" placeholder="gemini-flash-latest"></label>
+            </div>
+
+            <div class="cfg-group">
+              <div class="cfg-group-title"><i class="fa-brands fa-blogger text-orange-300"></i>Blogger</div>
+              <label class="cfg-field">Blog ID<input id="botBlogId" class="cfg-input"></label>
+              <label class="cfg-field">Link situs Blogger<input id="botBloggerSiteUrl" class="cfg-input" placeholder="https://lokalstore88.blogspot.com"></label>
+              <span class="cfg-hint">Dipromosikan otomatis di tiap artikel, termasuk yang tayang di Berita Terkini.</span>
+            </div>
+
+            <div class="cfg-group cfg-group-accent-emerald">
+              <div class="cfg-group-title text-emerald-300"><i class="fa-solid fa-globe"></i>Auto-Post ke Situs Sendiri</div>
+              <span class="cfg-hint">Jalur &amp; pace TERPISAH TOTAL dari Blogger di atas -- TIDAK ada batas harian. Artikel yang sudah posting ke Blogger tidak ikut dobel tampil di sini.</span>
+              <label class="cfg-field">Artikel per proses<input id="botSitePerRun" type="number" min="0" class="cfg-input"></label>
+              <span class="cfg-hint">Isi 0 buat matikan auto-post ke situs sendiri.</span>
+            </div>
+
+            <div class="cfg-group">
+              <div class="cfg-group-title flex items-center justify-between w-full"><span><i class="fa-brands fa-facebook text-blue-400"></i>Facebook Page</span><span id="botFbHint" class="text-[10px] text-slate-500 font-normal normal-case"></span></div>
+              <label class="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" id="botFbEnabled"> Auto-share tiap post ke Facebook Page</label>
+              <div class="grid sm:grid-cols-2 gap-3">
+                <label class="cfg-field">Page ID<input id="botFbPageId" class="cfg-input"></label>
+                <label class="cfg-field">Ganti Page Access Token<input id="botFbToken" class="cfg-input" placeholder="kosongkan = tidak diubah"></label>
+              </div>
+              <label class="cfg-field">Link Fanspage Facebook<input id="botFbPageUrl" class="cfg-input" placeholder="https://www.facebook.com/profile.php?id=..."></label>
+            </div>
+
+            <div class="cfg-group">
+              <div class="cfg-group-title"><i class="fa-solid fa-rectangle-ad text-yellow-300"></i>Banner Promosi (Berita Terkini)</div>
+              <label class="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" id="botNewsBannerEnabled"> Tampilkan banner di sidebar Berita Terkini</label>
+              <label class="cfg-field">Gambar banner (URL)<input id="botNewsBannerImage" class="cfg-input" placeholder="https://..."></label>
+              <label class="cfg-field">Link tujuan banner<input id="botNewsBannerUrl" class="cfg-input" placeholder="https://lokalstore88.online/produk.html"></label>
+              <label class="cfg-field">Teks banner<input id="botNewsBannerText" class="cfg-input" placeholder="Diskon aplikasi premium minggu ini!"></label>
+            </div>
+
+            <div class="flex items-center gap-2 pt-1">
+              <button onclick="saveBotNewsConfig()" class="btn-primary text-xs font-bold px-5 py-2.5 rounded-xl"><i class="fa-solid fa-floppy-disk mr-1"></i>SIMPAN SEMUA</button>
               <span id="botCredHint" class="text-[10px] text-slate-500"></span>
             </div>
           </div>

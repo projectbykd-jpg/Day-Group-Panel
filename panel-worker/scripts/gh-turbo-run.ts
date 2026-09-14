@@ -16,7 +16,7 @@
 //
 // Cara pakai: `npx tsx scripts/gh-turbo-run.ts` dengan env TURSO_URL &
 // TURSO_TOKEN ter-set (lihat .github/workflows/news-turbo.yml).
-import { botNewsRun } from "../src/lib/bot-news";
+import { botCfg, botCfgSet, botNewsRun } from "../src/lib/bot-news";
 
 const env = {
 	TURSO_URL: process.env.TURSO_URL,
@@ -26,6 +26,10 @@ const env = {
 const MAX_ROUNDS = Number(process.env.MAX_ROUNDS || 12);
 const runCountRaw = String(process.env.RUN_COUNT || "").trim();
 const runCount = runCountRaw ? Math.max(1, Math.floor(Number(runCountRaw))) : 0;
+// "Send ke" dropdown di panel -- both (default) = Blogger + Situs Sendiri,
+// atau salah satu saja. Dispatch terjadwal tiap 10 menit TIDAK pernah
+// mengisi ini (selalu "both").
+const runTarget = String(process.env.RUN_TARGET || "both").trim().toLowerCase();
 
 /**
  * botNewsRun() SENGAJA mengunci opts.count ke maksimal 5/panggilan
@@ -75,8 +79,31 @@ async function main() {
 		throw new Error(`TURSO_TOKEN kependekan (${token.length} karakter) utk sebuah JWT asli -- cek lagi, mungkin ketuker dengan TURSO_URL atau ke-potong pas paste.`);
 	}
 	if (runCount) console.log(`[diag] RUN_COUNT custom = ${runCount} (dipicu tombol panel, bukan jadwal otomatis)`);
-	const posted = await runLoop("blogger");
-	const siteOnly = await runLoop("site");
+	if (runTarget !== "both") console.log(`[diag] RUN_TARGET custom = ${runTarget} (dipicu tombol panel, bukan jadwal otomatis)`);
+
+	// PACING: workflow_dispatch (tombol panel / "Run workflow" manual) SELALU
+	// jalan langsung, kapan pun diklik. Tapi trigger "schedule" (cron GitHub,
+	// lihat news-turbo.yml -- di-set tiap 5 menit, granularitas terkecil yang
+	// GitHub izinkan) HANYA benar-benar memproses kalau sudah lewat
+	// "auto_interval_minutes" (field "Interval auto-post" di Setting, default
+	// 10 menit) sejak proses OTOMATIS terakhir -- supaya jarak antar-posting
+	// otomatis bisa diatur pemilik dari panel TANPA perlu ubah file workflow.
+	const isSchedule = process.env.GITHUB_EVENT_NAME === "schedule";
+	if (isSchedule) {
+		const cfg = await botCfg(env);
+		const intervalMin = Math.max(1, Number(cfg.auto_interval_minutes || "10"));
+		const lastRunAt = Number(cfg.auto_last_run_ts || "0");
+		const elapsedMin = (Date.now() - lastRunAt) / 60000;
+		if (lastRunAt && elapsedMin < intervalMin) {
+			console.log(`[diag] Lewat jadwal (interval ${intervalMin} menit), baru ${elapsedMin.toFixed(1)} menit sejak proses otomatis terakhir -- lewati run ini.`);
+			return;
+		}
+		await botCfgSet(env, { auto_last_run_ts: String(Date.now()) });
+		console.log(`[diag] Proses otomatis (interval ${intervalMin} menit) -- lanjut.`);
+	}
+
+	const posted = runTarget === "site" ? 0 : await runLoop("blogger");
+	const siteOnly = runTarget === "blogger" ? 0 : await runLoop("site");
 	console.log(`\n=== SELESAI: ${posted} artikel ke Blogger, ${siteOnly} artikel ke situs sendiri ===`);
 }
 

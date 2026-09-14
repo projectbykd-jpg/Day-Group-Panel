@@ -258,6 +258,16 @@
 
 
     .nav-extra{display:none}.admin-only{display:none}.modal-shell{position:fixed;inset:0;background:rgba(2,6,23,.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:1000000;display:none;align-items:center;justify-content:center;padding:1rem}.modal-shell.open{display:flex;animation:overlayIn .16s ease-out both}.result-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:12px;border-radius:15px;background:rgba(15,23,42,.62);border:1px solid rgba(255,255,255,.07)}.status-ok{color:#34d399}.status-bad{color:#fb7185}.status-skip{color:#94a3b8}.mini-card{background:rgba(15,23,42,.58);border:1px solid rgba(255,255,255,.07);border-radius:18px;padding:16px}.log-table{min-width:900px}.log-table td,.log-table th{padding:12px;border-bottom:1px solid rgba(255,255,255,.06);vertical-align:top}.switch{width:48px;height:26px;border-radius:999px;background:#334155;position:relative;cursor:pointer}.switch::after{content:'';position:absolute;width:20px;height:20px;left:3px;top:3px;border-radius:50%;background:white;transition:.2s}.switch.on{background:#10b981}.switch.on::after{left:25px}
+    /* Grup field bertopik di halaman Setting BOT -- dulu semua field ditumpuk
+       rata dalam 1 grid raksasa dgn label sepanjang paragraf (bikin "pening"),
+       sekarang dikelompokkan per topik dgn label pendek + helper text terpisah. */
+    .cfg-group{background:rgba(15,23,42,.4);border:1px solid rgba(255,255,255,.06);border-radius:18px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+    .cfg-group-accent-emerald{border-color:rgba(52,211,153,.25);background:rgba(16,185,129,.05)}
+    .cfg-group-title{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;color:#e2e8f0;text-transform:uppercase;letter-spacing:.04em}
+    .cfg-hint{font-size:10px;color:#64748b;line-height:1.5}
+    .cfg-field{display:flex;flex-direction:column;gap:4px;font-size:11px;color:#94a3b8;font-weight:600}
+    .cfg-input{background:linear-gradient(160deg,rgba(34,45,66,.85),rgba(19,27,44,.8));border:1px solid rgba(148,163,184,.1);border-radius:12px;padding:8px 12px;color:#f1f5f9;font-size:12px;width:100%}
+    .cfg-input:focus{outline:none;border-color:rgba(34,211,238,.5);box-shadow:0 0 0 3px rgba(34,211,238,.08)}
     /* Compact smart send result */
     #sendResultModal .send-result-card{max-width:720px;max-height:88vh;overflow:hidden;padding:22px;gap:14px}
     #systemResultList{max-height:64vh;overflow-y:auto;padding-right:3px}

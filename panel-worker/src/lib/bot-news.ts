@@ -1562,6 +1562,7 @@ export async function botNewsSnapshot(env: Env) {
 			per_run: Number(cfg.per_run || "2"),
 			daily_cap: Number(cfg.daily_cap || "8"),
 			site_per_run: Number(cfg.site_per_run || "5"),
+			auto_interval_minutes: Number(cfg.auto_interval_minutes || "10"),
 			attribution: String(cfg.attribution || "1") === "1",
 			rewrite_style: cfg.rewrite_style || "",
 			para_min: Number(cfg.para_min || "8"),
