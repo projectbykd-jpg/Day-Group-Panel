@@ -133,17 +133,21 @@ const GH_HEADERS = (token: string) => ({
  * beda, lihat dispatchNewsTurboFromCron di index.ts yang dipakai cron eksternal
  * lewat CRON_KEY, bukan sesi login).
  */
-export async function dispatchNewsTurbo(env: Env, count?: number, target?: string): Promise<{ targetLabel: string; n: number }> {
+export async function dispatchNewsTurbo(env: Env, count?: number, target?: string, full?: boolean): Promise<{ targetLabel: string; n: number }> {
 	if (!env.GH_TOKEN) {
 		throw new Error("GitHub Actions belum dikonfigurasi (secret GH_TOKEN). Hubungi admin.");
 	}
 	// count kosong/0 = kosongkan input di panel = ikuti Artikel/Proses di
-	// Setting & jalan sampai antrean habis (lihat gh-turbo-run.ts).
+	// Setting -- kalau full=true (klik tombol panel dgn kolom Jumlah kosong)
+	// jalan sampai antrean habis; kalau TIDAK (tick otomatis cron-job.org/
+	// jadwal), cuma 1 putaran (lihat gh-turbo-run.ts, PENTING: cegah "habiskan
+	// ulang SELURUH antrean tiap tick" yang sebelumnya kejadian).
 	const n = count && count > 0 ? Math.floor(count) : 0;
 	const tgt = target === "blogger" || target === "site" ? target : "both";
 	const inputs: Record<string, string> = {};
 	if (n) inputs.count = String(n);
 	if (tgt !== "both") inputs.target = tgt;
+	if (!n && full) inputs.full = "1";
 	const resp = await fetch(`https://api.github.com/repos/${NEWS_TURBO_REPO}/actions/workflows/news-turbo.yml/dispatches`, {
 		method: "POST",
 		headers: GH_HEADERS(env.GH_TOKEN),
@@ -168,7 +172,9 @@ export async function dispatchNewsTurbo(env: Env, count?: number, target?: strin
 
 export async function botNewsRunViaGithub(env: Env, token: string, count?: number, target?: string) {
 	const s = await gate(env, token);
-	const { targetLabel, n } = await dispatchNewsTurbo(env, count, target);
+	// Kolom "Jumlah artikel" dikosongkan di panel = SENGAJA minta "proses
+	// semua" (full drain) -- beda dari tick otomatis yg tidak pernah minta ini.
+	const { targetLabel, n } = await dispatchNewsTurbo(env, count, target, !count);
 	await logActivity(env, s.username, "BOT NEWS RUN (GitHub)", `Memicu workflow news-turbo.yml secara manual -> ${targetLabel}${n ? ` (${n} artikel)` : ""}`, "BERHASIL", "");
 	return {
 		success: true,

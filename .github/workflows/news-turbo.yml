@@ -26,6 +26,10 @@ on:
         type: choice
         default: both
         options: [both, blogger, site]
+      full:
+        description: "Habiskan SELURUH antrean (sampai 12 putaran) -- HANYA dipicu tombol panel saat kolom Jumlah dikosongkan. Tick otomatis (cron-job.org/jadwal) TIDAK PERNAH mengisi ini -- default 1 putaran saja per tick."
+        required: false
+        type: string
 
 concurrency:
   group: bot-news-turbo
@@ -50,4 +54,5 @@ jobs:
           TURSO_TOKEN: ${{ secrets.TURSO_TOKEN }}
           RUN_COUNT: ${{ github.event.inputs.count }}
           RUN_TARGET: ${{ github.event.inputs.target }}
+          FULL_DRAIN: ${{ github.event.inputs.full }}
         run: npx tsx scripts/gh-turbo-run.ts

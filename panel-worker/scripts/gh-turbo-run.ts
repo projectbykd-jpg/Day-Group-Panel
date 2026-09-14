@@ -30,6 +30,19 @@ const runCount = runCountRaw ? Math.max(1, Math.floor(Number(runCountRaw))) : 0;
 // atau salah satu saja. Dispatch terjadwal tiap 10 menit TIDAK pernah
 // mengisi ini (selalu "both").
 const runTarget = String(process.env.RUN_TARGET || "both").trim().toLowerCase();
+// PERBAIKAN PENTING: sebelumnya SETIAP dispatch tanpa RUN_COUNT (termasuk
+// panggilan otomatis tiap tick dari cron eksternal, lihat FULL_DRAIN di
+// bawah) otomatis loop SAMPAI 12 PUTARAN (MAX_ROUNDS) x per_run -- artinya
+// "auto-post tiap 10 menit" ternyata "habiskan ulang SELURUH antrean tiap 10
+// menit" (puluhan artikel per tick, bukan cuma beberapa). Sekarang HANYA
+// dispatch dgn FULL_DRAIN="1" (tombol panel dgn kolom "Jumlah artikel"
+// dikosongkan -- SENGAJA minta "proses semua") yang boleh loop sampai
+// MAX_ROUNDS. Tick otomatis (cron-job.org / jadwal internal GitHub) TIDAK
+// PERNAH mengisi ini -- jadi default-nya sekarang cuma 1 PUTARAN per tick
+// (persis semantik "Artikel per proses" yang seharusnya: sekian artikel
+// TIAP KALI dipanggil, bukan seluruh backlog tiap kali dipanggil).
+const fullDrain = String(process.env.FULL_DRAIN || "").trim() === "1";
+const maxRoundsThisRun = fullDrain ? MAX_ROUNDS : 1;
 
 /**
  * botNewsRun() SENGAJA mengunci opts.count ke maksimal 5/panggilan
@@ -41,16 +54,21 @@ const runTarget = String(process.env.RUN_TARGET || "both").trim().toLowerCase();
  * subrequest), beda dgn di Cloudflare.
  */
 async function runLoop(mode: "blogger" | "site"): Promise<number> {
-	const target = runCount || null; // null = tanpa batas total, ikut cfg + MAX_ROUNDS
+	const target = runCount || null; // null = tanpa batas total per-putaran, ikut cfg
+	// count custom (RUN_COUNT) -> tetap boleh sampai MAX_ROUNDS putaran (dicicil
+	// per 5, lihat komentar MAX_RUN_COUNT) krn itu permintaan EKSPLISIT sejumlah
+	// artikel. Tanpa RUN_COUNT -> patuhi maxRoundsThisRun (1 kalau tick otomatis,
+	// MAX_ROUNDS kalau FULL_DRAIN diminta lewat tombol panel).
+	const roundsAllowed = target != null ? MAX_ROUNDS : maxRoundsThisRun;
 	let total = 0;
-	for (let i = 1; i <= MAX_ROUNDS; i++) {
+	for (let i = 1; i <= roundsAllowed; i++) {
 		const remaining = target != null ? target - total : null;
 		if (remaining != null && remaining <= 0) break;
 		const opts: Parameters<typeof botNewsRun>[1] = { force: true, mode };
 		if (remaining != null) opts.count = Math.min(5, remaining);
 		const r = await botNewsRun(env, opts);
 		const got = mode === "blogger" ? r.posted : r.siteOnly;
-		const tag = target != null ? `custom target=${target}` : `${i}/${MAX_ROUNDS}`;
+		const tag = target != null ? `custom target=${target}` : `${i}/${roundsAllowed}`;
 		console.log(`[${mode} ${tag}] got=${got} capped=${r.capped} :: ${r.message}`);
 		total += got;
 		if (mode === "blogger" && r.capped) break; // daily_cap Blogger tercapai
@@ -80,16 +98,16 @@ async function main() {
 	}
 	if (runCount) console.log(`[diag] RUN_COUNT custom = ${runCount} (dipicu tombol panel, bukan jadwal otomatis)`);
 	if (runTarget !== "both") console.log(`[diag] RUN_TARGET custom = ${runTarget} (dipicu tombol panel, bukan jadwal otomatis)`);
+	if (fullDrain) console.log(`[diag] FULL_DRAIN=1 (tombol panel, kolom "Jumlah artikel" dikosongkan) -- boleh sampai ${MAX_ROUNDS} putaran.`);
 
-	// PACING: workflow_dispatch (tombol panel / "Run workflow" manual) SELALU
-	// jalan langsung, kapan pun diklik. Tapi trigger "schedule" (cron GitHub,
-	// lihat news-turbo.yml -- di-set tiap 5 menit, granularitas terkecil yang
-	// GitHub izinkan) HANYA benar-benar memproses kalau sudah lewat
-	// "auto_interval_minutes" (field "Interval auto-post" di Setting, default
-	// 10 menit) sejak proses OTOMATIS terakhir -- supaya jarak antar-posting
-	// otomatis bisa diatur pemilik dari panel TANPA perlu ubah file workflow.
-	const isSchedule = process.env.GITHUB_EVENT_NAME === "schedule";
-	if (isSchedule) {
+	// PACING: berlaku utk SEMUA tick OTOMATIS -- baik jadwal internal GitHub
+	// ("schedule") MAUPUN tick dari cron eksternal cron-job.org yg memicu
+	// /__cron?job=githubnews (itu jg workflow_dispatch, TAPI tanpa FULL_DRAIN/
+	// RUN_COUNT, beda dari klik tombol panel yg SELALU salah satu dari itu).
+	// Tombol panel manual (fullDrain=true ATAU runCount terisi) SELALU jalan
+	// langsung tanpa pacing -- itu permintaan eksplisit pemilik saat itu juga.
+	const isAutoTick = !fullDrain && !runCount;
+	if (isAutoTick) {
 		const cfg = await botCfg(env);
 		const intervalMin = Math.max(1, Number(cfg.auto_interval_minutes || "10"));
 		const lastRunAt = Number(cfg.auto_last_run_ts || "0");
