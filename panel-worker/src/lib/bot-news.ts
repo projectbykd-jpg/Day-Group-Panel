@@ -362,37 +362,66 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 	// Coba SEMUA groq_key dulu (Groq = provider UTAMA sekarang). Balik "" kalau
 	// semuanya gagal (BUKAN throw) supaya pemanggil bisa jatuh ke Gemini kalau
 	// gemini_key masih tersimpan sbg jaring pengaman.
-	// PERBAIKAN: model default lama "llama-3.3-70b-versatile" sudah DIHAPUS/
-	// tidak diakses lagi oleh Groq (balas 404 model_not_found) -- semua artikel
-	// jadi gagal terus-menerus. Kalau groq_model kosong, coba beberapa model
-	// Groq yang masih aktif berurutan (bukan cuma 1) supaya kalau satu model
-	// suatu saat ikut di-deprecate lagi, tidak langsung mati total lagi seperti
-	// kejadian ini -- mirip fallback multi-model yang sudah ada utk Gemini.
-	const groqModels = [...new Set([cfg.groq_model, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it"].filter(Boolean))] as string[];
+	// PERBAIKAN: Groq berkali-kali menghapus/membatasi akses model tanpa
+	// peringatan (llama-3.3-70b-versatile 404, gemma2-9b-it "decommissioned")
+	// -- daftar hardcoded APAPUN bisa basi kapan saja. Kalau semua kandidat
+	// statis gagal, tanya LANGSUNG ke Groq (GET /v1/models) model apa yang
+	// BENAR-BENAR bisa diakses key ini, coba salah satunya, lalu SIMPAN
+	// otomatis ke groq_model supaya run berikutnya langsung pakai model itu
+	// tanpa perlu discovery ulang tiap artikel (hemat subrequest).
+	const groqCallModel = async (gk: string, gm: string): Promise<{ ok: boolean; text: string; err: string }> => {
+		try {
+			const gr = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+				method: "POST",
+				headers: { "Content-Type": "application/json", Authorization: `Bearer ${gk}` },
+				body: JSON.stringify({
+					model: gm,
+					messages: [{ role: "user", content: prompt }],
+					temperature: 0.85,
+					response_format: { type: "json_object" },
+				}),
+			});
+			const gBody: any = await gr.json();
+			const content = gBody?.choices?.[0]?.message?.content;
+			if (gr.ok && content) return { ok: true, text: content, err: "" };
+			return { ok: false, text: "", err: "HTTP " + gr.status + " " + JSON.stringify(gBody?.error || gBody).slice(0, 200) };
+		} catch (e) {
+			return { ok: false, text: "", err: e instanceof Error ? e.message : String(e) };
+		}
+	};
+	const groqStaticCandidates = [...new Set([cfg.groq_model, "llama-3.3-70b-versatile", "llama-3.1-8b-instant"].filter(Boolean))] as string[];
 	const tryGroq = async (): Promise<{ text: string; err: string }> => {
 		let groqErr = "";
 		for (const gk of groqKeys) {
-			for (const gm of groqModels) {
-				try {
-					const gr = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-						method: "POST",
-						headers: { "Content-Type": "application/json", Authorization: `Bearer ${gk}` },
-						body: JSON.stringify({
-							model: gm,
-							messages: [{ role: "user", content: prompt }],
-							temperature: 0.85,
-							response_format: { type: "json_object" },
-						}),
-					});
-					const gBody: any = await gr.json();
-					const content = gBody?.choices?.[0]?.message?.content;
-					if (gr.ok && content) return { text: content, err: "" };
-					groqErr = "HTTP " + gr.status + " " + JSON.stringify(gBody?.error || gBody).slice(0, 200);
-					// model_not_found -> percuma diulang di key lain dgn model sama, tapi
-					// coba model berikutnya di key yg SAMA masih worth dicoba.
-				} catch (e) {
-					groqErr = e instanceof Error ? e.message : String(e);
+			const tried = new Set<string>();
+			for (const gm of groqStaticCandidates) {
+				tried.add(gm);
+				const res = await groqCallModel(gk, gm);
+				if (res.ok) {
+					if (gm !== cfg.groq_model) await botCfgSet(env, { groq_model: gm }).catch(() => {});
+					return { text: res.text, err: "" };
 				}
+				groqErr = res.err;
+			}
+			// Semua kandidat statis gagal -- tanya Groq model apa yg benar-benar
+			// bisa diakses key ini.
+			try {
+				const lr = await fetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: `Bearer ${gk}` } });
+				const lBody: any = await lr.json();
+				const ids: string[] = Array.isArray(lBody?.data) ? lBody.data.map((m: any) => String(m?.id || "")) : [];
+				const candidate = ids.find((id) => id && !tried.has(id) && !/whisper|tts|guard|moderation|prompt-guard/i.test(id));
+				if (candidate) {
+					const res = await groqCallModel(gk, candidate);
+					if (res.ok) {
+						await botCfgSet(env, { groq_model: candidate }).catch(() => {});
+						return { text: res.text, err: "" };
+					}
+					groqErr = res.err;
+				} else if (!ids.length) {
+					groqErr = "Tidak ada model chat yang bisa diakses key Groq ini -- cek console.groq.com/keys / limits akun.";
+				}
+			} catch (e) {
+				groqErr = e instanceof Error ? e.message : String(e);
 			}
 		}
 		return { text: "", err: groqErr };
