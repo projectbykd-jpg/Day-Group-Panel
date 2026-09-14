@@ -49,6 +49,10 @@ export async function ensureNewsCategoryColumns(env: Env): Promise<void> {
 		// balik supaya situs sendiri juga bisa pakai deskripsi asli, bukan potongan
 		// judul, buat <meta name="description">/Open Graph.
 		`ALTER TABLE news_article ADD COLUMN meta_description TEXT NOT NULL DEFAULT ''`,
+		// views = penghitung dibaca, naik 1x tiap halaman artikel dibuka di situs
+		// sendiri (lihat publicNewsHit). Dipakai buat "Terpopuler" yang JUJUR
+		// (berdasar pembaca beneran), bukan sekadar artikel terbaru.
+		`ALTER TABLE news_article ADD COLUMN views INTEGER NOT NULL DEFAULT 0`,
 	]) {
 		try {
 			await getTurso(env).prepare(stmt).run();
@@ -292,7 +296,7 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 	const key = cfg.gemini_key;
 	const model = cfg.gemini_model || "gemini-3-flash-preview";
 	if (!key) throw new Error("gemini_key belum diisi di konfigurasi BOT.");
-	const style = cfg.rewrite_style || "Tulis ulang jadi artikel berbahasa Indonesia yang mengalir, gaya jurnalistik ringan.";
+	const style = cfg.rewrite_style || "Tulis ulang jadi artikel berbahasa Indonesia yang mengalir, gaya jurnalistik ringan, tapi tetap menarik dan enak dibaca -- bukan kaku/datar seperti siaran pers.";
 	const pMin = Math.max(1, Number(cfg.para_min || "8"));
 	const pMax = Math.max(pMin, Number(cfg.para_max || "14"));
 	const paraTarget = pMin + Math.floor(Math.random() * (pMax - pMin + 1));
@@ -307,6 +311,10 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 		`(4) dampak atau relevansinya bagi pembaca/masyarakat/industri terkait, ` +
 		`(5) reaksi atau sudut pandang pihak-pihak terkait (SECARA UMUM/wajar, JANGAN mengarang kutipan/nama yang tidak ada di ringkasan), ` +
 		`(6) penutup yang merangkum & memberi gambaran ke depan. ` +
+		`Buat kalimat pembuka (paragraf pertama) yang menarik perhatian pembaca -- bukan sekadar mengulang judul, ` +
+		`tapi langsung masuk ke inti/kenapa ini penting, biar pembaca terpancing lanjut baca. ` +
+		`Variasikan struktur kalimat (jangan semua paragraf mulai dengan pola subjek yang sama), pakai bahasa yang hidup ` +
+		`dan konkret (bukan klise/basa-basi berita formal yang datar), tapi tetap akurat dan tidak berlebihan/clickbait. ` +
 		`Tiap paragraf idealnya 3-5 kalimat yang mengalir, bukan poin-poin pendek. ` +
 		`Kalau artikelnya cukup panjang (kira-kira lebih dari 6 paragraf), sisipkan 2-4 sub-judul singkat pakai tag ` +
 		`<h2>...</h2> di body_html untuk memecah bagian-bagian di atas (mis. sebelum bagian latar belakang, dampak, ` +
@@ -1412,11 +1420,40 @@ export async function publicNewsList(env: Env, category: string, page: number, p
 export async function publicNewsDetail(env: Env, id: number) {
 	await ensureNewsCategoryColumns(env);
 	const row = await getTurso(env)
-		.prepare(`SELECT id, title, rewritten_html, image_url, category, source, url, keywords, meta_description, site_posted_at AS posted_at FROM news_article WHERE id=? AND site_posted_at != ''`)
+		.prepare(`SELECT id, title, rewritten_html, image_url, category, source, url, keywords, meta_description, views, site_posted_at AS posted_at FROM news_article WHERE id=? AND site_posted_at != ''`)
 		.bind(id)
-		.first<{ id: number; title: string; rewritten_html: string; image_url: string; category: string; source: string; url: string; keywords: string; meta_description: string; posted_at: string }>();
+		.first<{ id: number; title: string; rewritten_html: string; image_url: string; category: string; source: string; url: string; keywords: string; meta_description: string; views: number; posted_at: string }>();
 	if (!row) return { success: false, message: "Artikel tidak ditemukan." };
+	// Hitung 1 pembaca per pembukaan halaman -- dipakai buat ranking "Terpopuler"
+	// yang beneran (lihat publicNewsPopular), bukan sekadar "terbaru" yang dilabeli
+	// populer asal-asalan. Tidak menunggu hasilnya (tidak kritikal kalau gagal).
+	getTurso(env)
+		.prepare(`UPDATE news_article SET views = views + 1 WHERE id = ?`)
+		.bind(id)
+		.run()
+		.catch(() => {});
+	row.views = (row.views || 0) + 1;
 	return { success: true, article: row };
+}
+
+/** Artikel terpopuler beneran (diurut dari jumlah pembaca/views, bukan cuma terbaru) --
+ * dipakai buat widget "Terpopuler" di beranda & sidebar artikel LapakStore88. */
+export async function publicNewsPopular(env: Env, category: string, limit: number) {
+	await ensureNewsCategoryColumns(env);
+	const n = Math.min(20, Math.max(1, limit || 5));
+	const cat = category && (NEWS_CATEGORIES as readonly string[]).includes(category) ? category : "";
+	const where = cat ? `WHERE site_posted_at != '' AND category=?` : `WHERE site_posted_at != ''`;
+	const args = cat ? [cat] : [];
+	const rows =
+		(
+			await getTurso(env)
+				.prepare(
+					`SELECT id, title, excerpt, image_url, category, source, views, site_posted_at AS posted_at FROM news_article ${where} ORDER BY views DESC, id DESC LIMIT ?`,
+				)
+				.bind(...args, n)
+				.all<{ id: number; title: string; excerpt: string; image_url: string; category: string; source: string; views: number; posted_at: string }>()
+		).results ?? [];
+	return { success: true, articles: rows };
 }
 
 /** Suntik sumber RSS per-kategori Liputan6 sekali jalan (dipanggil dari /__cron?job=seednews,

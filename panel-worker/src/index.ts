@@ -67,7 +67,7 @@ import {
 	botNewsStatus,
 	botNewsToggleSource,
 } from "./api/bot";
-import { botNewsRun, disableGnewsSources, fbDirectRun, newsPruneQueueDaily, newsPullSources, publicNewsBanner, publicNewsDetail, publicNewsList, publicNewsRandom, publicNewsSitemapXml, seedCategorySources } from "./lib/bot-news";
+import { botNewsRun, disableGnewsSources, fbDirectRun, newsPruneQueueDaily, newsPullSources, publicNewsBanner, publicNewsDetail, publicNewsList, publicNewsPopular, publicNewsRandom, publicNewsSitemapXml, seedCategorySources } from "./lib/bot-news";
 
 type Handler = (env: Env, body: Record<string, unknown>) => Promise<unknown>;
 const s = (v: unknown) => String(v ?? "");
@@ -305,6 +305,10 @@ export default {
 				if (url.searchParams.get("random")) {
 					const limit = parseInt(url.searchParams.get("limit") || "6", 10);
 					return json(await publicNewsRandom(env, category, limit), 200);
+				}
+				if (url.searchParams.get("popular")) {
+					const limit = parseInt(url.searchParams.get("limit") || "5", 10);
+					return json(await publicNewsPopular(env, category, limit), 200);
 				}
 				const idParam = url.searchParams.get("id");
 				if (idParam) {
