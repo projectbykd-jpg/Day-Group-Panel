@@ -50,8 +50,23 @@ async function runSite(): Promise<number> {
 }
 
 async function main() {
-	if (!process.env.TURSO_URL || !process.env.TURSO_TOKEN) {
+	const url = String(process.env.TURSO_URL ?? "").trim();
+	const token = String(process.env.TURSO_TOKEN ?? "").trim();
+	if (!url || !token) {
 		throw new Error("TURSO_URL / TURSO_TOKEN belum di-set sbg GitHub Actions secret (Settings > Secrets and variables > Actions).");
+	}
+	// Diagnostik AMAN (tidak membocorkan isi TURSO_TOKEN sama sekali, cuma
+	// panjangnya) -- kejadian sebelumnya: TURSO_URL & TURSO_TOKEN kebalik atau
+	// ikut ke-paste tanda kutip/spasi, dan pesan error Turso aslinya ("URL_INVALID")
+	// tidak bilang secret MANA yang salah -- baris di bawah ini bikin ketahuan
+	// dari log run mana yang keliru tanpa perlu buka nilai secret di GitHub.
+	console.log(`[diag] TURSO_URL = "${url}" (harus diawali libsql:// atau https://)`);
+	console.log(`[diag] TURSO_TOKEN panjang = ${token.length} karakter (JWT asli biasanya 150+)`);
+	if (!/^(libsql|https?):\/\//i.test(url)) {
+		throw new Error(`TURSO_URL sepertinya bukan URL Turso yang valid: "${url}". Cek lagi -- mungkin isinya kebalik/ketuker dengan TURSO_TOKEN.`);
+	}
+	if (token.length < 50) {
+		throw new Error(`TURSO_TOKEN kependekan (${token.length} karakter) utk sebuah JWT asli -- cek lagi, mungkin ketuker dengan TURSO_URL atau ke-potong pas paste.`);
 	}
 	const posted = await runBlogger();
 	const siteOnly = await runSite();
