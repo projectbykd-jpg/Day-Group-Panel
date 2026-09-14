@@ -22,34 +22,34 @@ Author Url:  https://www.templatesyard.com/
 <Variable name="followByEmail" description="Follow By Email Text" type="string" default="Get all latest content delivered straight to your inbox." value="Get all latest content delivered straight to your inbox."/>
 
 <Group description="Theme Colors" selector="body">
- <Variable name="main.color" description="Theme Color" type="color" default="#fe5301" value="#fe5301"/>
-  <Variable name="main.dark.color" description="Dark Color" type="color" default="#000000" value="#000000"/>
-  <Variable name="header.bg" description="Header Background" type="color" default="#47164F" value="#47164F"/>
-  <Variable name="menu.color" description="Menu Color" type="color" default="#ffffff" value="#ffffff"/>
-  <Variable name="submenu.bg" description="SubMenu Background" type="color" default="#ffffff" value="#ffffff"/>
-  <Variable name="submenu.color" description="SubMenu Color" type="color" default="#1f2024" value="#1f2024"/>
-  <Variable name="title.color" description="Title Color" type="color" default="#000000" value="#000000"/>
-  <Variable name="widget.title" description="Widget Title Color" type="color" default="#000000" value="#000000"/>
-  <Variable name="footer.bg" description="Footer Backgroundr" type="color" default="#47164F" value="#47164F"/>
-  <Variable name="footer.color" description="Footer Color" type="color" default="#ffffff" value="#ffffff"/>
+ <Variable name="main.color" description="Theme Color" type="color" default="#facc15" value="#facc15"/>
+  <Variable name="main.dark.color" description="Dark Color" type="color" default="#050b14" value="#050b14"/>
+  <Variable name="header.bg" description="Header Background" type="color" default="#050b14" value="#050b14"/>
+  <Variable name="menu.color" description="Menu Color" type="color" default="#f8fafc" value="#f8fafc"/>
+  <Variable name="submenu.bg" description="SubMenu Background" type="color" default="#0b1524" value="#0b1524"/>
+  <Variable name="submenu.color" description="SubMenu Color" type="color" default="#f8fafc" value="#f8fafc"/>
+  <Variable name="title.color" description="Title Color" type="color" default="#f8fafc" value="#f8fafc"/>
+  <Variable name="widget.title" description="Widget Title Color" type="color" default="#f8fafc" value="#f8fafc"/>
+  <Variable name="footer.bg" description="Footer Backgroundr" type="color" default="#050b14" value="#050b14"/>
+  <Variable name="footer.color" description="Footer Color" type="color" default="#91a0b5" value="#91a0b5"/>
 </Group>
 
 <Group description="Theme Body" selector="body">
-  <Variable name="body.background.color" description="Body Background Color" type="color" default="#f2f6f8"  value="#f2f6f8"/>
+  <Variable name="body.background.color" description="Body Background Color" type="color" default="#050b14"  value="#050b14"/>
   <Variable name="body.background" description="Background" type="background" color="$(body.background.color)" default="$(color) url() repeat fixed top left" value="$(color) url() repeat fixed top left"/>
-  <Variable name="body.text.color" description="Text Color" type="color" default="#656565"  value="#656565"/>
-  <Variable name="body.link.color" description="Link Color" type="color" default="$(main.color)"  value="#fe5301"/>
+  <Variable name="body.text.color" description="Text Color" type="color" default="#91a0b5"  value="#91a0b5"/>
+  <Variable name="body.link.color" description="Link Color" type="color" default="$(main.color)"  value="#facc15"/>
 </Group>
- 
+
 <!-- Extra Variables -->
-<Variable name="body.text.font" description="Font" hideEditor="true" type="font" default="13px Roboto, sans-serif"  value="13px Roboto, sans-serif"/>
-<Variable name="title.font" description="Title Font" hideEditor="true" type="font" default="13px Roboto, sans-serif"  value="13px Roboto, sans-serif"/>
-<Variable name="posts.background.color" description="Post background color" hideEditor="true" type="color" default="#ffffff"  value="#ffffff"/>
-<Variable name="tabs.font" description="Font 2" hideEditor="true" type="font" default="13px Roboto, sans-serif"  value="13px Roboto, sans-serif"/>
-<Variable name="posts.title.color" description="Post title color" hideEditor="true" type="color" default="#000000"  value="#000000"/>
-<Variable name="posts.text.color" description="Post text color" hideEditor="true" type="color" default="#656565"  value="#656565"/>
-<Variable name="posts.icons.color" description="Post icons color" hideEditor="true" type="color" default="$(main.color)"  value="#3c5a98"/>
-<Variable name="labels.background.color" description="Label background color" hideEditor="true" type="color" default="$(main.color)"  value="#3c5a98"/>
+<Variable name="body.text.font" description="Font" hideEditor="true" type="font" default="14px Poppins, sans-serif"  value="14px Poppins, sans-serif"/>
+<Variable name="title.font" description="Title Font" hideEditor="true" type="font" default="14px Poppins, sans-serif"  value="14px Poppins, sans-serif"/>
+<Variable name="posts.background.color" description="Post background color" hideEditor="true" type="color" default="#0b1524"  value="#0b1524"/>
+<Variable name="tabs.font" description="Font 2" hideEditor="true" type="font" default="14px Poppins, sans-serif"  value="14px Poppins, sans-serif"/>
+<Variable name="posts.title.color" description="Post title color" hideEditor="true" type="color" default="#f8fafc"  value="#f8fafc"/>
+<Variable name="posts.text.color" description="Post text color" hideEditor="true" type="color" default="#91a0b5"  value="#91a0b5"/>
+<Variable name="posts.icons.color" description="Post icons color" hideEditor="true" type="color" default="$(main.color)"  value="#facc15"/>
+<Variable name="labels.background.color" description="Label background color" hideEditor="true" type="color" default="$(main.color)"  value="#facc15"/>
 */
 
 /*-- Google Fonts --*/
@@ -3971,7 +3971,90 @@ z-index: 4;
     }
 }
 
+/* ===========================================================================
+   LAPAKSTORE88 SITE MATCH -- reskin tema Blogger ini biar senada sama
+   lokalstore88.online (dark navy + emas), ditaruh PALING BAWAH b:skin supaya
+   cascade-nya menang tanpa perlu ubah/hapus CSS bawaan template di atas.
+   Palet dari style.css situs sendiri: bg #050b14, surface #0b1524/#101d2f,
+   line rgba(148,163,184,.14), text #f8fafc, muted #91a0b5, brand #facc15/#f59e0b.
+   =========================================================================== */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+body{background:#050b14 !important;color:#91a0b5 !important;font-family:'Poppins',sans-serif !important}
+a{color:#facc15}
+::selection{background:#facc15;color:#07111f}
+h1,h2,h3,h4,h5,h6,.post-title,.post-title a,.widget-title,.section-title h2,.section-title{color:#f8fafc !important;font-family:'Poppins',sans-serif !important}
+#outer-wrapper,#content-wrapper,#main-wrapper,#sidebar-wrapper,.container{background:transparent}
+
+/* Header + kategori nav (LinkList72 dipakai langsung sbg nav kategori) */
+#header-wrap{background:#050b14 !important;border-bottom:1px solid rgba(148,163,184,.14)}
+#top-bar{height:auto !important;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;background:#050b14 !important;background-image:none !important;border-bottom:1px solid rgba(148,163,184,.14);scrollbar-width:none}
+#top-bar::-webkit-scrollbar{display:none}
+#top-bar .container{display:flex;align-items:center;flex-wrap:nowrap;width:max-content;min-width:100%;padding:10px 20px}
+.top-bar-social{display:none !important}
+.top-bar-nav{float:none !important}
+.top-bar-nav ul{display:flex;flex-wrap:nowrap;gap:8px}
+.top-bar-nav ul li{float:none !important}
+.top-bar-nav ul li>a{height:auto !important;line-height:1.2 !important;margin:0 !important;padding:8px 15px !important;border-radius:999px;background:rgba(255,255,255,.03);border:1px solid rgba(148,163,184,.14);white-space:nowrap;font-weight:700 !important;font-size:11px !important;text-transform:uppercase;letter-spacing:.03em}
+.top-bar-nav ul li:first-child>a{padding:8px 15px !important}
+.top-bar-nav ul>li:hover>a{color:#07111f !important;background:linear-gradient(135deg,#fde047,#f59e0b) !important;border-color:transparent !important}
+#main-menu,#main-menu ul>li>a{background:transparent !important;color:#f8fafc !important}
+.header-widget,.header-logo{background:transparent !important}
+#nav-search .search-input{background:#0b1524;color:#f8fafc;border-color:rgba(148,163,184,.14)}
+
+/* Hero berita utama (markup disisip lewat b:includable Blog1/main, lihat class lp-hero-*) */
+.lp-hero-section{max-width:1180px;margin:0 auto;padding:22px 20px 8px;display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:18px;align-items:stretch}
+.lp-hero-card{position:relative;display:block;overflow:hidden;border-radius:18px;border:1px solid rgba(148,163,184,.14);aspect-ratio:16/9;text-decoration:none;background:linear-gradient(135deg,#132640,#0a1524)}
+.lp-hero-card img{width:100%;height:100%;object-fit:cover;display:block}
+.lp-hero-overlay{position:absolute;left:0;right:0;bottom:0;padding:20px 22px;display:flex;flex-direction:column;gap:8px;background:linear-gradient(0deg,rgba(3,7,14,.94) 0%,rgba(3,7,14,.72) 45%,rgba(3,7,14,0) 100%)}
+.lp-hero-cat{align-self:flex-start;padding:3px 10px;border-radius:999px;color:#07111f !important;background:rgba(253,224,71,.94);font-size:9.5px;font-weight:900;text-transform:uppercase}
+.lp-hero-title{margin:0;color:#fff !important;font-size:clamp(1.1rem,2.4vw,1.6rem);line-height:1.3;letter-spacing:-.4px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.lp-hero-card:hover .lp-hero-title{color:#facc15 !important}
+.lp-hero-meta{color:#b9c4d4;font-size:11px}
+.lp-headline-list{display:flex;flex-direction:column;gap:4px}
+.lp-headline-item{display:flex;flex-direction:column;gap:4px;padding:12px 4px;border-bottom:1px solid rgba(148,163,184,.14);text-decoration:none}
+.lp-headline-item:last-child{border-bottom:none}
+.lp-headline-cat{color:#facc15;font-size:9.5px;font-weight:900;text-transform:uppercase;letter-spacing:.04em}
+.lp-headline-title{color:#dbe4f0;font-size:13px;font-weight:600;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.lp-headline-item:hover .lp-headline-title{color:#facc15}
+@media (max-width:860px){.lp-hero-section{grid-template-columns:1fr}.lp-hero-card{aspect-ratio:16/10}}
+
+/* Kartu daftar artikel */
+.index-post,.blog-post,.post-item-inner{background:#0b1524 !important;border:1px solid rgba(148,163,184,.14) !important;border-radius:16px !important}
+.post-snippet,.post-meta,.post-meta *{color:#91a0b5 !important}
+.post-labels a,.post-tag a{color:#07111f !important;background:rgba(253,224,71,.94) !important}
+
+/* Sidebar: widget box + "Terpopuler" (PopularPosts3, lihat b:includable-nya) */
+.sidebar .widget,#sidebar-wrapper .widget{background:#0b1524;border:1px solid rgba(148,163,184,.14);border-radius:16px;padding:16px;margin-bottom:18px}
+.sidebar .widget>.widget-title,#sidebar-wrapper .widget>.widget-title{color:#fff !important;font-size:12.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;border:none !important;padding:0 0 13px !important;margin:0 0 13px !important;border-bottom:1px solid rgba(148,163,184,.14) !important}
+.lp-popular-list{display:flex;flex-direction:column;gap:12px}
+.lp-popular-item{display:grid;grid-template-columns:20px minmax(0,1fr);gap:9px;text-decoration:none;align-items:start}
+.lp-popular-num{color:#facc15;font-size:15px;font-weight:900;font-style:italic}
+.lp-popular-title{color:#dbe4f0;font-size:12px;line-height:1.45}
+.lp-popular-item:hover .lp-popular-title{color:#facc15}
+
+/* Kotak "Baca Juga" di tengah artikel (disisip lewat postBody, lihat class lp-baca-juga) */
+.lp-baca-juga{margin:18px 0;padding:12px 16px;border-radius:12px;border:1px solid rgba(250,204,21,.28);background:rgba(250,204,21,.06);display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 10px}
+.lp-baca-juga-label{display:inline-flex;align-items:center;gap:6px;color:#facc15;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.04em}
+.lp-baca-juga a{color:#dbe4f0 !important;font-size:13.5px;font-weight:700;text-decoration:none}
+.lp-baca-juga a:hover{color:#facc15 !important}
+
+/* Footer */
+#footer-wrapper{background:#050b14 !important;border-top:1px solid rgba(148,163,184,.14)}
+#footer-wrapper .footer .widget,#footer-about-area .widget{color:#91a0b5 !important}
+#footer-wrapper a{color:#91a0b5}
+#footer-wrapper a:hover{color:#facc15}
+
+/* Pagination & tombol umum */
+.blog-pager a,.pagination a{background:#0b1524 !important;color:#f8fafc !important;border:1px solid rgba(148,163,184,.14) !important}
+.blog-pager a:hover,.pagination a:hover{background:linear-gradient(135deg,#fde047,#f59e0b) !important;color:#07111f !important;border-color:transparent !important}
+
+/* Halaman artikel tunggal */
+.item-post-wrap,.post-body,.entry-content{color:#dbe4f0 !important}
+.post-body img{border-radius:16px}
+.post-body a{color:#38bdf8}
+
 ]]></b:skin>
+
 <style>
   .firstcharacter{
     float:left;
@@ -4900,7 +4983,7 @@ var monthFormat = ["January", "February", "March", "April", "May", "June", "July
         <b:section class='main-logo' id='main-logo' maxwidgets='1' name='Header Logo' showaddelement='yes'>
               <b:widget id='Header1' locked='true' title='LokalStore88 (Header)' type='Header' version='2' visible='true'>
                 <b:widget-settings>
-                  <b:widget-setting name='displayUrl'>https://i.ibb.co/7Jtv7WJs/image.png</b:widget-setting>
+                  <b:widget-setting name='displayUrl'>https://i.ibb.co/N6QjSXMW/cf486a22-b7cc-4e19-9b24-1b3515f697b6.png</b:widget-setting>
                   <b:widget-setting name='displayHeight'>640</b:widget-setting>
                   <b:widget-setting name='sectionWidth'>150</b:widget-setting>
                   <b:widget-setting name='useImage'>true</b:widget-setting>
@@ -5009,15 +5092,33 @@ var monthFormat = ["January", "February", "March", "April", "May", "June", "July
   <div id='top-bar'>
     <div class='container row'>
         <b:section class='top-bar-nav' id='top-bar-nav' maxwidgets='1' name='Top Navigation' showaddelement='yes'>
-          <b:widget id='LinkList72' locked='true' title='Link List' type='LinkList' version='2' visible='true'>
+          <b:widget id='LinkList72' locked='true' title='Kategori Berita' type='LinkList' version='2' visible='true'>
             <b:widget-settings>
               <b:widget-setting name='sorting'>NONE</b:widget-setting>
-              <b:widget-setting name='text-1'>About</b:widget-setting>
-              <b:widget-setting name='link-1'>#</b:widget-setting>
-              <b:widget-setting name='text-0'>Home</b:widget-setting>
-              <b:widget-setting name='link-2'>#</b:widget-setting>
               <b:widget-setting name='link-0'>/</b:widget-setting>
-              <b:widget-setting name='text-2'>Contact</b:widget-setting>
+              <b:widget-setting name='text-0'>Home</b:widget-setting>
+              <b:widget-setting name='link-1'>/search/label/Umum</b:widget-setting>
+              <b:widget-setting name='text-1'>Umum</b:widget-setting>
+              <b:widget-setting name='link-2'>/search/label/Nasional</b:widget-setting>
+              <b:widget-setting name='text-2'>Nasional</b:widget-setting>
+              <b:widget-setting name='link-3'>/search/label/Bisnis</b:widget-setting>
+              <b:widget-setting name='text-3'>Bisnis</b:widget-setting>
+              <b:widget-setting name='link-4'>/search/label/Olahraga</b:widget-setting>
+              <b:widget-setting name='text-4'>Olahraga</b:widget-setting>
+              <b:widget-setting name='link-5'>/search/label/Bola</b:widget-setting>
+              <b:widget-setting name='text-5'>Bola</b:widget-setting>
+              <b:widget-setting name='link-6'>/search/label/Hiburan</b:widget-setting>
+              <b:widget-setting name='text-6'>Hiburan</b:widget-setting>
+              <b:widget-setting name='link-7'>/search/label/Teknologi</b:widget-setting>
+              <b:widget-setting name='text-7'>Teknologi</b:widget-setting>
+              <b:widget-setting name='link-8'>/search/label/Otomotif</b:widget-setting>
+              <b:widget-setting name='text-8'>Otomotif</b:widget-setting>
+              <b:widget-setting name='link-9'>/search/label/Kesehatan</b:widget-setting>
+              <b:widget-setting name='text-9'>Kesehatan</b:widget-setting>
+              <b:widget-setting name='link-10'>/search/label/Lifestyle</b:widget-setting>
+              <b:widget-setting name='text-10'>Lifestyle</b:widget-setting>
+              <b:widget-setting name='link-11'>/search/label/Selebritis</b:widget-setting>
+              <b:widget-setting name='text-11'>Selebritis</b:widget-setting>
             </b:widget-settings>
             <b:includable id='main'>
               <b:include name='content'/>
@@ -5111,12 +5212,52 @@ var monthFormat = ["January", "February", "March", "April", "May", "June", "July
             <b:includable id='main' var='this'>
 <b:include name='homePostsHeadline'/>
               <b:include name='searchMessage'/>
+              <b:if cond='data:view.isHomepage'>
+                <div class='lp-hero-section'>
+                  <b:loop index='i' values='data:posts' var='post'>
+                    <b:if cond='data:i == 0'>
+                      <a class='lp-hero-card' expr:href='data:post.url'>
+                        <b:if cond='data:post.featuredImage'>
+                          <img expr:alt='data:post.title' expr:src='resizeImage(data:post.featuredImage, 900, &quot;16:9&quot;)'/>
+                          <b:else/>
+                          <img alt='LapakStore88' src='https://i.ibb.co/N6QjSXMW/cf486a22-b7cc-4e19-9b24-1b3515f697b6.png'/>
+                        </b:if>
+                        <div class='lp-hero-overlay'>
+                          <b:if cond='data:post.labels'>
+                            <b:loop index='li' values='data:post.labels' var='label'>
+                              <b:if cond='data:li == 0'><span class='lp-hero-cat'><data:label.name/></span></b:if>
+                            </b:loop>
+                          </b:if>
+                          <h2 class='lp-hero-title'><data:post.title/></h2>
+                          <span class='lp-hero-meta'><data:post.published format='MMMM dd, yyyy'/></span>
+                        </div>
+                      </a>
+                    </b:if>
+                  </b:loop>
+                  <div class='lp-headline-list'>
+                    <b:loop index='i' values='data:posts' var='post'>
+                      <b:if cond='data:i &gt; 0 and data:i &lt; 5'>
+                        <a class='lp-headline-item' expr:href='data:post.url'>
+                          <b:if cond='data:post.labels'>
+                            <b:loop index='li' values='data:post.labels' var='label'>
+                              <b:if cond='data:li == 0'><span class='lp-headline-cat'><data:label.name/></span></b:if>
+                            </b:loop>
+                          </b:if>
+                          <span class='lp-headline-title'><data:post.title/></span>
+                        </a>
+                      </b:if>
+                    </b:loop>
+                  </div>
+                </div>
+              </b:if>
               <div class='blog-posts hfeed container'>
                 <b:class cond='data:view.isMultipleItems' name='index-post-wrap'/>
                 <b:class cond='data:view.isSingleItem' name='item-post-wrap'/>
                 <b:tag class='grid-posts' cond='data:view.isMultipleItems' name='div'>
                   <b:loop index='i' values='data:posts' var='post'>
-                    <b:include data='post' name='postCommentsAndAd'/>
+                    <b:if cond='not data:view.isHomepage or data:i &gt; 4'>
+                      <b:include data='post' name='postCommentsAndAd'/>
+                    </b:if>
                   </b:loop>
                 </b:tag>
               </div>
@@ -5527,15 +5668,21 @@ var monthFormat = ["January", "February", "March", "April", "May", "June", "July
       <b:if cond='data:view.isPost'><b:tag cond='data:widgets any w =&gt; w.sectionId == &quot;ty-post-before-ad&quot;' id='prev-ad' name='div'/></b:if>
               <!-- Post Body Entry Content-->
               <div class='post-body post-content' id='post-body'>
+                <b:if cond='data:post.labels'>
+                  <b:attr cond='data:post.labels.first.url' expr:value='data:post.labels.first.url' name='data-baca-url'/>
+                  <b:attr cond='data:post.labels.first.name' expr:value='data:post.labels.first.name' name='data-baca-label'/>
+                </b:if>
                 <data:post.body/>
               </div>
               <b:if cond='data:view.isPost'>
-                <!-- Backlink acak ke situs sendiri (lokalstore88.online), dipasang
-                     di SEMUA postingan (lama & baru) lewat tema, bukan cuma
-                     konten baru dari bot. Membungkus tiap foto di isi artikel
-                     dengan link, plus 1 baris teks singkat di akhir artikel.
-                     Target dipilih ACAK per kunjungan dari daftar tetap
-                     (bukan tebakan/data luar), selalu domain milik sendiri. -->
+                <!-- Backlink acak ke situs sendiri (lokalstore88.online) + kotak
+                     "Baca Juga" di TENGAH artikel, dipasang di SEMUA postingan
+                     (lama & baru) lewat tema, bukan cuma konten baru dari bot.
+                     Backlink: bungkus tiap foto isi artikel dengan link acak ke
+                     aset sendiri, plus 1 baris teks singkat di akhir artikel.
+                     Baca Juga: link ke arsip kategori artikel ini sendiri (label
+                     Blogger post ini), internal link tambahan biar pembaca
+                     lanjut jelajah artikel sejenis, bukan cuma baca 1 lalu pergi. -->
                 <script type='text/javascript'>
                 //<![CDATA[
                 (function(){
@@ -5561,6 +5708,16 @@ var monthFormat = ["January", "February", "March", "April", "May", "June", "July
                     p.style.cssText='font-size:13px;color:#888;margin-top:16px';
                     p.innerHTML='Kunjungi juga: <a href="'+pick.url+'" rel="noopener" target="_blank">'+pick.label+'</a>';
                     box.appendChild(p);
+
+                    var bacaUrl=box.getAttribute('data-baca-url'), bacaLabel=box.getAttribute('data-baca-label');
+                    var paras=box.querySelectorAll('p');
+                    if(bacaUrl && bacaLabel && paras.length>=3){
+                      var bj=document.createElement('div');
+                      bj.className='lp-baca-juga';
+                      bj.innerHTML='<span class="lp-baca-juga-label">Baca Juga</span><a href="'+bacaUrl+'">Berita '+bacaLabel+' Lainnya</a>';
+                      var anchor=paras[Math.min(2,paras.length-1)];
+                      anchor.parentNode.insertBefore(bj,anchor.nextSibling);
+                    }
                   }catch(e){}
                 })();
                 //]]>
@@ -6082,26 +6239,24 @@ var monthFormat = ["January", "February", "March", "April", "May", "June", "July
   </div>
 </b:includable>
           </b:widget>
-          <b:widget id='PopularPosts3' locked='false' title='Most Popular' type='PopularPosts' version='2' visible='true'>
+          <b:widget id='PopularPosts3' locked='false' title='Terpopuler' type='PopularPosts' version='2' visible='true'>
             <b:widget-settings>
-              <b:widget-setting name='numItemsToShow'>3</b:widget-setting>
-              <b:widget-setting name='showThumbnails'>true</b:widget-setting>
-              <b:widget-setting name='showSnippets'>true</b:widget-setting>
-              <b:widget-setting name='timeRange'>ALL_TIME</b:widget-setting>
+              <b:widget-setting name='numItemsToShow'>5</b:widget-setting>
+              <b:widget-setting name='showThumbnails'>false</b:widget-setting>
+              <b:widget-setting name='showSnippets'>false</b:widget-setting>
+              <b:widget-setting name='timeRange'>LAST_7_DAYS</b:widget-setting>
             </b:widget-settings>
             <b:includable id='main' var='this'>
       <b:include name='widget-title'/>
       <div class='widget-content'>
-        <b:tag class='hot-posts' cond='data:widget.sectionId == &quot;hot-section&quot;' name='ul'>
-          <b:if cond='data:widget.sectionId == &quot;hot-section&quot;'>
-            <b:class cond='data:posts.length != &quot;1&quot;' name='multiple'/>
-          </b:if>
-          <b:tag class='ticker-widget' cond='data:widget.sectionId == &quot;break-section&quot;' name='ul'>
-        <b:loop index='i' values='data:posts' var='post'>
-          <b:include data='post' name='postContent'/>
-        </b:loop>
-            </b:tag>
-        </b:tag>
+        <div class='lp-popular-list'>
+          <b:loop index='i' values='data:posts' var='post'>
+            <a class='lp-popular-item' expr:href='data:post.url'>
+              <span class='lp-popular-num'><b:eval expr='data:i + 1'/></span>
+              <span class='lp-popular-title'><data:post.title/></span>
+            </a>
+          </b:loop>
+        </div>
       </div>
     </b:includable>
             <b:includable id='blogThisShare'>
@@ -7366,7 +7521,7 @@ height: 100%;
         <b:section class='footer-about-area' id='footer-about-area' maxwidgets='1' name='About &amp; Logo Section' showaddelement='no'>
           <b:widget id='Image150' locked='true' title='About Us' type='Image' version='2' visible='true'>
             <b:widget-settings>
-              <b:widget-setting name='displayUrl'>https://i.ibb.co/7Jtv7WJs/image.png</b:widget-setting>
+              <b:widget-setting name='displayUrl'>https://i.ibb.co/N6QjSXMW/cf486a22-b7cc-4e19-9b24-1b3515f697b6.png</b:widget-setting>
               <b:widget-setting name='displayHeight'>150</b:widget-setting>
               <b:widget-setting name='sectionWidth'>150</b:widget-setting>
               <b:widget-setting name='shrinkToFit'>true</b:widget-setting>
