@@ -4087,6 +4087,14 @@ a.view-all:hover{background:linear-gradient(135deg,#fde047,#f59e0b) !important;c
 .blog-pager a,.pagination a{background:#0b1524 !important;color:#f8fafc !important;border:1px solid rgba(148,163,184,.14) !important}
 .blog-pager a:hover,.pagination a:hover{background:linear-gradient(135deg,#fde047,#f59e0b) !important;color:#07111f !important;border-color:transparent !important}
 
+/* Kotak pesan pencarian/label (mis. "Menampilkan postingan dengan label X")
+   aslinya background:#fff hardcode + teks $(title.color) yang sudah diganti
+   nyaris putih buat tema gelap -- jadi putih-di-atas-putih, tidak kebaca. */
+.queryMessage{background:#0b1524 !important;color:#dbe4f0 !important;border-color:rgba(148,163,184,.14) !important}
+.queryMessage .search-query,.queryMessage .search-label{color:#f8fafc !important}
+.queryMessage a.show-more{color:#f0a91e !important}
+.queryEmpty{color:#91a0b5 !important}
+
 /* Breadcrumb halaman artikel -- aslinya height:34px baris tunggal (fixed), tapi
    label/judul artikel Indonesia sering panjang & jadi 2-3 baris -- teks yang
    melebihi 34px dulu meluber ke luar kotak, kelihatan "nyangkut" sendirian di
