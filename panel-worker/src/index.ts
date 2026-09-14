@@ -67,7 +67,7 @@ import {
 	botNewsStatus,
 	botNewsToggleSource,
 } from "./api/bot";
-import { botNewsRun, disableGnewsSources, fbDirectRun, newsPullSources, publicNewsBanner, publicNewsDetail, publicNewsList, publicNewsRandom, publicNewsSitemapXml, seedCategorySources } from "./lib/bot-news";
+import { botNewsRun, disableGnewsSources, fbDirectRun, newsPruneQueueDaily, newsPullSources, publicNewsBanner, publicNewsDetail, publicNewsList, publicNewsRandom, publicNewsSitemapXml, seedCategorySources } from "./lib/bot-news";
 
 type Handler = (env: Env, body: Record<string, unknown>) => Promise<unknown>;
 const s = (v: unknown) => String(v ?? "");
@@ -447,6 +447,11 @@ export default {
 				if (job === "pullnews") {
 					out.pull = await newsPullSources(env);
 				}
+				// Manual/diagnosa: paksa jalankan pembersihan antrean sekarang juga
+				// (biasanya sekali/hari via Cron Trigger native, lihat scheduled()).
+				if (job === "newsprune") {
+					out.newsprune = await newsPruneQueueDaily(env);
+				}
 				// Job TERPISAH sengaja TIDAK ikut "all" -- dipanggil cron sendiri tiap
 				// 10 menit (1 artikel/panggilan), independen dari jadwal Blogger.
 				if (job === "fbdirect") {
@@ -550,6 +555,10 @@ export default {
 		if (event.cron === "*/5 * * * *") {
 			await runAutoPostRouter(env).catch((e) => console.error("auto-post router error", e));
 			await dailyPrune(env).catch((e) => console.error("prune error", e));
+			// Sekali/hari (guard sendiri di dalam fungsinya) -- buang antrean berita
+			// yang belum diproses & lebih lama dari kemarin jam 22:00 WIB. TIDAK
+			// PERNAH menyentuh artikel yang sudah tayang (lihat komentar di fungsinya).
+			await newsPruneQueueDaily(env).catch((e) => console.error("news queue prune error", e));
 		} else {
 			await investPump(env).catch((e) => console.error("invest pump error", e));
 		}

@@ -746,8 +746,11 @@ export async function fbTemplateGenerate(
 ): Promise<{ done: boolean; title?: string; imageUrl?: string; caption?: string; error?: string }> {
 	await ensureFbTemplateColumn(env);
 	const cfg = await botCfg(env);
+	// ORDER BY id DESC (bukan ASC) -- pemilik minta template FB fokus ke artikel
+	// TERBARU, bukan menggali antrean lama dari belakang. Sebelumnya ASC bikin
+	// fitur ini terus mengambil artikel yang makin basi kalau backlog menumpuk.
 	const row = await getTurso(env)
-		.prepare(`SELECT * FROM news_article WHERE fb_direct_posted_at = '' ORDER BY id ASC LIMIT 1`)
+		.prepare(`SELECT * FROM news_article WHERE fb_direct_posted_at = '' ORDER BY id DESC LIMIT 1`)
 		.first<Record<string, string>>();
 	if (!row) return { done: false, error: "Tidak ada artikel baru untuk dibuatkan template." };
 	const id = Number(row.id);
@@ -1089,6 +1092,71 @@ async function postedToday(env: Env): Promise<number> {
 		.bind(todayKey())
 		.first<{ c: number }>();
 	return Number(r?.c ?? 0);
+}
+
+// ---------------------------------------------------------------------------
+// Pembersihan antrean harian -- pemilik minta antrean RSS yang BELUM diproses
+// tidak numpuk: tiap hari, buang yang lebih lama dari kemarin jam 22:00 WIB.
+// Kalau ternyata TIDAK ADA satu pun artikel yang lebih baru dari jam itu
+// (mis. RSS lagi sepi/macet beberapa hari), jangan sampai antrean kosong sama
+// sekali -- sisakan 5 yang paling baru saja, baru buang sisanya.
+//
+// PENTING (keamanan): scope HANYA status 'new'/'error'/'skipped' (antrean
+// yang belum/gagal diproses). Artikel status 'posted' (Blogger) & 'site'
+// (situs sendiri) TIDAK PERNAH ikut disentuh sama sekali -- itu artikel yang
+// SUDAH TAYANG dengan URL publik yang mungkin sudah terindeks Google/dibagikan
+// orang; menghapusnya akan mematahkan link itu. Lihat memory
+// "dont-break-working-logic" -- fitur baru harus aditif, tidak boleh
+// mengganggu yang sudah benar.
+const NEWS_QUEUE_PRUNE_STATUSES = "('new','error','skipped')";
+let newsQueuePrunedDay = "";
+export async function newsPruneQueueDaily(env: Env): Promise<{ pruned: number; kept: number; mode: string } | "skip"> {
+	const nowWib = new Date(Date.now() + 7 * 3600 * 1000);
+	const dayKey = nowWib.toISOString().slice(0, 10);
+	if (newsQueuePrunedDay === dayKey) return "skip";
+	// Guard KV juga (aman lintas cold-start/isolate berbeda, pola sama dengan dailyPrune di index.ts).
+	const guardKey = "newsqueueprune:" + dayKey;
+	try {
+		if (await env.SESS.get(guardKey)) {
+			newsQueuePrunedDay = dayKey;
+			return "skip";
+		}
+		await env.SESS.put(guardKey, "1", { expirationTtl: 172800 });
+	} catch {
+		/* kalau KV gagal, tetap lanjut sekali jalan (guard in-memory di atas cukup utk 1 isolate) */
+	}
+	newsQueuePrunedDay = dayKey;
+
+	// Cutoff = KEMARIN jam 22:00:00 WIB.
+	const yesterdayWib = new Date(nowWib.getTime() - 24 * 3600 * 1000);
+	const cutoff = `${yesterdayWib.toISOString().slice(0, 10)} 22:00:00`;
+
+	const above = await getTurso(env)
+		.prepare(`SELECT COUNT(*) AS c FROM news_article WHERE status IN ${NEWS_QUEUE_PRUNE_STATUSES} AND found_at >= ?`)
+		.bind(cutoff)
+		.first<{ c: number }>();
+	const aboveCount = Number(above?.c ?? 0);
+
+	if (aboveCount > 0) {
+		const del = await getTurso(env)
+			.prepare(`DELETE FROM news_article WHERE status IN ${NEWS_QUEUE_PRUNE_STATUSES} AND found_at < ?`)
+			.bind(cutoff)
+			.run();
+		return { pruned: del.meta.changes, kept: aboveCount, mode: "cutoff" };
+	}
+
+	// Tidak ada satu pun di atas cutoff -> sisakan 5 TERBARU (bukan hapus semua).
+	const keep = await getTurso(env)
+		.prepare(`SELECT id FROM news_article WHERE status IN ${NEWS_QUEUE_PRUNE_STATUSES} ORDER BY found_at DESC, id DESC LIMIT 5`)
+		.all<{ id: number }>();
+	const keepIds = (keep.results ?? []).map((r) => Number(r.id));
+	if (!keepIds.length) return { pruned: 0, kept: 0, mode: "kosong" };
+	const placeholders = keepIds.map(() => "?").join(",");
+	const del = await getTurso(env)
+		.prepare(`DELETE FROM news_article WHERE status IN ${NEWS_QUEUE_PRUNE_STATUSES} AND id NOT IN (${placeholders})`)
+		.bind(...keepIds)
+		.run();
+	return { pruned: del.meta.changes, kept: keepIds.length, mode: "fallback5" };
 }
 
 /** Entry cron: /__cron?job=news */
