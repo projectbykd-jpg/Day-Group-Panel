@@ -317,8 +317,15 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 	// PERTAMA tetap prioritas utama (coba semua model dulu), key cadangan
 	// baru dipakai kalau key pertama benar-benar habis di semua model.
 	const keys = String(cfg.gemini_key || "").split(/[,\n]+/).map((s) => s.trim()).filter(Boolean);
+	const groqKeys = String(cfg.groq_key || "").split(/[,\n]+/).map((s) => s.trim()).filter(Boolean);
 	const model = cfg.gemini_model || "gemini-3-flash-preview";
-	if (!keys.length) throw new Error("gemini_key belum diisi di konfigurasi BOT.");
+	// Pemilik minta Groq jadi provider UTAMA (Gemini sering geo-block) --
+	// kalau groq_key sudah diisi, Groq dicoba DULUAN & Gemini sama sekali
+	// TIDAK disentuh selama Groq berhasil (hemat subrequest, tidak kena
+	// geo-block lagi). Gemini cuma jadi jaring pengaman kalau Groq-nya
+	// sendiri lagi bermasalah DAN gemini_key masih tersimpan -- kalau mau
+	// benar-benar nol panggilan Gemini, kosongkan saja gemini_key di Settings.
+	if (!groqKeys.length && !keys.length) throw new Error("gemini_key atau groq_key belum diisi di konfigurasi BOT.");
 	const style = cfg.rewrite_style || "Tulis ulang jadi artikel berbahasa Indonesia yang mengalir, gaya jurnalistik ringan, tapi tetap menarik dan enak dibaca -- bukan kaku/datar seperti siaran pers.";
 	const pMin = Math.max(1, Number(cfg.para_min || "8"));
 	const pMax = Math.max(pMin, Number(cfg.para_max || "14"));
@@ -352,65 +359,10 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 		`JUDUL ASLI: ${art.title}\n` +
 		`RINGKASAN: ${art.excerpt || "(tidak ada, tulis ringkas dari judul saja)"}\n` +
 		`SUMBER: ${art.source}`;
-	// Model utama sering 503 (high demand) -> coba beberapa model berurutan.
-	// SATU percobaan per model (bukan 2x) -> tiap fetch Gemini adalah 1 subrequest
-	// Cloudflare; loop lama (sampai 2 attempt x 4 model = 8 fetch) ikut andil bikin
-	// invocation kena "Too many subrequests" (limit 50/invocation Free plan).
-	const models = [...new Set([model, "gemini-3-flash-preview", "gemini-flash-latest", "gemini-flash-lite-latest"])];
-	// Susun daftar percobaan (key, model): key PERTAMA coba SEMUA model (fallback
-	// demand-tinggi/503 spt sebelumnya), key CADANGAN cuma 1x percobaan tiap key
-	// pakai model utama saja (fallback KUOTA/rate-limit habis) -- supaya total
-	// fetch tetap terbatas (models.length + (keys.length-1)) walau key-nya banyak,
-	// tidak ikut membengkakkan subrequest per artikel kalau key pertama sehat.
-	const attempts: { key: string; model: string }[] = models.map((mdl) => ({ key: keys[0], model: mdl }));
-	for (let i = 1; i < keys.length; i++) attempts.push({ key: keys[i], model });
-	let j: any = null;
-	let lastErr = "";
-	for (const at of attempts) {
-		// thinkingConfig cuma didukung sebagian model (mis. gemini-3-flash-preview).
-		// gemini-flash-lite-latest & sebagian lain balas 400 INVALID_ARGUMENT kalau
-		// field ini disertakan -> kirim HANYA utk model yg namanya mengandung "3".
-		const supportsThinking = /gemini-3/i.test(at.model);
-		const generationConfig: Record<string, unknown> = {
-			temperature: 0.85,
-			maxOutputTokens: 8192,
-			responseMimeType: "application/json",
-		};
-		if (supportsThinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
-		const r = await fetch(
-			`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(at.model)}:generateContent`,
-			{
-				method: "POST",
-				headers: { "Content-Type": "application/json", "X-goog-api-key": at.key },
-				body: JSON.stringify({
-					contents: [{ parts: [{ text: prompt }] }],
-					generationConfig,
-				}),
-			},
-		);
-		const body = (await r.json()) as any;
-		const hasText = !!body?.candidates?.[0]?.content?.parts?.some((p: any) => p.text);
-		if (r.ok && hasText) {
-			j = body;
-			break;
-		}
-		lastErr =
-			"HTTP " + r.status + " " +
-			(body?.candidates?.[0]?.finishReason
-				? "finishReason=" + body.candidates[0].finishReason
-				: JSON.stringify(body?.error || body).slice(0, 200));
-	}
-	let text: string;
-	if (j) {
-		text = j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "";
-	} else {
-		// Gemini gagal total (biasanya geo-block/rate-limit) -- coba Groq sbg
-		// jalur cadangan KEDUA. Groq (groq.com) API-nya kompatibel format OpenAI
-		// (endpoint & bentuk respons beda dari Gemini), quota-nya TERPISAH total
-		// dari Gemini jadi ini benar-benar jalur alternatif, bukan cuma retry.
-		// Kalau groq_key juga kosong/gagal, tetap lempar error Gemini spt semula.
-		const groqKeys = String(cfg.groq_key || "").split(/[,\n]+/).map((s) => s.trim()).filter(Boolean);
-		let groqText = "";
+	// Coba SEMUA groq_key dulu (Groq = provider UTAMA sekarang). Balik "" kalau
+	// semuanya gagal (BUKAN throw) supaya pemanggil bisa jatuh ke Gemini kalau
+	// gemini_key masih tersimpan sbg jaring pengaman.
+	const tryGroq = async (): Promise<{ text: string; err: string }> => {
 		let groqErr = "";
 		for (const gk of groqKeys) {
 			try {
@@ -426,23 +378,85 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 				});
 				const gBody: any = await gr.json();
 				const content = gBody?.choices?.[0]?.message?.content;
-				if (gr.ok && content) {
-					groqText = content;
-					break;
-				}
+				if (gr.ok && content) return { text: content, err: "" };
 				groqErr = "HTTP " + gr.status + " " + JSON.stringify(gBody?.error || gBody).slice(0, 200);
 			} catch (e) {
 				groqErr = e instanceof Error ? e.message : String(e);
 			}
 		}
-		if (!groqText) {
-			throw new Error(
-				`Gemini gagal semua model/key (${attempts.length} percobaan): ${lastErr}` +
-					(groqKeys.length ? ` | Groq (cadangan) juga gagal: ${groqErr}` : ""),
+		return { text: "", err: groqErr };
+	};
+	// Model utama sering 503 (high demand) -> coba beberapa model berurutan.
+	// SATU percobaan per model (bukan 2x) -> tiap fetch Gemini adalah 1 subrequest
+	// Cloudflare; loop lama (sampai 2 attempt x 4 model = 8 fetch) ikut andil bikin
+	// invocation kena "Too many subrequests" (limit 50/invocation Free plan).
+	const tryGemini = async (): Promise<{ text: string; err: string; attempts: number }> => {
+		const models = [...new Set([model, "gemini-3-flash-preview", "gemini-flash-latest", "gemini-flash-lite-latest"])];
+		// Susun daftar percobaan (key, model): key PERTAMA coba SEMUA model (fallback
+		// demand-tinggi/503 spt sebelumnya), key CADANGAN cuma 1x percobaan tiap key
+		// pakai model utama saja (fallback KUOTA/rate-limit habis) -- supaya total
+		// fetch tetap terbatas (models.length + (keys.length-1)) walau key-nya banyak,
+		// tidak ikut membengkakkan subrequest per artikel kalau key pertama sehat.
+		const attempts: { key: string; model: string }[] = models.map((mdl) => ({ key: keys[0], model: mdl }));
+		for (let i = 1; i < keys.length; i++) attempts.push({ key: keys[i], model });
+		let j: any = null;
+		let lastErr = "";
+		for (const at of attempts) {
+			// thinkingConfig cuma didukung sebagian model (mis. gemini-3-flash-preview).
+			// gemini-flash-lite-latest & sebagian lain balas 400 INVALID_ARGUMENT kalau
+			// field ini disertakan -> kirim HANYA utk model yg namanya mengandung "3".
+			const supportsThinking = /gemini-3/i.test(at.model);
+			const generationConfig: Record<string, unknown> = {
+				temperature: 0.85,
+				maxOutputTokens: 8192,
+				responseMimeType: "application/json",
+			};
+			if (supportsThinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+			const r = await fetch(
+				`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(at.model)}:generateContent`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json", "X-goog-api-key": at.key },
+					body: JSON.stringify({
+						contents: [{ parts: [{ text: prompt }] }],
+						generationConfig,
+					}),
+				},
 			);
+			const body = (await r.json()) as any;
+			const hasText = !!body?.candidates?.[0]?.content?.parts?.some((p: any) => p.text);
+			if (r.ok && hasText) {
+				j = body;
+				break;
+			}
+			lastErr =
+				"HTTP " + r.status + " " +
+				(body?.candidates?.[0]?.finishReason
+					? "finishReason=" + body.candidates[0].finishReason
+					: JSON.stringify(body?.error || body).slice(0, 200));
 		}
-		text = groqText;
+		const jText = j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "";
+		return { text: j ? jText : "", err: lastErr, attempts: attempts.length };
+	};
+
+	// Pemilik minta Gemini TIDAK dipakai lagi (sering geo-block) -- Groq jadi
+	// jalur PERTAMA & satu-satunya selama gemini_key TIDAK diisi. Gemini cuma
+	// dipanggil kalau Groq-nya sendiri lagi bermasalah DAN gemini_key masih ada
+	// tersimpan (jaring pengaman opsional, kosongkan gemini_key kalau mau nol
+	// panggilan Gemini sama sekali).
+	let text = "";
+	const errParts: string[] = [];
+	if (groqKeys.length) {
+		const g = await tryGroq();
+		text = g.text;
+		if (!text) errParts.push(`Groq gagal semua key (${groqKeys.length} percobaan): ${g.err}`);
 	}
+	if (!text && keys.length) {
+		const gem = await tryGemini();
+		text = gem.text;
+		if (!text) errParts.push(`Gemini gagal semua model/key (${gem.attempts} percobaan): ${gem.err}`);
+	}
+	if (!text) throw new Error(errParts.join(" | ") || "Tidak ada provider AI yang terkonfigurasi.");
 	text = text.replace(/^﻿/, "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 
 	let title = "";
