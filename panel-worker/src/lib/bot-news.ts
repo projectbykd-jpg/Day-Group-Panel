@@ -40,7 +40,7 @@ function newsCategoryLabel(cat: string): string {
 // biasa tetap sukses. Perlakukan sbg transient jg spy artikel ini dicoba lagi
 // (bukan macet error selamanya), bukan dianggap semua provider mati total.
 const TRANSIENT_ERROR_RE =
-	/location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED|user-?Rate ?Limit|too many subrequests|failed to generate json|json_validate_failed|terlalu pendek/i;
+	/location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED|resource has been exhausted|user-?Rate ?Limit|too many subrequests|failed to generate json|json_validate_failed|terlalu pendek|"code":\s*429/i;
 
 // Kolom category ditambahkan belakangan -- migrasi malas (lazy), sama seperti
 // fb_template_caption di bawah: dicoba sekali per cold-start isolate, aman
@@ -1377,7 +1377,8 @@ async function recoverStuckProcessing(env: Env): Promise<number> {
 				`error LIKE '%rateLimitExceeded%' OR error LIKE '%RESOURCE_EXHAUSTED%' OR ` +
 				`error LIKE '%model_not_found%' OR error LIKE '%does not exist or you do not have access%' OR ` +
 				`error LIKE '%decommissioned%' OR error LIKE '%blocked at the project level%' OR ` +
-				`error LIKE '%Failed to generate JSON%' OR error LIKE '%json_validate_failed%')`,
+				`error LIKE '%Failed to generate JSON%' OR error LIKE '%json_validate_failed%' OR ` +
+				`error LIKE '%Resource has been exhausted%' OR error LIKE '%"code":429%')`,
 		)
 		.run();
 	return r.meta.changes + r2.meta.changes;
