@@ -762,10 +762,21 @@ export async function fbTemplateGenerate(
 		});
 		let imageUrl = String(row.image_url || "");
 		if (!imageUrl) imageUrl = await fetchOgImage(String(row.url));
-		const linkUrl = String(row.post_url || row.url || "");
+		// "Baca selengkapnya" DIUTAMAKAN ke aset MILIK SENDIRI -- sebelumnya jatuh
+		// balik ke row.url (situs SUMBER berita asli, mis. detik.com) kalau artikel
+		// ini belum sempat posting ke Blogger, yang berarti caption promosi malah
+		// nyasar promosiin situs orang lain. Urutan: Blogger (post_url) -> situs
+		// sendiri (site_posted_at) -> baru row.url sbg jalan terakhir.
+		const siteArticleUrl = row.site_posted_at ? `${LAPAKSTORE_SITE_URL}/berita/artikel/?id=${id}` : "";
+		const linkUrl = String(row.post_url || siteArticleUrl || row.url || "");
 		const hashtags = [...new Set([...gen.hashtags, ...FB_TEMPLATE_EVERGREEN_HASHTAGS])].slice(0, 12);
 		const parts = [gen.text];
 		if (linkUrl) parts.push(`🔗 Baca selengkapnya: ${linkUrl}`);
+		// Promosi website UTAMA (lokalstore88.online) -- SELALU disisipkan, terpisah
+		// dari link artikel spesifik di atas (yang bisa saja belum ada kalau artikel
+		// ini belum tayang di Blogger/situs sendiri). Pemilik minta caption manual
+		// ini ikut mempromosikan website utama tiap kali diposting, bukan cuma toko.
+		parts.push(`📰 Kunjungi web berita kami: ${LAPAKSTORE_SITE_URL}/berita.html`);
 		// Promosi toko -- sama seperti yang otomatis disisipkan di artikel Blogger/
 		// situs sendiri, supaya caption manual ini juga ikut mempromosikan toko.
 		const promoUrl = (cfg.promo_url || "").trim();
