@@ -17,17 +17,22 @@ const env = {
 	TURSO_TOKEN: process.env.TURSO_TOKEN,
 } as any;
 
-// MAX_RUN_COUNT di botNewsRun mengunci count per panggilan ke maksimal 5 --
-// bukan bug, itu batas per-invocation Cloudflare yang TIDAK relevan di sini,
-// tapi kita tetap ikuti angkanya (kirim count>5 percuma, tetap diclamp jadi 5)
-// dan cukup panggil ulang berkali-kali (MAX_ROUNDS) utk dapat total lebih besar.
-const COUNT_PER_ROUND = 5;
+// PERBAIKAN: sebelumnya di sini SELALU kirim count=5 tiap panggilan -- itu
+// bikin field "Artikel per proses cron" (per_run) & "Artikel per proses situs
+// sendiri" (site_per_run) di Konfigurasi Lanjutan (panel) JADI TIDAK PERNAH
+// DIPAKAI lagi (opts.count di botNewsRun SELALU menang atas cfg.per_run/
+// cfg.site_per_run kalau diisi -- lihat botNewsRun: "countOverride ||
+// cfg.per_run"). Sekarang count SENGAJA TIDAK dikirim sama sekali -> botNewsRun
+// otomatis pakai per_run/site_per_run PERSIS seperti yang pemilik atur di
+// panel (dan di sini TIDAK ada limit MAX_RUN_COUNT=5 lagi krn limit itu cuma
+// aktif kalau count eksplisit dikirim -- di GitHub Actions boleh berapa pun
+// besarnya, tidak ada limit subrequest Cloudflare yang perlu dijaga).
 const MAX_ROUNDS = Number(process.env.MAX_ROUNDS || 12);
 
 async function runBlogger(): Promise<number> {
 	let total = 0;
 	for (let i = 1; i <= MAX_ROUNDS; i++) {
-		const r = await botNewsRun(env, { force: true, count: COUNT_PER_ROUND, mode: "blogger" });
+		const r = await botNewsRun(env, { force: true, mode: "blogger" });
 		console.log(`[blogger ${i}/${MAX_ROUNDS}] posted=${r.posted} capped=${r.capped} :: ${r.message}`);
 		total += r.posted;
 		// capped = daily_cap Blogger tercapai (bukan error) -> lanjut ke loop situs.
@@ -41,7 +46,7 @@ async function runBlogger(): Promise<number> {
 async function runSite(): Promise<number> {
 	let total = 0;
 	for (let i = 1; i <= MAX_ROUNDS; i++) {
-		const r = await botNewsRun(env, { force: true, count: COUNT_PER_ROUND, mode: "site" });
+		const r = await botNewsRun(env, { force: true, mode: "site" });
 		console.log(`[situs ${i}/${MAX_ROUNDS}] siteOnly=${r.siteOnly} :: ${r.message}`);
 		total += r.siteOnly;
 		if (r.siteOnly === 0) break;

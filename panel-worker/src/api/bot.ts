@@ -102,6 +102,59 @@ export async function botNewsRunSiteNow(env: Env, token: string, count?: number)
 	return { success: true, ...r, snapshot: await botNewsSnapshot(env) };
 }
 
+// Repo TEMPAT workflow news-turbo.yml hidup -- SENGAJA di-hardcode terpisah
+// dari env.GH_REPO (itu punya repo scraper LAIN, daygroup-scraper, dipakai
+// fitur LAP ADMIN di lap.ts, bukan repo panel ini).
+const NEWS_TURBO_REPO = "projectbykd-jpg/Day-Group-Panel";
+
+/**
+ * Tombol "PROSES BANYAK VIA GITHUB" -- alternatif dari botNewsRunNow/
+ * botNewsRunSiteNow di atas yang DIBATASI KETAT (maks 5 artikel/klik) karena
+ * jalan sebagai 1 invocation Cloudflare sinkron (limit 50 subrequest/invocation,
+ * tombol biasa gampang kena "Too many subrequests" kalau pilih banyak artikel
+ * sekaligus). Di sini TIDAK memproses artikel sama sekali dari Worker --
+ * cuma memicu workflow GitHub Actions "news-turbo.yml" (lihat
+ * .github/workflows/news-turbo.yml) yang jalan di server GitHub sendiri,
+ * TANPA limit subrequest itu sama sekali (mekanisme SAMA PERSIS dgn yang
+ * sudah otomatis jalan tiap 10 menit) -- hasilnya (posting Blogger + Situs
+ * Sendiri) masuk sendiri ke database dalam 1-2 menit, tidak instan spt tombol
+ * lain, tapi bisa memproses SELURUH antrean 'new' dalam sekali klik.
+ */
+export async function botNewsRunViaGithub(env: Env, token: string) {
+	const s = await gate(env, token);
+	if (!env.GH_TOKEN) {
+		throw new Error("GitHub Actions belum dikonfigurasi (secret GH_TOKEN). Hubungi admin.");
+	}
+	const resp = await fetch(`https://api.github.com/repos/${NEWS_TURBO_REPO}/actions/workflows/news-turbo.yml/dispatches`, {
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${env.GH_TOKEN}`,
+			Accept: "application/vnd.github+json",
+			"User-Agent": "daygroup-panel",
+			"X-GitHub-Api-Version": "2022-11-28",
+		},
+		body: JSON.stringify({ ref: "main" }),
+	});
+	if (resp.status !== 204) {
+		const body = await resp.text();
+		let hint = "";
+		if (resp.status === 404) hint = " -- workflow news-turbo.yml belum ke-push ke repo Day-Group-Panel, atau GH_TOKEN tidak punya akses ke repo ini.";
+		else if (resp.status === 403) hint = " -- GH_TOKEN kurang izin (butuh scope 'Actions: Read and write' utk repo Day-Group-Panel).";
+		let detail = "";
+		try {
+			detail = " [" + (JSON.parse(body).message || "") + "]";
+		} catch {
+			/* body bukan JSON, abaikan */
+		}
+		throw new Error(`Gagal memicu GitHub Actions (HTTP ${resp.status})${hint}${detail}`);
+	}
+	await logActivity(env, s.username, "BOT NEWS RUN (GitHub)", "Memicu workflow news-turbo.yml secara manual", "BERHASIL", "");
+	return {
+		success: true,
+		message: "Dipicu! Buka tab Actions di GitHub buat lihat progress -- hasilnya (posting Blogger + Situs Sendiri) otomatis masuk ke dashboard ini dalam 1-2 menit, klik REFRESH nanti.",
+	};
+}
+
 export async function botFbRunNow(env: Env, token: string) {
 	const s = await gate(env, token);
 	const r = await fbDirectProcessOne(env);

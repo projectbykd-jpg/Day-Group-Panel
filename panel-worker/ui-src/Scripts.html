@@ -4354,4 +4354,14 @@ Tindakan ini tidak dapat dibatalkan.`,
         showActionPopup('ERROR', 'Proses Gagal', (e&&e.message)||String(e), 'fa-triangle-exclamation');
       }).botNewsRunSiteNow(currentSessionToken, count);
     }
+    function botNewsRunGithub(){
+      showActionPopup('LOADING', 'Memicu GitHub Actions', 'Menjalankan workflow news-turbo.yml -- proses SELURUH antrean (Blogger + Situs Sendiri) tanpa batas subrequest Cloudflare, hasilnya masuk 1-2 menit lagi...', 'fa-brands fa-github');
+      google.script.run.withSuccessHandler(r=>{
+        closeActionPopup();
+        toast((r&&r.message)||'Dipicu! Cek dashboard beberapa menit lagi.');
+        loadBotNews();
+      }).withFailureHandler(e=>{
+        showActionPopup('ERROR', 'Gagal Memicu', (e&&e.message)||String(e), 'fa-triangle-exclamation');
+      }).botNewsRunViaGithub(currentSessionToken);
+    }
   </script>
