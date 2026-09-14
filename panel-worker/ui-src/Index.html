@@ -742,17 +742,20 @@
           <div class="glass-card rounded-[2rem] p-6 flex flex-col gap-5">
             <div class="flex items-center justify-between gap-3 flex-wrap">
               <div class="panel-section-title"><i class="fa-solid fa-gauge-high text-emerald-400 text-sm"></i> RINGKASAN</div>
-              <div class="flex items-center gap-2">
-                <select id="botRunCount" class="glass-inner rounded-xl px-3 py-2.5 text-slate-100 text-xs font-bold">
-                  <option value="1" class="bg-slate-900">1 artikel</option>
-                  <option value="2" class="bg-slate-900">2 artikel</option>
-                  <option value="3" class="bg-slate-900">3 artikel</option>
-                  <option value="5" class="bg-slate-900">5 artikel</option>
-                </select>
-                <button onclick="botNewsRun()" class="btn-primary text-xs font-bold px-4 py-2.5 rounded-xl" title="Cuma jalur Blogger, tidak menyentuh situs sendiri"><i class="fa-solid fa-bolt mr-1"></i>PROSES KE BLOGGER</button>
-                <button onclick="botNewsRunSite()" class="bg-gradient-to-r from-emerald-400 to-teal-500 text-slate-950 text-xs font-bold px-4 py-2.5 rounded-xl" title="Cuma jalur situs sendiri, tidak pernah posting ke Blogger"><i class="fa-solid fa-globe mr-1"></i>PROSES KE SITUS SENDIRI</button>
-                <button onclick="botNewsRunGithub()" class="bg-gradient-to-r from-purple-400 to-fuchsia-500 text-slate-950 text-xs font-bold px-4 py-2.5 rounded-xl" title="Proses SELURUH antrean (Blogger + Situs Sendiri) lewat GitHub Actions -- tidak kena limit 'Too many subrequests', tapi hasilnya baru masuk 1-2 menit kemudian (tidak instan), pakai pengaturan Artikel/Proses & Batas Harian di Konfigurasi Lanjutan"><i class="fa-brands fa-github mr-1"></i>PROSES BANYAK VIA GITHUB</button>
+              <div class="flex items-center gap-2 flex-wrap">
+                <input id="botRunCount" type="number" min="1" placeholder="Semua" class="glass-inner rounded-xl px-3 py-2.5 text-slate-100 text-xs font-bold w-20" title="Jumlah artikel Blogger + Situs Sendiri (masing-masing) untuk run ini saja. Kosongkan = pakai 'Artikel per proses' di Konfigurasi Lanjutan & jalan sampai antrean habis.">
+                <button onclick="botNewsRunGithub()" class="bg-gradient-to-r from-purple-400 to-fuchsia-500 text-slate-950 text-xs font-bold px-4 py-2.5 rounded-xl" title="Proses antrean (Blogger + Situs Sendiri) lewat GitHub Actions -- tidak kena limit 'Too many subrequests'. Hasilnya masuk 1-2 menit kemudian, bukan instan -- tinggal tunggu, progress kelihatan di bawah."><i class="fa-brands fa-github mr-1"></i>PROSES VIA GITHUB</button>
                 <button onclick="loadBotNews()" class="btn-secondary text-xs font-bold px-4 py-2.5 rounded-xl"><i class="fa-solid fa-rotate mr-1"></i>REFRESH</button>
+              </div>
+            </div>
+
+            <div id="botGithubProgress" class="mini-card hidden">
+              <div class="flex items-center justify-between gap-3 text-xs mb-2 flex-wrap">
+                <span id="botGithubProgressLabel" class="font-bold text-slate-200"><i class="fa-brands fa-github mr-1.5"></i>Menunggu GitHub Actions...</span>
+                <a id="botGithubProgressLink" href="#" target="_blank" class="text-fuchsia-300 hover:underline text-[11px] font-semibold">Lihat di GitHub &rarr;</a>
+              </div>
+              <div class="w-full h-2 rounded-full bg-white/5 overflow-hidden">
+                <div id="botGithubProgressBar" class="h-full rounded-full bg-gradient-to-r from-purple-400 to-fuchsia-500 transition-all duration-700" style="width:8%"></div>
               </div>
             </div>
 

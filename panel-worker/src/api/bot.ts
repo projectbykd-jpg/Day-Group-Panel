@@ -120,20 +120,25 @@ const NEWS_TURBO_REPO = "projectbykd-jpg/Day-Group-Panel";
  * Sendiri) masuk sendiri ke database dalam 1-2 menit, tidak instan spt tombol
  * lain, tapi bisa memproses SELURUH antrean 'new' dalam sekali klik.
  */
-export async function botNewsRunViaGithub(env: Env, token: string) {
+const GH_HEADERS = (token: string) => ({
+	Authorization: `Bearer ${token}`,
+	Accept: "application/vnd.github+json",
+	"User-Agent": "daygroup-panel",
+	"X-GitHub-Api-Version": "2022-11-28",
+});
+
+export async function botNewsRunViaGithub(env: Env, token: string, count?: number) {
 	const s = await gate(env, token);
 	if (!env.GH_TOKEN) {
 		throw new Error("GitHub Actions belum dikonfigurasi (secret GH_TOKEN). Hubungi admin.");
 	}
+	// count kosong/0 = kosongkan input di panel = ikuti Artikel/Proses di
+	// Konfigurasi Lanjutan & jalan sampai antrean habis (lihat gh-turbo-run.ts).
+	const n = count && count > 0 ? Math.floor(count) : 0;
 	const resp = await fetch(`https://api.github.com/repos/${NEWS_TURBO_REPO}/actions/workflows/news-turbo.yml/dispatches`, {
 		method: "POST",
-		headers: {
-			Authorization: `Bearer ${env.GH_TOKEN}`,
-			Accept: "application/vnd.github+json",
-			"User-Agent": "daygroup-panel",
-			"X-GitHub-Api-Version": "2022-11-28",
-		},
-		body: JSON.stringify({ ref: "main" }),
+		headers: GH_HEADERS(env.GH_TOKEN),
+		body: JSON.stringify({ ref: "main", inputs: n ? { count: String(n) } : {} }),
 	});
 	if (resp.status !== 204) {
 		const body = await resp.text();
@@ -148,10 +153,48 @@ export async function botNewsRunViaGithub(env: Env, token: string) {
 		}
 		throw new Error(`Gagal memicu GitHub Actions (HTTP ${resp.status})${hint}${detail}`);
 	}
-	await logActivity(env, s.username, "BOT NEWS RUN (GitHub)", "Memicu workflow news-turbo.yml secara manual", "BERHASIL", "");
+	await logActivity(env, s.username, "BOT NEWS RUN (GitHub)", `Memicu workflow news-turbo.yml secara manual${n ? ` (custom ${n} artikel)` : ""}`, "BERHASIL", "");
 	return {
 		success: true,
-		message: "Dipicu! Buka tab Actions di GitHub buat lihat progress -- hasilnya (posting Blogger + Situs Sendiri) otomatis masuk ke dashboard ini dalam 1-2 menit, klik REFRESH nanti.",
+		message: n
+			? `Dipicu! Target ${n} artikel (Blogger + Situs Sendiri). Hasilnya masuk 1-2 menit lagi, klik REFRESH nanti.`
+			: "Dipicu! Proses SELURUH antrean sesuai pengaturan Konfigurasi Lanjutan. Hasilnya masuk 1-2 menit lagi, klik REFRESH nanti.",
+	};
+}
+
+/**
+ * Dipoll dari dashboard (tiap beberapa detik) setelah tombol GitHub diklik --
+ * biar kelihatan progress-nya (queued/in_progress/completed) tanpa perlu
+ * bolak-balik buka tab GitHub. Ambil run TERBARU dari workflow news-turbo.yml
+ * (baik yang dipicu tombol ini MAUPUN jadwal otomatis tiap 10 menit -- sengaja
+ * sama-sama ditampilkan, biar dashboard selalu mencerminkan status run yang
+ * paling baru apa pun pemicunya).
+ */
+export async function botNewsGithubRunStatus(env: Env, token: string) {
+	await gate(env, token);
+	if (!env.GH_TOKEN) {
+		throw new Error("GitHub Actions belum dikonfigurasi (secret GH_TOKEN). Hubungi admin.");
+	}
+	const resp = await fetch(`https://api.github.com/repos/${NEWS_TURBO_REPO}/actions/workflows/news-turbo.yml/runs?per_page=1`, {
+		headers: GH_HEADERS(env.GH_TOKEN),
+	});
+	if (!resp.ok) {
+		throw new Error(`Gagal ambil status GitHub Actions (HTTP ${resp.status}).`);
+	}
+	const body = (await resp.json()) as any;
+	const run = Array.isArray(body?.workflow_runs) ? body.workflow_runs[0] : null;
+	if (!run) return { success: true, run: null };
+	return {
+		success: true,
+		run: {
+			id: run.id,
+			status: String(run.status || ""), // queued | in_progress | completed
+			conclusion: String(run.conclusion || ""), // success | failure | cancelled | ... (cuma valid kalau status=completed)
+			htmlUrl: String(run.html_url || ""),
+			createdAt: String(run.created_at || ""),
+			updatedAt: String(run.updated_at || ""),
+			runNumber: Number(run.run_number || 0),
+		},
 	};
 }
 

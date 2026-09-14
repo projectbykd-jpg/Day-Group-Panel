@@ -4311,6 +4311,10 @@ Tindakan ini tidak dapat dibatalkan.`,
 
     function loadBotNews(){
       google.script.run.withSuccessHandler(applyBotNews).withFailureHandler(e=>toast('BOT: '+((e&&e.message)||e))).botNewsStatus(currentSessionToken);
+      // Cek sekali status run GitHub Actions TERBARU (termasuk yang jalan
+      // otomatis tiap 10 menit, bukan cuma yang dipicu tombol) -- kalau lagi
+      // in_progress/queued, otomatis lanjut poll sampai selesai.
+      if (typeof botGithubPollStatus === 'function') botGithubPollStatus();
     }
     function saveBotNewsConfig(){
       const g=id=>{const el=document.getElementById(id);return !el?'':(el.type==='checkbox'?(el.checked?'1':'0'):String(el.value||'').trim());};
@@ -4328,40 +4332,67 @@ Tindakan ini tidak dapat dibatalkan.`,
     function toggleBotSource(id,active){ google.script.run.withSuccessHandler(applyBotNews).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsToggleSource(currentSessionToken,{id:id,active:String(active)}); }
     function deleteBotSource(id){ if(!confirm('Hapus sumber ini?'))return; google.script.run.withSuccessHandler(applyBotNews).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsDeleteSource(currentSessionToken,{id:id}); }
     function skipBotArticle(id){ google.script.run.withSuccessHandler(applyBotNews).withFailureHandler(e=>toast('Gagal: '+((e&&e.message)||e))).botNewsSkip(currentSessionToken,{id:id}); }
-    function botNewsRun(){
-      const countEl = document.getElementById('botRunCount');
-      const count = countEl ? Number(countEl.value || 1) : 1;
-      showActionPopup('LOADING', 'Memproses Berita', `Menulis ulang & posting ${count} artikel ke Blogger...`, 'fa-robot');
-      google.script.run.withSuccessHandler(r=>{
-        closeActionPopup();
-        if (r && r.message) toast(r.message);
-        else toast('Tidak ada artikel baru untuk diproses');
-        if(r&&r.snapshot) applyBotNews(r.snapshot); else loadBotNews();
-      }).withFailureHandler(e=>{
-        showActionPopup('ERROR', 'Proses Gagal', (e&&e.message)||String(e), 'fa-triangle-exclamation');
-      }).botNewsRunNow(currentSessionToken, count);
+    // Tombol lama "PROSES KE BLOGGER"/"PROSES KE SITUS SENDIRI" (sinkron,
+    // dibatasi maks 5 artikel/klik krn limit Cloudflare) sudah dihapus dari
+    // UI -- satu-satunya jalur manual sekarang lewat GitHub (botNewsRunGithub
+    // di bawah), tidak kena limit itu sama sekali.
+    var botGithubPollTimer = null;
+    function botGithubProgressShow(label, pct){
+      var box = document.getElementById('botGithubProgress');
+      var bar = document.getElementById('botGithubProgressBar');
+      var lbl = document.getElementById('botGithubProgressLabel');
+      if(!box||!bar||!lbl) return;
+      box.classList.remove('hidden');
+      bar.style.width = pct+'%';
+      lbl.innerHTML = '<i class="fa-brands fa-github mr-1.5"></i>'+label;
     }
-    function botNewsRunSite(){
-      const countEl = document.getElementById('botRunCount');
-      const count = countEl ? Number(countEl.value || 1) : 1;
-      showActionPopup('LOADING', 'Memproses Berita', `Menulis ulang & memuat ${count} artikel ke situs sendiri (tanpa Blogger)...`, 'fa-globe');
-      google.script.run.withSuccessHandler(r=>{
-        closeActionPopup();
-        if (r && r.message) toast(r.message);
-        else toast('Tidak ada artikel baru untuk diproses');
-        if(r&&r.snapshot) applyBotNews(r.snapshot); else loadBotNews();
-      }).withFailureHandler(e=>{
-        showActionPopup('ERROR', 'Proses Gagal', (e&&e.message)||String(e), 'fa-triangle-exclamation');
-      }).botNewsRunSiteNow(currentSessionToken, count);
+    function botGithubProgressLink(url){
+      var a = document.getElementById('botGithubProgressLink');
+      if(a) a.href = url || '#';
+    }
+    function botGithubProgressHideSoon(){
+      setTimeout(function(){
+        var box = document.getElementById('botGithubProgress');
+        if(box) box.classList.add('hidden');
+      }, 6000);
+    }
+    // Poll status run TERBARU workflow news-turbo.yml tiap 4 detik, sampai
+    // selesai (completed) atau 5 menit berlalu (batas aman -- jangan poll
+    // selamanya kalau ada yang aneh). Dipakai baik setelah klik tombol
+    // MAUPUN otomatis sekali tiap buka Dashboard (lihat loadBotNews), biar
+    // kelihatan juga status run OTOMATIS tiap 10 menit tanpa perlu diklik.
+    function botGithubPollStatus(maxMs){
+      if(botGithubPollTimer){ clearTimeout(botGithubPollTimer); botGithubPollTimer=null; }
+      var deadline = Date.now() + (maxMs || 5*60*1000);
+      function tick(){
+        google.script.run.withSuccessHandler(function(r){
+          var run = r && r.run;
+          if(!run){ return; } // belum pernah ada run sama sekali -- diam saja
+          botGithubProgressLink(run.htmlUrl);
+          if(run.status === 'completed'){
+            var ok = run.conclusion === 'success';
+            botGithubProgressShow((ok?'Selesai (run #'+run.runNumber+')':'Gagal (run #'+run.runNumber+', cek log GitHub)'), 100);
+            if(ok) loadBotNews(); else toast('Run GitHub Actions terakhir gagal -- cek tab Actions di GitHub.');
+            botGithubProgressHideSoon();
+            return; // berhenti poll, sudah selesai
+          }
+          botGithubProgressShow(run.status==='queued' ? 'Antre di GitHub...' : 'Sedang diproses di GitHub...', run.status==='queued'?20:65);
+          if(Date.now() < deadline){ botGithubPollTimer = setTimeout(tick, 4000); }
+        }).withFailureHandler(function(){ /* diam -- jangan ganggu dashboard cuma krn polling gagal sesekali */ }).botNewsGithubRunStatus(currentSessionToken);
+      }
+      tick();
     }
     function botNewsRunGithub(){
-      showActionPopup('LOADING', 'Memicu GitHub Actions', 'Menjalankan workflow news-turbo.yml -- proses SELURUH antrean (Blogger + Situs Sendiri) tanpa batas subrequest Cloudflare, hasilnya masuk 1-2 menit lagi...', 'fa-brands fa-github');
+      const countEl = document.getElementById('botRunCount');
+      const count = countEl && countEl.value ? Number(countEl.value) : 0;
+      showActionPopup('LOADING', 'Memicu GitHub Actions', (count?('Target '+count+' artikel'):'Proses sesuai pengaturan Konfigurasi Lanjutan')+' -- tidak kena limit subrequest Cloudflare, hasilnya masuk 1-2 menit lagi...', 'fa-brands fa-github');
       google.script.run.withSuccessHandler(r=>{
         closeActionPopup();
-        toast((r&&r.message)||'Dipicu! Cek dashboard beberapa menit lagi.');
-        loadBotNews();
+        toast((r&&r.message)||'Dipicu! Cek progress di bawah.');
+        botGithubProgressShow('Dipicu, menunggu GitHub mulai...', 8);
+        botGithubPollStatus();
       }).withFailureHandler(e=>{
         showActionPopup('ERROR', 'Gagal Memicu', (e&&e.message)||String(e), 'fa-triangle-exclamation');
-      }).botNewsRunViaGithub(currentSessionToken);
+      }).botNewsRunViaGithub(currentSessionToken, count);
     }
   </script>
