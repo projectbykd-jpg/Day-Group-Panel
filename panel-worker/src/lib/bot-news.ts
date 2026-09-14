@@ -299,9 +299,14 @@ interface Rewritten {
 }
 
 export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: { title: string; excerpt: string; source: string; url: string }): Promise<Rewritten> {
-	const key = cfg.gemini_key;
+	// Boleh lebih dari 1 API key (dipisah koma/baris baru) -- tiap key Gemini
+	// free-tier punya jatah kuota SENDIRI, jadi makin banyak key = makin besar
+	// kuota gabungan & makin jarang kena rate-limit/RESOURCE_EXHAUSTED. Kunci
+	// PERTAMA tetap prioritas utama (coba semua model dulu), key cadangan
+	// baru dipakai kalau key pertama benar-benar habis di semua model.
+	const keys = String(cfg.gemini_key || "").split(/[,\n]+/).map((s) => s.trim()).filter(Boolean);
 	const model = cfg.gemini_model || "gemini-3-flash-preview";
-	if (!key) throw new Error("gemini_key belum diisi di konfigurasi BOT.");
+	if (!keys.length) throw new Error("gemini_key belum diisi di konfigurasi BOT.");
 	const style = cfg.rewrite_style || "Tulis ulang jadi artikel berbahasa Indonesia yang mengalir, gaya jurnalistik ringan, tapi tetap menarik dan enak dibaca -- bukan kaku/datar seperti siaran pers.";
 	const pMin = Math.max(1, Number(cfg.para_min || "8"));
 	const pMax = Math.max(pMin, Number(cfg.para_max || "14"));
@@ -340,13 +345,20 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 	// Cloudflare; loop lama (sampai 2 attempt x 4 model = 8 fetch) ikut andil bikin
 	// invocation kena "Too many subrequests" (limit 50/invocation Free plan).
 	const models = [...new Set([model, "gemini-3-flash-preview", "gemini-flash-latest", "gemini-flash-lite-latest"])];
+	// Susun daftar percobaan (key, model): key PERTAMA coba SEMUA model (fallback
+	// demand-tinggi/503 spt sebelumnya), key CADANGAN cuma 1x percobaan tiap key
+	// pakai model utama saja (fallback KUOTA/rate-limit habis) -- supaya total
+	// fetch tetap terbatas (models.length + (keys.length-1)) walau key-nya banyak,
+	// tidak ikut membengkakkan subrequest per artikel kalau key pertama sehat.
+	const attempts: { key: string; model: string }[] = models.map((mdl) => ({ key: keys[0], model: mdl }));
+	for (let i = 1; i < keys.length; i++) attempts.push({ key: keys[i], model });
 	let j: any = null;
 	let lastErr = "";
-	for (const mdl of models) {
+	for (const at of attempts) {
 		// thinkingConfig cuma didukung sebagian model (mis. gemini-3-flash-preview).
 		// gemini-flash-lite-latest & sebagian lain balas 400 INVALID_ARGUMENT kalau
 		// field ini disertakan -> kirim HANYA utk model yg namanya mengandung "3".
-		const supportsThinking = /gemini-3/i.test(mdl);
+		const supportsThinking = /gemini-3/i.test(at.model);
 		const generationConfig: Record<string, unknown> = {
 			temperature: 0.85,
 			maxOutputTokens: 8192,
@@ -354,10 +366,10 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 		};
 		if (supportsThinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
 		const r = await fetch(
-			`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(mdl)}:generateContent`,
+			`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(at.model)}:generateContent`,
 			{
 				method: "POST",
-				headers: { "Content-Type": "application/json", "X-goog-api-key": key },
+				headers: { "Content-Type": "application/json", "X-goog-api-key": at.key },
 				body: JSON.stringify({
 					contents: [{ parts: [{ text: prompt }] }],
 					generationConfig,
@@ -376,7 +388,7 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 				? "finishReason=" + body.candidates[0].finishReason
 				: JSON.stringify(body?.error || body).slice(0, 200));
 	}
-	if (!j) throw new Error("Gemini gagal semua model: " + lastErr);
+	if (!j) throw new Error(`Gemini gagal semua model/key (${attempts.length} percobaan): ` + lastErr);
 	let text: string = j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "";
 	text = text.replace(/^﻿/, "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 
