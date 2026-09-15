@@ -117,6 +117,9 @@
               <button onclick="switchPage('lap-motion')" id="nav-lap-motion" class="nav-extra sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer">
                 <i class="fa-solid fa-bolt-lightning text-indigo-400 text-sm shrink-0"></i><span class="tracking-wider">Lap Motion</span>
               </button>
+              <button onclick="switchPage('pga-pending')" id="nav-pga-pending" class="nav-extra sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer">
+                <i class="fa-solid fa-tower-broadcast text-rose-400 text-sm shrink-0"></i><span class="tracking-wider">PGA Pending</span>
+              </button>
               <button onclick="switchPage('lap-mozart')" id="nav-lap-mozart" class="nav-extra sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer">
                 <i class="fa-solid fa-cubes-stacked text-emerald-400 text-sm shrink-0"></i><span class="tracking-wider">Lap Mozart</span>
               </button>
@@ -717,6 +720,9 @@
 
       <!-- VIEW: LAPORAN HARIAN (placeholder — modul di-port dari PANEL AUTO) -->
       <div id="lap-page" style="display:none" class="flex flex-col gap-5 fade-in"></div>
+
+      <!-- VIEW: PGA PENDING (sinkron live dari skrip Console di tab Motion) -->
+      <div id="pga-pending-page" style="display:none" class="flex flex-col gap-5 fade-in"></div>
 
       <!-- VIEW: BOT (role BOT — fitur NEWS: berita -> rewrite AI -> posting Blogger) -->
       <div id="bot-page" style="display:none" class="flex flex-col gap-5 fade-in">

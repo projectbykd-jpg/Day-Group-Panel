@@ -45,6 +45,7 @@ import {
 } from "./api/invest";
 import { investPump, investPumpUser } from "./lib/invest-scan";
 import { investGetState } from "./lib/invest";
+import { pgaPendingStatus, pgaPendingSync } from "./api/pga-pending";
 import {
 	lapAdminStatus,
 	lapGetConfig,
@@ -160,6 +161,10 @@ const ROUTES: Record<string, Handler> = {
 	investResetScan: (env, b) => investResetScan(env, s(b.token)),
 	investGetStatus: (env, b) => investGetStatus(env, s(b.token)),
 	investGetWarnings: (env, b) => investGetWarnings(env, s(b.token)),
+
+	// pga pending -- lihat src/lib/pga-pending.ts
+	pgaPendingSync: (env, b) => pgaPendingSync(env, s(b.token), b.rows),
+	pgaPendingStatus: (env, b) => pgaPendingStatus(env, s(b.token)),
 
 	// laporan harian
 	lapGetConfig: (env, b) => lapGetConfig(env, s(b.token)),

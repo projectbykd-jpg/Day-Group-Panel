@@ -60,6 +60,8 @@ const ARG_MAP = {
 	investResetScan: ["token"],
 	investGetStatus: ["token"],
 	investGetWarnings: ["token"],
+	pgaPendingSync: ["token", "rows"],
+	pgaPendingStatus: ["token"],
 	lapGetConfig: ["token"],
 	lapSaveConfig: ["token", "data"],
 	lapRunMozart: ["token", "startDate", "endDate", "opts"],
