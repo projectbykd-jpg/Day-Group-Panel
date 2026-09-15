@@ -1306,24 +1306,29 @@
       const code = pgaPendingConsoleScript();
       const escCode = c => c.replace(/[&<>]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[ch]));
       host.innerHTML = lapHeaderCard('fa-tower-broadcast', 'PGA Pending', 'Live sync withdraw berstatus PGA Pending dari motionv2.com/withdraw-request.', `
-        <div class="glass-inner rounded-2xl p-4 border border-rose-500/20 text-[11px] text-slate-300 leading-relaxed">
-          <div class="font-bold text-rose-300 mb-1"><i class="fa-solid fa-satellite-dish mr-1"></i>Cara pakai</div>
-          List ini TIDAK ditarik server (Motion sering menolak trafik server/WAF) — dibaca LANGSUNG dari tabel WD Request oleh skrip yang jalan di tab Motion, tiap 2 detik, selama tab itu terbuka. Baris yang sudah hilang dari WD Request otomatis hilang dari sini juga dalam hitungan detik.
-          <ol class="list-decimal ml-4 mt-1.5 space-y-1">
-            <li>Buka tab <b>Motion</b> (motionv2.com) → menu <b>WD REQUEST</b>, pastikan sudah login.</li>
-            <li>Klik <b>Salin Skrip</b> di bawah.</li>
-            <li>Tekan <b>F12</b> → tab <b>Console</b> (pertama kali Chrome minta ketik <code>allow pasting</code> dulu lalu Enter).</li>
-            <li>Tempel (Ctrl+V) → <b>Enter</b>. Biarkan tab Motion itu TETAP TERBUKA (boleh dikecilkan, jangan ditutup).</li>
-            <li>Balik ke sini — List di bawah update sendiri tiap 2 detik.</li>
-          </ol>
-          <div class="flex flex-wrap gap-2 mt-3">
-            <button onclick="pgaPendingCopyScript()" class="bg-gradient-to-r from-rose-400 to-orange-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs"><i class="fa-regular fa-copy mr-1"></i>Salin Skrip</button>
-            <button onclick="document.getElementById('pgaPendingCodeWrap').hidden=!document.getElementById('pgaPendingCodeWrap').hidden" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-solid fa-code mr-1"></i>Lihat Skrip</button>
+        <details class="glass-inner rounded-2xl border border-rose-500/20 text-[11px] text-slate-300 leading-relaxed pga-collapse" open>
+          <summary class="p-4 flex items-center gap-2 cursor-pointer select-none">
+            <span class="font-bold text-rose-300 flex-1"><i class="fa-solid fa-satellite-dish mr-1"></i>Cara pakai</span>
+            <i class="fa-solid fa-chevron-down pga-collapse-caret"></i>
+          </summary>
+          <div class="px-4 pb-4 -mt-1">
+            List ini TIDAK ditarik server (Motion sering menolak trafik server/WAF) — dibaca LANGSUNG dari tabel WD Request oleh skrip yang jalan di tab Motion, tiap 2 detik, selama tab itu terbuka. Baris yang sudah hilang dari WD Request otomatis hilang dari sini juga dalam hitungan detik.
+            <ol class="list-decimal ml-4 mt-1.5 space-y-1">
+              <li>Buka tab <b>Motion</b> (motionv2.com) → menu <b>WD REQUEST</b>, pastikan sudah login.</li>
+              <li>Klik <b>Salin Skrip</b> di bawah.</li>
+              <li>Tekan <b>F12</b> → tab <b>Console</b> (pertama kali Chrome minta ketik <code>allow pasting</code> dulu lalu Enter).</li>
+              <li>Tempel (Ctrl+V) → <b>Enter</b>. Biarkan tab Motion itu TETAP TERBUKA (boleh dikecilkan, jangan ditutup).</li>
+              <li>Balik ke sini — List di bawah update sendiri tiap 2 detik.</li>
+            </ol>
+            <div class="flex flex-wrap gap-2 mt-3">
+              <button onclick="pgaPendingCopyScript()" class="bg-gradient-to-r from-rose-400 to-orange-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs"><i class="fa-regular fa-copy mr-1"></i>Salin Skrip</button>
+              <button onclick="document.getElementById('pgaPendingCodeWrap').hidden=!document.getElementById('pgaPendingCodeWrap').hidden" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-solid fa-code mr-1"></i>Lihat Skrip</button>
+            </div>
+            <div id="pgaPendingCodeWrap" hidden class="mt-2">
+              <textarea id="pgaPendingCode" readonly onclick="this.select()" class="w-full h-32 glass-inner rounded-xl p-2 text-[10px] font-mono text-slate-200 leading-tight">${escCode(code)}</textarea>
+            </div>
           </div>
-          <div id="pgaPendingCodeWrap" hidden class="mt-2">
-            <textarea id="pgaPendingCode" readonly onclick="this.select()" class="w-full h-32 glass-inner rounded-xl p-2 text-[10px] font-mono text-slate-200 leading-tight">${escCode(code)}</textarea>
-          </div>
-        </div>
+        </details>
         <div class="flex items-center justify-between flex-wrap gap-2 mt-1">
           <span class="text-[11px] font-bold text-slate-300">Baris aktif: <span id="pgaPendingLiveCount" class="text-rose-400">${pgaPendingRows.length}</span></span>
           <div id="pgaPendingUpdatedAt" class="text-[10px] text-slate-500">Memuat…</div>

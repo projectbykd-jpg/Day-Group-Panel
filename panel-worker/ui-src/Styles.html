@@ -1893,6 +1893,12 @@
     #invest-page .invest-scan-dots span:nth-child(3) { animation-delay: .3s; }
     @keyframes investDot { 0%,100% { opacity: .25; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-3px); } }
 
+    /* "Cara pakai" PGA Pending -- bisa disembunyikan (<details>) */
+    details.pga-collapse > summary { list-style: none; }
+    details.pga-collapse > summary::-webkit-details-marker { display: none; }
+    .pga-collapse-caret { color: #94a3b8; font-size: 11px; transition: transform .2s ease; }
+    details.pga-collapse[open] .pga-collapse-caret { transform: rotate(180deg); }
+
     /* Kartu setting yang bisa disembunyikan (<details>) */
     #invest-page details.invest-collapse { padding: 0; overflow: hidden; }
     #invest-page details.invest-collapse > summary {
