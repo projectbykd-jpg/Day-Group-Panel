@@ -1124,6 +1124,13 @@ export async function newsProcessOne(
 				`\n<p style="font-size:12px;color:#888;margin-top:16px">Kata kunci terkait: ${escHtml(rw.keywords.join(", "))}</p>`;
 		}
 
+		// Hashtag brand -- SELALU disisipkan di SETIAP artikel (tidak digate
+		// postToBlogger) sama seperti promo/Baca-juga di atas, karena `content`
+		// yang sama ini dipakai baik utk postingan Blogger MAUPUN yang tayang di
+		// situs sendiri (Berita Terkini) -- jadi 1 baris ini otomatis ikut
+		// tampil di kedua tempat tanpa perlu ubah apa pun di frontend.
+		content += `\n<p style="font-size:12px;color:#888;margin-top:8px">#LapakStore88</p>`;
+
 		// Feed Google News (dipakai Kompas/Tribunnews) tidak menyertakan gambar
 		// sama sekali -> post-nya tampil tanpa thumbnail di daftar Blogger. Kalau
 		// image_url kosong, coba ambil <meta og:image> dari halaman artikel asli
