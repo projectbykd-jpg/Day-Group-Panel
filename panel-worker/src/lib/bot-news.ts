@@ -839,7 +839,7 @@ export async function fbDirectProcessOne(env: Env): Promise<{ done: boolean; tit
 
 // Hashtag "evergreen" biar postingan gampang ketemu orang yang lagi cari/scroll berita,
 // dipasang tetap di tiap template supaya jangkauan konsisten walau AI-nya kadang pelit hashtag.
-const FB_TEMPLATE_EVERGREEN_HASHTAGS = ["#BeritaTerkini", "#BeritaHariIni", "#InfoTerkini", "#BeritaViral", "#BeritaUpdate"];
+const FB_TEMPLATE_EVERGREEN_HASHTAGS = ["#LapakStore88", "#BeritaTerkini", "#BeritaHariIni", "#InfoTerkini", "#BeritaViral", "#BeritaUpdate"];
 
 /** Caption + hashtag utk template manual — link ditambahkan terpisah di bawah (bukan oleh AI). */
 async function geminiFbTemplateCaption(
