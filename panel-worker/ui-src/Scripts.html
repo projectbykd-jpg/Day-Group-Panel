@@ -588,7 +588,7 @@
 
       if (page !== 'invest') stopInvestPolling();
       if (page !== 'lap-admin') clearTimeout(lapAdminPollTimer);
-      if (page !== 'pga-pending') stopPgaPendingPolling();
+      if (page !== 'pga-pending') { stopPgaPendingPolling(); if (wdListedTimer) { clearInterval(wdListedTimer); wdListedTimer = null; } }
 
       // "home" adalah halaman paling sering diklik (default landing) -- skip log di sini
       // biar tidak nambah beban lock/tulis sheet tiap kali orang balik ke Beranda.
@@ -1203,6 +1203,11 @@
     let pgaPendingRows = [];
     let pgaPendingUpdatedAt = 0;
     let pgaPendingTimer = null;
+    // WD LISTED -- checklist manual (dari PGA Pending yang dicentang+COPY),
+    // PERSISTEN di Turso (lihat src/lib/wd-listed.ts), tampil lintas operator
+    // berdasarkan WEBSITE yang sama, bukan cuma yang menambahkan.
+    let wdListedRows = [];
+    let wdListedTimer = null;
 
     function pgaPendingConsoleScript() {
       const panel = location.origin;
@@ -1388,9 +1393,81 @@
             r => `<tr>${td(r.website)}${td(r.idTrans,'text-[10px]')}${td(r.tanggal)}${td(r.idUser,'font-bold text-cyan-300')}${td('Rp '+lapFmt(r.jumlah),'text-right text-emerald-400')}${td(r.statusText,'text-[10px] text-rose-300')}${td(r.pgaRefNo,'text-[10px]')}${td(r.vendorName,'text-amber-300')}</tr>`,
             r => [r.vendorName, r.website, r.idTrans, r.tanggal, r.idUser, 'Rp '+lapFmt(r.jumlah), r.statusText, r.pgaRefNo, 'Pending'].join('\t'),
             ['website','idTrans','idUser','pgaRefNo','vendorName'], {title:'PGA Pending', open:true, checkable:true})}
+        </div>
+        <div class="mt-1">
+          <div id="wdListedTableWrap">
+            ${lapTable('wd_listed', ['WEBSITE','ID TRANS','TANGGAL','ID USER','JUMLAH','PGA REF NO','VENDOR','CEK TERAKHIR','ACTION'], wdListedRows,
+              r => `<tr>${td(r.website)}${td(r.idTrans,'text-[10px]')}${td(r.tanggal)}${td(r.idUser,'font-bold text-cyan-300')}${td('Rp '+lapFmt(r.jumlah),'text-right text-emerald-400')}${td(`<a href="https://dbb2b.q2checkout.com/struk/disbursement/${encodeURIComponent(r.pgaRefNo)}" target="_blank" rel="noopener" class="text-[10px] underline decoration-dotted">${r.pgaRefNo}</a>`)}${td(r.vendorName,'text-amber-300')}${td(r.checkStatus?(`<span class="${wdListedStatusClass(r.checkStatus)}">${r.checkStatus}</span>${r.checkDate?`<div class="text-[9px] text-slate-500 mt-0.5">${r.checkDate}</div>`:''}`):'<span class="text-slate-600">—</span>')}${td(`<div class="flex items-center gap-1.5"><button onclick="wdListedCheckClick(${r.id},this)" class="lap-pg-btn !w-auto px-2" title="Cek status terbaru"><i class="fa-solid fa-rotate"></i> CEK</button><button onclick="wdListedDeleteClick(${r.id})" class="lap-pg-btn !w-auto px-2 text-rose-400" title="Hapus dari list"><i class="fa-solid fa-xmark"></i></button></div>`)}</tr>`,
+              r => [r.vendorName, r.website, r.idTrans, r.tanggal, r.idUser, 'Rp '+lapFmt(r.jumlah), r.checkStatus||r.statusText, r.pgaRefNo, r.checkStatus||'Pending'].join('\t'),
+              ['website','idTrans','idUser','pgaRefNo','vendorName'], {title:'WD Listed', open:true})}
+          </div>
         </div>`);
       lapTblMountAll();
       pgaPendingRepaint();
+      // Checklist+COPY di tabel PGA Pending SEKALIGUS mendaftarkan baris yang
+      // dicentang ke WD Listed -- tombol COPY bawaan lapTable tidak diubah
+      // (tabel lain yang pakai checkable nanti tidak ikut kepengaruh), cuma
+      // "disambar" khusus di sini supaya tetap menyalin ke clipboard SAMA
+      // seperti biasa, plus kirim ke wdListedSync kalau memang ada centangan.
+      const origPgaCopy = window['__lapCopy_pga_pending'];
+      window['__lapCopy_pga_pending'] = (ev) => {
+        const st = lapTblState['pga_pending'];
+        if (st && st.checkable && st.selected.size) {
+          const list = lapTblFiltered('pga_pending').filter((r,i) => st.selected.has(st.copyFn(r,i)));
+          if (list.length) wdListedSyncRows(list);
+        }
+        origPgaCopy(ev);
+      };
+      loadWdListed();
+      wdListedTimer && clearInterval(wdListedTimer);
+      wdListedTimer = setInterval(loadWdListed, 8000);
+    }
+    function wdListedStatusClass(status) {
+      const s = String(status||'').toLowerCase();
+      if (s.indexOf('success') >= 0 || s.indexOf('sukses') >= 0 || s.indexOf('paid') >= 0) return 'text-emerald-400 font-bold';
+      if (s.indexOf('fail') >= 0 || s.indexOf('gagal') >= 0 || s.indexOf('reject') >= 0) return 'text-rose-400 font-bold';
+      return 'text-amber-400 font-bold';
+    }
+    function wdListedSyncRows(rows) {
+      google.script.run.withSuccessHandler(res => {
+        if (res && res.success) { toast((res.added||0) + ' baris masuk ke WD Listed'); loadWdListed(); }
+      }).withFailureHandler(() => {}).wdListedSync(currentSessionToken, rows);
+    }
+    function loadWdListed() {
+      google.script.run.withSuccessHandler(res => {
+        if (!res || !res.success) return;
+        wdListedRows = res.rows || [];
+        if (lapTblState['wd_listed']) { lapTblState['wd_listed'].rows = wdListedRows; lapTblRepaint('wd_listed'); }
+      }).withFailureHandler(() => {}).wdListedGetList(currentSessionToken);
+    }
+    function wdListedCheckClick(id, btn) {
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; }
+      google.script.run.withSuccessHandler(res => {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-rotate"></i> CEK'; }
+        if (!res || !res.success) { toast('Gagal cek status: ' + ((res && res.message) || '?')); return; }
+        const idx = wdListedRows.findIndex(r => r.id === res.row.id);
+        if (idx >= 0) wdListedRows[idx] = res.row;
+        if (lapTblState['wd_listed']) { lapTblState['wd_listed'].rows = wdListedRows; lapTblRepaint('wd_listed'); }
+        toast('Status: ' + res.row.checkStatus);
+      }).withFailureHandler(e => {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-rotate"></i> CEK'; }
+        toast('Gagal cek status: ' + ((e && e.message) || e));
+      }).wdListedCheck(currentSessionToken, id);
+    }
+    async function wdListedDeleteClick(id) {
+      const approved = await confirmCenter({
+        type: 'danger',
+        title: 'Hapus dari WD Listed?',
+        message: 'Baris ini akan dihapus dari daftar WD Listed untuk semua operator website ini.',
+        confirmText: 'YA, HAPUS'
+      });
+      if (!approved) return;
+      google.script.run.withSuccessHandler(res => {
+        if (!res || !res.success) { toast('Gagal menghapus.'); return; }
+        wdListedRows = wdListedRows.filter(r => r.id !== id);
+        if (lapTblState['wd_listed']) { lapTblState['wd_listed'].rows = wdListedRows; lapTblRepaint('wd_listed'); }
+        toast('Baris dihapus dari WD Listed');
+      }).withFailureHandler(e => toast('Gagal menghapus: ' + ((e && e.message) || e))).wdListedRemove(currentSessionToken, id);
     }
 
     function lapRenderMotion(host) {

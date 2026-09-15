@@ -46,6 +46,7 @@ import {
 import { investPump, investPumpUser } from "./lib/invest-scan";
 import { investGetState } from "./lib/invest";
 import { pgaPendingStatus, pgaPendingSync } from "./api/pga-pending";
+import { wdListedCheck, wdListedGetList, wdListedRemove, wdListedSync } from "./api/wd-listed";
 import {
 	lapAdminStatus,
 	lapGetConfig,
@@ -165,6 +166,12 @@ const ROUTES: Record<string, Handler> = {
 	// pga pending -- lihat src/lib/pga-pending.ts
 	pgaPendingSync: (env, b) => pgaPendingSync(env, s(b.token), b.rows),
 	pgaPendingStatus: (env, b) => pgaPendingStatus(env, s(b.token)),
+
+	// wd listed -- lihat src/lib/wd-listed.ts
+	wdListedSync: (env, b) => wdListedSync(env, s(b.token), b.rows),
+	wdListedGetList: (env, b) => wdListedGetList(env, s(b.token)),
+	wdListedCheck: (env, b) => wdListedCheck(env, s(b.token), Number(b.id)),
+	wdListedRemove: (env, b) => wdListedRemove(env, s(b.token), Number(b.id)),
 
 	// laporan harian
 	lapGetConfig: (env, b) => lapGetConfig(env, s(b.token)),
