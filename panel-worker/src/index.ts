@@ -44,6 +44,7 @@ import {
 	investTestSession,
 } from "./api/invest";
 import { investPump, investPumpUser } from "./lib/invest-scan";
+import { investGetState } from "./lib/invest";
 import {
 	lapAdminStatus,
 	lapGetConfig,
@@ -445,6 +446,26 @@ export default {
 				if (job === "invest" || job === "all") {
 					await investPump(env);
 					out.invest = "pumped";
+				}
+				// Job KHUSUS 1 user -- dipanggil BERULANG-ULANG dari GitHub Actions
+				// (invest-turbo.yml, dipicu tombol MULAI/LANJUTKAN SCAN di panel) selama
+				// scan user itu masih 'running'. Beda dari job=invest di atas (yang mompa
+				// SEMUA user sekaligus dgn jatah waktu terbagi) -- di sini 1 user dapat
+				// jatah PENUH (mendekati budget asli investPumpUser) tiap panggilan, jadi
+				// throughput-nya jauh lebih cepat drpd nunggu cron */1 menit bawaan
+				// Cloudflare gantian. TETAP lewat investPumpUser (bukan investScanUser
+				// langsung) supaya lock per-user (env.SESS) yang sama dipakai -- jadi
+				// tidak race sama sekali dgn cron Cloudflare/live-polling yang mungkin
+				// masih jalan bersamaan buat user yang sama.
+				if (job === "investuser") {
+					const qUser = (url.searchParams.get("user") || "").trim();
+					if (!qUser) {
+						out.ok = false;
+						out.error = "Query 'user' wajib diisi buat job=investuser.";
+					} else {
+						await investPumpUser(env, qUser);
+						out.invest = await investGetState(env, qUser);
+					}
 				}
 				if (job === "news" || job === "all") {
 					// mode/count OPSIONAL (dari query string) -- dipakai kalau cron
