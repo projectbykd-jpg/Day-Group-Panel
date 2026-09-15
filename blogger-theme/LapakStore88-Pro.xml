@@ -4118,7 +4118,7 @@ h1,h2,h3,h4,h5,h6,.post-title,.post-title a,.widget-title,.section-title h2,.sec
 #top-bar::-webkit-scrollbar{display:none}
 #top-bar .container{display:flex;align-items:center;flex-wrap:nowrap;width:max-content;min-width:100%;padding:10px 20px}
 .top-bar-social{display:none !important}
-.top-bar-nav{float:none !important}
+.top-bar-nav{float:none !important;display:block !important}
 .top-bar-nav ul{display:flex;flex-wrap:nowrap;gap:8px}
 .top-bar-nav ul li{float:none !important}
 .top-bar-nav ul li>a{height:auto !important;line-height:1.2 !important;margin:0 !important;padding:8px 15px !important;border-radius:999px;background:rgba(255,255,255,.03);border:1px solid rgba(148,163,184,.14);white-space:nowrap;font-weight:700 !important;font-size:11px !important;text-transform:uppercase;letter-spacing:.03em}
@@ -4230,6 +4230,11 @@ a.view-all:hover{background:linear-gradient(135deg,#fde047,#f59e0b) !important;c
 #breadcrumb a{color:#91a0b5}
 #breadcrumb a:hover{color:#f0a91e}
 #breadcrumb .current{color:#dbe4f0}
+/* Di HP, judul lengkap di breadcrumb DOBEL sama <h1> persis di bawahnya
+   (buang-buang tinggi layar HP yang sempit) -- sembunyikan span .current di
+   layar kecil, sisakan "Beranda > Kategori" saja (masih ada di DOM/schema
+   JSON-LD utk SEO, cuma disembunyikan visual). */
+@media (max-width:680px){#breadcrumb .current{display:none}#breadcrumb .delimiter:last-of-type{display:none}}
 
 /* Halaman artikel tunggal */
 .item-post-wrap,.post-body,.entry-content{color:#dbe4f0 !important}
