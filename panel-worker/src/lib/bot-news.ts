@@ -40,7 +40,7 @@ function newsCategoryLabel(cat: string): string {
 // biasa tetap sukses. Perlakukan sbg transient jg spy artikel ini dicoba lagi
 // (bukan macet error selamanya), bukan dianggap semua provider mati total.
 const TRANSIENT_ERROR_RE =
-	/location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED|resource has been exhausted|user-?Rate ?Limit|too many subrequests|failed to generate json|json_validate_failed|terlalu pendek|"code":\s*429/i;
+	/location is not supported|rateLimitExceeded|RESOURCE_EXHAUSTED|resource has been exhausted|user-?Rate ?Limit|too many subrequests|failed to generate json|json_validate_failed|terlalu pendek|judul nyaris sama persis|"code":\s*429/i;
 
 // Kolom category ditambahkan belakangan -- migrasi malas (lazy), sama seperti
 // fb_template_caption di bawah: dicoba sekali per cold-start isolate, aman
@@ -361,8 +361,12 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 		`(jangan mengarang kategori lain di luar daftar): ${NEWS_CATEGORIES.join(", ")}. ` +
 		`Sertakan juga "keywords": array berisi 5-8 kata kunci/frasa pendek berbahasa Indonesia yang RELEVAN dengan topik artikel ` +
 		`ini dan SERING dicari orang di Google (search term populer terkait topiknya, bukan kalimat lengkap) -- untuk SEO. ` +
+		`Sertakan juga "title": JUDUL BARU -- WAJIB ditulis ulang dgn susunan kata & struktur kalimat yang BEDA dari JUDUL ASLI ` +
+		`di bawah (bukan cuma ganti 1-2 kata atau tukar posisi kata), tetap akurat & merangkum inti berita yang sama, TIDAK ` +
+		`clickbait/menyesatkan, panjang wajar buat judul berita (bukan kalimat lengkap super panjang). Kalau JUDUL ASLI ` +
+		`disalin/nyaris disalin mentah, itu SALAH -- judul harus benar-benar hasil tulisan ulangmu sendiri, sama seperti isi artikelnya. ` +
 		`Balas HANYA JSON valid tanpa markdown: {"title": "...", "meta_description": "...", "category": "...", "keywords": ["...", "..."], "body_html": "<p>...</p><p>...</p>"}.\n\n` +
-		`JUDUL ASLI: ${art.title}\n` +
+		`JUDUL ASLI (JANGAN disalin, tulis ulang beda): ${art.title}\n` +
 		`RINGKASAN: ${art.excerpt || "(tidak ada, tulis ringkas dari judul saja)"}\n` +
 		`SUMBER: ${art.source}`;
 	// Coba SEMUA groq_key dulu (Groq = provider UTAMA sekarang). Balik "" kalau
@@ -586,6 +590,26 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 	const MIN_WORDS = 120; // ~1-2 paragraf pendek jauh di bawah ini -- jelas bukan artikel 8-14 paragraf
 	if (plainWordCount < MIN_WORDS) {
 		throw new Error(`AI balas artikel terlalu pendek (${plainWordCount} kata, target ${paraTarget} paragraf) -- kemungkinan model yang dipakai kualitasnya rendah/salah/tidak ikuti instruksi.`);
+	}
+	// PERBAIKAN: judul hasil AI kadang nyaris disalin mentah dari judul asli
+	// (cuma tukar 1-2 kata) walau sudah diminta ditulis ulang di prompt --
+	// AI kadang tidak patuh instruksi. Cek kemiripan kata (bukan exact match
+	// saja, biar nangkep parafrase tipis juga) -- kalau terlalu mirip, tolak &
+	// coba lagi (retryable), sama seperti validasi panjang body di atas.
+	if (title) {
+		const normWords = (s: string) =>
+			s
+				.toLowerCase()
+				.replace(/[^\p{L}\p{N}\s]/gu, " ")
+				.split(/\s+/)
+				.filter(Boolean);
+		const aiWords = new Set(normWords(title));
+		const origWords = new Set(normWords(art.title));
+		const overlap = [...aiWords].filter((w) => origWords.has(w)).length;
+		const similarity = overlap / Math.max(1, Math.min(aiWords.size, origWords.size));
+		if (aiWords.size >= 3 && similarity >= 0.85) {
+			throw new Error(`AI balas judul nyaris sama persis dgn judul asli (mirip ${Math.round(similarity * 100)}%) -- harus ditulis ulang, bukan disalin/parafrase tipis.`);
+		}
 	}
 	if (!title) title = art.title;
 	if (!metaDescription) {
@@ -1385,7 +1409,8 @@ async function recoverStuckProcessing(env: Env): Promise<number> {
 				`error LIKE '%model_not_found%' OR error LIKE '%does not exist or you do not have access%' OR ` +
 				`error LIKE '%decommissioned%' OR error LIKE '%blocked at the project level%' OR ` +
 				`error LIKE '%Failed to generate JSON%' OR error LIKE '%json_validate_failed%' OR ` +
-				`error LIKE '%Resource has been exhausted%' OR error LIKE '%"code":429%')`,
+				`error LIKE '%Resource has been exhausted%' OR error LIKE '%"code":429%' OR ` +
+				`error LIKE '%judul nyaris sama persis%')`,
 		)
 		.run();
 	return r.meta.changes + r2.meta.changes;
