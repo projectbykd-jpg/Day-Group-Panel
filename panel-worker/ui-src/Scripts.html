@@ -1145,9 +1145,9 @@
     // sini juga. motionv2.com KADANG menolak trafik server (WAF, sama seperti
     // Lap Motion) -- jadi TIDAK ditarik dari Worker, tapi DIBACA LANGSUNG dari
     // tabel yang sudah dirender di layar oleh skrip Console yang jalan di tab
-    // Motion (bukan lewat API-nya sama sekali), setiap 5 detik selama tab itu
+    // Motion (bukan lewat API-nya sama sekali), setiap 2 detik selama tab itu
     // terbuka, lalu didorong (POST) ke panel. Panel di sini cuma poll snapshot
-    // terakhir tiap 5 detik juga -- lihat src/lib/pga-pending.ts untuk kenapa
+    // terakhir tiap 2 detik juga -- lihat src/lib/pga-pending.ts untuk kenapa
     // disimpan di KV dgn TTL pendek (bukan Turso): biar baris yang berhenti
     // disinkron otomatis basi & hilang sendiri tanpa job pembersih terpisah.
     let pgaPendingRows = [];
@@ -1162,58 +1162,58 @@
         + "  if(!/motionv2/i.test(O)){alert('Buka skrip ini di TAB MOTION (motionv2.com), bukan di sini.');return;}\n"
         + "  if(window.__pgaPendingTimer){clearInterval(window.__pgaPendingTimer);console.log('%cPGA Pending: skrip lama dihentikan, mulai ulang.','color:#ff0');}\n"
         + "  const norm=s=>String(s||'').replace(/\\s+/g,' ').trim();\n"
-        // Halaman WD Request BUKAN <table> HTML -- ketahuan dari inspeksi live:
-        // dibangun dari <div> MUI (Material-UI), tiap "baris" adalah 1 kotak div
-        // yang teksnya gabungan LABEL+NILAI berurutan persis seperti yang
-        // dirender ("WEBSITE HUGOTOGEL ID TRANS. 1059169660 TANGGAL ... STATUS
-        // G PGA PGA Pending PGA Ref No: xxx Vendor Name: yyy"). Jadi diambil
-        // per BADGE "PGA Pending" (leaf, tanpa anak), lalu naik ke ELEMEN
-        // TERDEKAT yang teksnya sudah memuat WEBSITE+JUMLAH+STATUS sekaligus
-        // (itu = 1 baris utuh) -- bukan patokan level/kelas CSS tetap (kelas
-        // MUI seperti css-194jsvx acak per build, tidak boleh di-hardcode),
-        // lalu nilai tiap kolom diambil dengan memotong teks ANTARA dua label
-        // yang berurutan. Filter "PGA Pending" pada badge itu sendiri yang
-        // otomatis menyingkirkan baris Riwayat Withdraw Terakhir (isinya
-        // "Approved", bukan badge ini).
-        + "  function findRow(badge){\n"
-        + "    let p=badge;\n"
-        + "    for(let i=0;i<20&&p;i++){\n"
-        + "      const t=norm(p.innerText||p.textContent);\n"
-        + "      if(t.indexOf('WEBSITE')>=0&&t.indexOf('JUMLAH')>=0&&t.indexOf('STATUS')>=0)return p;\n"
-        + "      p=p.parentElement;\n"
-        + "    }\n"
-        + "    return null;\n"
-        + "  }\n"
-        + "  function between(text,startLabel,endLabel){\n"
-        + "    const si=text.indexOf(startLabel); if(si<0)return '';\n"
-        + "    const from=si+startLabel.length;\n"
-        + "    const ei=endLabel?text.indexOf(endLabel,from):-1;\n"
-        + "    let val=ei>=0?text.slice(from,ei):text.slice(from);\n"
-        + "    return norm(val.replace(/^[\\s.:]+/,''));\n"
-        + "  }\n"
+        // Halaman WD Request BUKAN <table> HTML -- dibangun dari <div> MUI, dan
+        // (ketahuan dari testing user) punya DUA representasi teks per baris
+        // (mis. varian ringkas utk breakpoint sempit) yang SAMA-SAMA ikut
+        // kebaca di .innerText/.textContent baris, bikin ekstraksi berbasis
+        // "potong teks antar label" (versi sebelumnya) kacau -- label & nilai
+        // bisa duplikat/beda urutan. Jadi PINDAH ke ekstraksi POSISIONAL yg
+        // tidak peduli itu: kolom STATUS ditemukan dulu (anak langsung baris
+        // yang MEMUAT badge "PGA Pending" itu sendiri, dicek via .contains --
+        // bukan cocokkan teks), lalu WEBSITE/ID TRANS/TANGGAL/ID USER/JUMLAH
+        // diambil RELATIF terhadap posisi kolom STATUS itu (mundur 7,6,5,4,1
+        // kolom) -- urutan 8 kolom [WEBSITE, ID TRANS, TANGGAL, ID USER, NAMA
+        // REKENING, NO. REKENING, JUMLAH, STATUS] SELALU berurutan spt itu di
+        // DOM (dikonfirmasi dari console.log user), jadi tidak peduli ada
+        // berapa kolom lain (checkbox dsb) sebelum WEBSITE -- itu yg bikin
+        // pendekatan ini kebal thd checkbox/kolom tambahan yang mungkin
+        // muncul/hilang tergantung breakpoint. "Grabbed PGA PGA Pending 000"
+        // adalah TEKS TETAP (konvensi log internal pemilik), BUKAN dibaca dari
+        // Motion -- dikonfirmasi dari isi kolom Status di Google Sheet log
+        // yang sudah ada, semua baris (vendor/website apapun) sama persis.
         + "  function scan(){\n"
-        + "    const found=[]; const seen=new Set();\n"
+        + "    const found=[]; const seenStatus=new Set();\n"
         + "    const badges=Array.prototype.filter.call(document.querySelectorAll('body *'),el=>el.children.length===0&&/PGA Pending/i.test(el.textContent||''));\n"
         + "    badges.forEach(badge=>{\n"
-        + "      const row=findRow(badge); if(!row||seen.has(row))return; seen.add(row);\n"
-        + "      const text=norm(row.innerText||row.textContent);\n"
-        + "      const idTransRaw=between(text,'ID TRANS','TANGGAL');\n"
-        + "      const statusFull=between(text,'STATUS',null);\n"
+        // Naik dari badge: begitu ketemu langkah di mana PARENT node saat ini
+        // punya >=8 anak sekaligus, parent itu = "row" (baris data, minimal 8
+        // kolom: WEBSITE..STATUS, biasanya 10 dgn checkbox+ACTION), dan node
+        // (anak langsung row yg dilewati barusan) = kolom STATUS. Murni hitung
+        // jumlah anak, TIDAK baca teks sama sekali -- kebal thd duplikasi teks
+        // responsive yang bikin pendekatan berbasis label kacau sebelumnya.
+        + "      let node=badge, statusCell=null, row=null;\n"
+        + "      for(let i=0;i<20&&node&&node.parentElement;i++){\n"
+        + "        const parent=node.parentElement;\n"
+        + "        if(parent.children.length>=8){statusCell=node;row=parent;break;}\n"
+        + "        node=parent;\n"
+        + "      }\n"
+        + "      if(!row||!statusCell||seenStatus.has(statusCell))return; seenStatus.add(statusCell);\n"
+        + "      const cells=Array.from(row.children);\n"
+        + "      const statusIdx=cells.indexOf(statusCell);\n"
+        + "      if(statusIdx<7)return;\n"
+        + "      const cellText=c=>c?norm(c.innerText||c.textContent):'';\n"
+        + "      const statusFull=cellText(statusCell);\n"
         + "      const refM=statusFull.match(/PGA Ref No:?\\s*(\\S+)/i);\n"
         + "      const vendM=statusFull.match(/Vendor Name:?\\s*([^]*)$/i);\n"
-        // Amankan Vendor Name supaya tidak ikut menelan teks tombol aksi
-        // (REJECT/CHECK TRANS/NOTE/dst) kalau ternyata teksnya ikut kebawa
-        // dalam innerText baris yang sama.
-        + "      const vendorName=(vendM?norm(vendM[1]):'').replace(/\\b(REJECT|CHECK TRANS|NOTE|UNLOCK|SEND PGA|ALLOW GRAB)\\b[^]*$/i,'').trim();\n"
         + "      found.push({\n"
-        + "        website: between(text,'WEBSITE','ID TRANS'),\n"
-        + "        idTrans: idTransRaw,\n"
-        + "        tanggal: between(text,'TANGGAL','ID USER'),\n"
-        + "        idUser: between(text,'ID USER','NAMA REKENING')||between(text,'ID USER','JUMLAH'),\n"
-        + "        jumlah: parseInt(between(text,'JUMLAH','STATUS').replace(/[^0-9]/g,''),10)||0,\n"
-        + "        statusText: statusFull.replace(/PGA Ref No:[^]*$/i,'').trim(),\n"
+        + "        website: cellText(cells[statusIdx-7]),\n"
+        + "        idTrans: cellText(cells[statusIdx-6]),\n"
+        + "        tanggal: cellText(cells[statusIdx-5]),\n"
+        + "        idUser: cellText(cells[statusIdx-4]),\n"
+        + "        jumlah: parseInt(cellText(cells[statusIdx-1]).replace(/[^0-9]/g,''),10)||0,\n"
+        + "        statusText: 'Grabbed PGA PGA Pending 000',\n"
         + "        pgaRefNo: refM?refM[1]:'',\n"
-        + "        vendorName: vendorName,\n"
+        + "        vendorName: vendM?norm(vendM[1]):'',\n"
         + "      });\n"
         + "    });\n"
         + "    return found;\n"
@@ -1222,13 +1222,16 @@
         + "    try{\n"
         + "      const rows=scan();\n"
         + "      document.title='['+rows.length+' PGA Pending] MOTION';\n"
+        // console.table setiap tick -- kalau masih ada kolom yg salah/kosong,
+        // KELIHATAN LANGSUNG di Console tanpa perlu diagnosa terpisah lagi.
+        + "      if(rows.length)console.table(rows);\n"
         + "      await fetch(PANEL+'/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'pgaPendingSync',token:TOKEN,rows:rows})});\n"
         + "    }catch(e){console.log('PGA Pending: sync gagal -- ',(e&&e.message)||e);}\n"
         + "  }\n"
-        + "  console.log('%cPGA Pending: mulai sinkron tiap 5 detik. Biarkan tab ini TETAP TERBUKA di halaman WD Request.','color:#0f0;font-weight:bold');\n"
+        + "  console.log('%cPGA Pending: mulai sinkron tiap 2 detik. Biarkan tab ini TETAP TERBUKA di halaman WD Request.','color:#0f0;font-weight:bold');\n"
         + "  tick();\n"
-        + "  window.__pgaPendingTimer=setInterval(tick,5000);\n"
-        + "  alert('PGA Pending: sinkron otomatis jalan tiap 5 detik selama tab ini tetap terbuka di halaman WD Request.\\n\\nBuka panel -> menu PGA Pending.');\n"
+        + "  window.__pgaPendingTimer=setInterval(tick,2000);\n"
+        + "  alert('PGA Pending: sinkron otomatis jalan tiap 2 detik selama tab ini tetap terbuka di halaman WD Request.\\n\\nBuka panel -> menu PGA Pending.');\n"
         + "})();";
     }
     function pgaPendingCopyScript() {
@@ -1246,7 +1249,7 @@
     function startPgaPendingPolling() {
       stopPgaPendingPolling();
       pollPgaPendingStatus();
-      pgaPendingTimer = setInterval(pollPgaPendingStatus, 5000);
+      pgaPendingTimer = setInterval(pollPgaPendingStatus, 2000);
     }
     function pollPgaPendingStatus() {
       google.script.run.withSuccessHandler(res => {
@@ -1280,13 +1283,13 @@
       host.innerHTML = lapHeaderCard('fa-tower-broadcast', 'PGA Pending', 'Live sync withdraw berstatus PGA Pending dari motionv2.com/withdraw-request.', `
         <div class="glass-inner rounded-2xl p-4 border border-rose-500/20 text-[11px] text-slate-300 leading-relaxed">
           <div class="font-bold text-rose-300 mb-1"><i class="fa-solid fa-satellite-dish mr-1"></i>Cara pakai</div>
-          List ini TIDAK ditarik server (Motion sering menolak trafik server/WAF) — dibaca LANGSUNG dari tabel WD Request oleh skrip yang jalan di tab Motion, tiap 5 detik, selama tab itu terbuka. Baris yang sudah hilang dari WD Request otomatis hilang dari sini juga dalam hitungan detik.
+          List ini TIDAK ditarik server (Motion sering menolak trafik server/WAF) — dibaca LANGSUNG dari tabel WD Request oleh skrip yang jalan di tab Motion, tiap 2 detik, selama tab itu terbuka. Baris yang sudah hilang dari WD Request otomatis hilang dari sini juga dalam hitungan detik.
           <ol class="list-decimal ml-4 mt-1.5 space-y-1">
             <li>Buka tab <b>Motion</b> (motionv2.com) → menu <b>WD REQUEST</b>, pastikan sudah login.</li>
             <li>Klik <b>Salin Skrip</b> di bawah.</li>
             <li>Tekan <b>F12</b> → tab <b>Console</b> (pertama kali Chrome minta ketik <code>allow pasting</code> dulu lalu Enter).</li>
             <li>Tempel (Ctrl+V) → <b>Enter</b>. Biarkan tab Motion itu TETAP TERBUKA (boleh dikecilkan, jangan ditutup).</li>
-            <li>Balik ke sini — List di bawah update sendiri tiap 5 detik.</li>
+            <li>Balik ke sini — List di bawah update sendiri tiap 2 detik.</li>
           </ol>
           <div class="flex flex-wrap gap-2 mt-3">
             <button onclick="pgaPendingCopyScript()" class="bg-gradient-to-r from-rose-400 to-orange-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs"><i class="fa-regular fa-copy mr-1"></i>Salin Skrip</button>
