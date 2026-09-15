@@ -6,14 +6,18 @@ name: BOT NEWS turbo (bypass limit Cloudflare)
 # TAMBAHAN, bukan pengganti: Cron Trigger Cloudflare & cron eksternal
 # (cron-job.org) yang sudah ada tetap jalan seperti biasa sbg jaring pengaman.
 on:
-  schedule:
-    # Tiap 5 menit -- granularitas TERKECIL yang GitHub izinkan. Interval
-    # POSTING SEBENARNYA diatur dari panel (Setting > Interval auto-post),
-    # bukan dari angka cron ini -- gh-turbo-run.ts cek sendiri apakah sudah
-    # waktunya (lihat "PACING" di file itu) dan lewati tick ini kalau belum.
-    # GitHub Actions cron sering telat beberapa menit di jam sibuk (di luar
-    # kendali kita) -- itu normal, bukan tanda error.
-    - cron: "*/5 * * * *"
+  # SENGAJA TIDAK pakai `schedule:` bawaan GitHub di sini lagi -- jadwal itu
+  # dulu jalan BERSAMAAN dgn pemicu eksternal (cron-job.org -> /__cron?job=
+  # githubnews -> dispatchNewsTurbo -> workflow_dispatch), jadi workflow ini
+  # kepicu 2x lebih sering dari niatnya (kadang cuma berjarak 1 menit, lihat
+  # riwayat run). Tiap tick yang lolos PACING (lihat gh-turbo-run.ts) tetap
+  # bikin request baru ke Blogger API (refresh OAuth + create post) -- dobel
+  # pemicu ini yang bikin kuota harian Blogger API kepakai jauh lebih cepat
+  # drpd perkiraan & akhirnya kena 429 "Resource has been exhausted" berjam²
+  # nyangkut. `schedule:` GitHub sendiri sudah lama diketahui tidak reliable
+  # (lihat commit 53cbbbc) -- jadi cabut yang ini, biarkan HANYA jalur
+  # eksternal (cron-job.org) yang memicu otomatis, workflow_dispatch manual
+  # (tombol panel) tetap jalan seperti biasa di bawah.
   workflow_dispatch: # tombol "Run workflow" manual di tab Actions, JUGA dipicu tombol panel
     inputs:
       count:
