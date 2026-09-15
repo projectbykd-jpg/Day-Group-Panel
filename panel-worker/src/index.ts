@@ -263,6 +263,11 @@ export default {
 				}
 				return json(out);
 			} catch (e) {
+				// Dicatat ke wrangler tail supaya error non-fatal (mis. validasi
+				// gagal) tetap kelihatan pesan aslinya tanpa perlu reproduce manual --
+				// dulu tidak ada log sama sekali di sini, jadi 500 apapun (termasuk
+				// yang cuma "Sesi tidak valid") tidak bisa dibedakan dari tail biasa.
+				console.error("API error [" + action + "]", e instanceof Error ? e.message : e);
 				return json({ success: false, message: e instanceof Error ? e.message : String(e) }, 500);
 			}
 		}

@@ -5,12 +5,20 @@
 // halamannya sendiri, jadi datanya didorong DARI browser asli, bukan ditarik
 // server -- lihat pgaPendingConsoleScript di Scripts.html).
 //
-// Disimpan di KV (env.SESS), BUKAN Turso -- sengaja: kalau skrip Console
-// berhenti (tab ditutup / dipause), baris yang sudah tidak dikonfirmasi lagi
-// HARUS otomatis hilang dari panel dalam hitungan detik ("kalau sudah hilang
-// jangan tampil lagi di List"). TTL KV pas buat itu tanpa job pembersih
-// terpisah -- tiap sync menimpa TOTAL snapshot (bukan merge), jadi baris yang
-// sudah tidak ada di kiriman terbaru otomatis tersapu juga tanpa menunggu TTL.
+// PERNAH disimpan di KV (env.SESS) -- SALAH, jangan diulang: sync tiap 2
+// detik = ribuan tulisan/jam, jauh melebihi jatah gratis Cloudflare KV
+// (1000 put()/hari PER AKUN, bukan per fitur), jadi bukan cuma PGA Pending
+// yang berhenti tapi SEMUA fitur lain yang nulis KV ikut error "limit
+// exceeded" (sesi login dll, sama-sama pakai env.SESS). Pindah ke Turso
+// (satu baris per user, di-UPSERT) -- jatah tulisnya jauh lebih longgar dan
+// memang sudah dipakai fitur lain yang sering ditulis (invest_state dll).
+//
+// "Hilang dalam hitungan detik" begitu skrip/tab berhenti TETAP terpenuhi
+// tanpa TTL: pgaPendingLoad menganggap baris BASI (balas kosong) kalau
+// updated_at sudah lebih tua dari STALE_MS, walau baris di database-nya
+// sendiri belum dihapus (baris lama ditimpa otomatis oleh sync berikutnya
+// kalau skrip jalan lagi, jadi tidak perlu job pembersih terpisah).
+import { getTurso } from "./turso";
 
 export interface PgaPendingRow {
 	website: string;
@@ -28,18 +36,11 @@ export interface PgaPendingSnapshot {
 	updatedAt: number;
 }
 
-// Interval sinkron skrip Console = 5 detik. TTL KV Cloudflare PUNYA MINIMUM 60
-// DETIK (nilai di bawah itu ditolak -- pernah salah diset 20 & bikin SETIAP
-// pgaPendingSync gagal dgn 500, jangan diulang) -- jadi TTL ini cuma jaring
-// pengaman kalau skrip/tab berhenti TOTAL (baru basi maks 60 detik kemudian).
-// "Hilang dalam hitungan detik" yang diminta pemilik tetap terpenuhi lewat
-// jalur UTAMA: tiap sync MENIMPA TOTAL snapshot (bukan merge), jadi baris yang
-// sudah tidak ada di kiriman terbaru (selesai diproses di sisi Motion) hilang
-// dalam <=5 detik TANPA menunggu TTL sama sekali.
-const TTL_SECONDS = 60;
-const MAX_ROWS = 200; // batas wajar -- skrip yang bertingkah tidak boleh menulis blob raksasa ke KV
-
-const key = (user: string) => "pga_pending:" + user;
+const MAX_ROWS = 200; // batas wajar -- skrip yang bertingkah tidak boleh menulis blob raksasa
+// Interval sinkron skrip Console = 2 detik. Basi kalau sudah 10x lipat itu
+// tanpa sync baru (tab ditutup/di-pause) -- cukup toleran thd 1-2 sinkron yg
+// telat (jaringan admin sendat) tanpa List berkedip kosong.
+const STALE_MS = 20000;
 
 function cleanRow(r: Record<string, unknown>): PgaPendingRow {
 	return {
@@ -54,19 +55,47 @@ function cleanRow(r: Record<string, unknown>): PgaPendingRow {
 	};
 }
 
+let ensured = false;
+async function ensureTable(env: Env): Promise<void> {
+	if (ensured) return;
+	await getTurso(env)
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS pga_pending_state (
+				username TEXT PRIMARY KEY,
+				rows_json TEXT NOT NULL,
+				updated_at INTEGER NOT NULL
+			)`,
+		)
+		.run();
+	ensured = true;
+}
+
 export async function pgaPendingSave(env: Env, user: string, rows: Record<string, unknown>[]): Promise<PgaPendingSnapshot> {
+	await ensureTable(env);
 	const clean = rows.slice(0, MAX_ROWS).map(cleanRow);
 	const snap: PgaPendingSnapshot = { rows: clean, updatedAt: Date.now() };
-	await env.SESS.put(key(user), JSON.stringify(snap), { expirationTtl: TTL_SECONDS });
+	await getTurso(env)
+		.prepare(
+			`INSERT INTO pga_pending_state (username, rows_json, updated_at) VALUES (?, ?, ?)
+			 ON CONFLICT(username) DO UPDATE SET rows_json = excluded.rows_json, updated_at = excluded.updated_at`,
+		)
+		.bind(user, JSON.stringify(clean), snap.updatedAt)
+		.run();
 	return snap;
 }
 
 export async function pgaPendingLoad(env: Env, user: string): Promise<PgaPendingSnapshot> {
-	const raw = await env.SESS.get(key(user));
-	if (!raw) return { rows: [], updatedAt: 0 };
+	await ensureTable(env);
+	const row = await getTurso(env)
+		.prepare(`SELECT rows_json, updated_at FROM pga_pending_state WHERE username = ?`)
+		.bind(user)
+		.first<{ rows_json: string; updated_at: number }>();
+	if (!row) return { rows: [], updatedAt: 0 };
+	const updatedAt = Number(row.updated_at) || 0;
+	if (Date.now() - updatedAt > STALE_MS) return { rows: [], updatedAt: 0 };
 	try {
-		const j = JSON.parse(raw) as Partial<PgaPendingSnapshot>;
-		return { rows: Array.isArray(j.rows) ? j.rows : [], updatedAt: Number(j.updatedAt) || 0 };
+		const rows = JSON.parse(row.rows_json);
+		return { rows: Array.isArray(rows) ? rows : [], updatedAt };
 	} catch {
 		return { rows: [], updatedAt: 0 };
 	}
