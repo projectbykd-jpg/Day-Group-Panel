@@ -69,6 +69,44 @@ export async function investTestSession(env: Env, token: string) {
 	}
 }
 
+// Repo tempat workflow invest-turbo.yml hidup -- sama seperti news-turbo.yml,
+// jalan sebagai plain fetch (bukan Playwright), jadi cukup di repo panel ini
+// sendiri (Day-Group-Panel), tidak perlu daygroup-scraper.
+const INVEST_TURBO_REPO = "projectbykd-jpg/Day-Group-Panel";
+const GH_HEADERS = (ghToken: string) => ({
+	Authorization: `Bearer ${ghToken}`,
+	Accept: "application/vnd.github+json",
+	"User-Agent": "daygroup-panel",
+	"X-GitHub-Api-Version": "2022-11-28",
+});
+
+/**
+ * Pemicu workflow GitHub Actions "invest-turbo.yml" -- alternatif dari cron
+ * Cloudflare (`* * * * *`) & live-polling ctx.waitUntil yang sudah ada.
+ * TIDAK menggantikan keduanya (tetap jalan sbg jaring pengaman kalau tombol
+ * GitHub gagal/GH_TOKEN belum di-set) -- workflow-nya sendiri cuma nge-loop
+ * manggil endpoint /__cron?job=investuser yang PAKAI lock per-user yang SAMA
+ * (env.SESS) dgn investPumpUser Cloudflare, jadi tidak pernah race walau
+ * jalan bersamaan. Gagal memicu = non-fatal (dicatat, tidak bikin
+ * investStartScan/investContinueScan gagal -- scan tetap jalan pelan-pelan
+ * lewat cron/live-poll seperti sebelum fitur ini ada).
+ */
+async function dispatchInvestTurbo(env: Env, user: string): Promise<void> {
+	if (!env.GH_TOKEN) return; // belum dikonfigurasi -> diam-diam andalkan cron/live-poll
+	try {
+		const resp = await fetch(`https://api.github.com/repos/${INVEST_TURBO_REPO}/actions/workflows/invest-turbo.yml/dispatches`, {
+			method: "POST",
+			headers: GH_HEADERS(env.GH_TOKEN),
+			body: JSON.stringify({ ref: "main", inputs: { user } }),
+		});
+		if (resp.status !== 204) {
+			console.error("dispatchInvestTurbo gagal:", resp.status, await resp.text());
+		}
+	} catch (e) {
+		console.error("dispatchInvestTurbo error:", e instanceof Error ? e.message : e);
+	}
+}
+
 export async function investStartScan(env: Env, token: string) {
 	const user = await investUser(env, token);
 	const cfg = await investLoadConfig(env, user);
@@ -88,6 +126,7 @@ export async function investStartScan(env: Env, token: string) {
 		warningCount: 0,
 		message: "Scan dijadwalkan…",
 	});
+	await dispatchInvestTurbo(env, user);
 	try {
 		await logActivity(
 			env,
@@ -108,6 +147,7 @@ export async function investContinueScan(env: Env, token: string) {
 	const cur = await investGetState(env, user);
 	if (cur.state === "running") return { success: false, message: "Scan kamu sedang berjalan." };
 	const state = await investSetState(env, user, { state: "running", message: "Melanjutkan scan…" });
+	await dispatchInvestTurbo(env, user);
 	try {
 		await logActivity(
 			env,

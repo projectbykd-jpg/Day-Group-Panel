@@ -1,0 +1,58 @@
+name: INVEST turbo (bypass limit Cloudflare)
+
+# Dipicu tombol "MULAI SCAN"/"LANJUTKAN SCAN" di panel (lihat dispatchInvestTurbo
+# di src/api/invest.ts) -- SENGAJA cuma workflow_dispatch, TIDAK ada `schedule:`
+# sama sekali (beda dari news-turbo.yml yang sempat py dobel-trigger & bikin
+# kuota Blogger habis) -- INVEST tidak butuh jadwal otomatis, cron Cloudflare
+# (`* * * * *`) & live-polling ctx.waitUntil yang sudah ada tetap jadi jaring
+# pengaman kalau tombol GitHub gagal/GH_TOKEN belum di-set.
+#
+# Prosesnya sendiri TETAP di Worker (lewat /__cron?job=investuser) -- workflow
+# ini cuma nge-LOOP manggil endpoint itu berulang-ulang selama statusnya masih
+# 'running', supaya scan 1 user selesai jauh lebih cepat drpd nunggu gantian
+# cron Cloudflare tiap 1 menit. Endpoint itu pakai lock per-user (env.SESS)
+# yang SAMA dgn investPumpUser Cloudflare, jadi aman biar jalan bersamaan,
+# tidak pernah race/dobel proses.
+on:
+  workflow_dispatch:
+    inputs:
+      user:
+        description: "Username panel yang scan-nya mau dipompa"
+        required: true
+        type: string
+
+concurrency:
+  group: invest-turbo-${{ github.event.inputs.user }}
+  cancel-in-progress: false # jangan tabrak run utk user yg sama, antre saja
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Pompa scan sampai selesai
+        env:
+          # CRON_KEY di sini SENGAJA sama persis dgn wrangler.jsonc (vars.CRON_KEY)
+          # -- nilai itu SUDAH plaintext di repo ini (bukan secret sungguhan),
+          # jadi menaruhnya di sini tidak menambah kebocoran apa pun.
+          CRON_KEY: "2ivwrtzgczxuwe1w637k0l4ki9g4hthh2m64jnrz"
+          PUBLIC_URL: "https://panel-worker.projectbykd.workers.dev"
+          INVEST_USER: ${{ github.event.inputs.user }}
+        run: |
+          set -eu
+          echo "[diag] Memompa scan INVEST untuk user: $INVEST_USER"
+          for i in $(seq 1 200); do
+            resp=$(curl -sS -G "$PUBLIC_URL/__cron" \
+              --data-urlencode "key=$CRON_KEY" \
+              --data-urlencode "job=investuser" \
+              --data-urlencode "user=$INVEST_USER")
+            state=$(echo "$resp" | grep -o '"state":"[^"]*"' | head -1 | sed 's/"state":"//;s/"$//')
+            message=$(echo "$resp" | grep -o '"message":"[^"]*"' | head -1 | sed 's/"message":"//;s/"$//')
+            echo "[$i] state=$state :: $message"
+            if [ "$state" != "running" ]; then
+              echo "=== SELESAI (state=$state) ==="
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "=== BERHENTI: 200 putaran tercapai, masih 'running' -- lanjutkan lewat cron Cloudflare/live-poll seperti biasa. ==="
