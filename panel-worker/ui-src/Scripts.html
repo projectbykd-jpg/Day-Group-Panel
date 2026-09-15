@@ -756,24 +756,59 @@
       opts = opts || {};
       rows = rows || [];
       const title = (opts.title || id.replace(/_/g,' '));
-      lapTblState[id] = { rows, rowFn, headers, searchKeys: searchKeys || [], copyFn, title, page:1, q:'', open:!!opts.open, prefilter: opts.prefilter || null, footer: opts.footer || '' };
+      const checkable = !!opts.checkable;
+      // selected DIPERTAHANKAN kalau tabel ini sudah pernah dibuat (mis. panel
+      // "PGA Pending" yang di-repaint tiap poll tanpa memanggil ulang lapTable)
+      // -- centang user tidak boleh hilang cuma gara-gara data-nya diperbarui.
+      const prevSelected = lapTblState[id] && lapTblState[id].selected;
+      lapTblState[id] = { rows, rowFn, headers, searchKeys: searchKeys || [], copyFn, title, page:1, q:'', open:!!opts.open, prefilter: opts.prefilter || null, footer: opts.footer || '', checkable, selected: prevSelected || new Set() };
       const st = lapTblState[id];
+      // Kalau ada baris yang DICENTANG, COPY cuma menyalin baris itu saja --
+      // kalau tidak ada satupun yang dicentang, perilaku lama dipakai (salin
+      // semua baris yang lagi tampil/difilter).
       window['__lapCopy_' + id] = (ev) => {
         ev && ev.stopPropagation();
-        const list = lapTblFiltered(id);
+        let list = lapTblFiltered(id);
         if (!list.length) { toast('Data kosong'); return; }
+        if (checkable && st.selected.size) {
+          list = list.filter((r,i) => st.selected.has(copyFn(r,i)));
+          if (!list.length) { toast('Baris yang dicentang tidak ketemu (mungkin sudah hilang dari data).'); return; }
+        }
         navigator.clipboard.writeText(list.map((r,i) => copyFn(r,i)).join('\n')).then(() => toast(list.length + ' baris disalin'));
       };
       window['__lapToggle_' + id] = () => { st.open = !st.open; lapTblRepaint(id); };
       window['__lapSearch_' + id] = (v) => { st.q = (v||'').toLowerCase(); st.page = 1; lapTblRepaint(id, true); };
+      window['__lapToggleRow_' + id] = (absIdx, checked) => {
+        const list = lapTblFiltered(id); const r = list[absIdx]; if (!r) return;
+        const key = copyFn(r, absIdx);
+        if (checked) st.selected.add(key); else st.selected.delete(key);
+        lapTblUpdateCopyLabel(id);
+      };
+      window['__lapToggleAll_' + id] = (checked) => {
+        const st = lapTblState[id]; if (!st) return;
+        const list = lapTblFiltered(id);
+        const totalP = Math.max(1, Math.ceil(list.length / LAP_PAGE_SIZE));
+        const page = Math.min(totalP, Math.max(1, st.page||1));
+        const from = (page - 1) * LAP_PAGE_SIZE;
+        list.slice(from, from + LAP_PAGE_SIZE).forEach((r,i) => {
+          const key = copyFn(r, from + i);
+          if (checked) st.selected.add(key); else st.selected.delete(key);
+        });
+        lapTblRepaint(id);
+      };
       return `<div class="lap-tbl" id="lapTbl_${id}">
         <div class="lap-tbl-head" onclick="window['__lapToggle_${id}']()">
           <span class="flex items-center gap-2"><i class="fa-solid fa-chevron-right lap-tbl-chev"></i>${title.toUpperCase()}
             <span class="lap-tbl-count" id="lapTblCount_${id}">${rows.length}</span></span>
-          <button onclick="window['__lapCopy_${id}'](event)" class="lap-tbl-copy"><i class="fa-regular fa-copy mr-1"></i>COPY</button>
+          <button onclick="window['__lapCopy_${id}'](event)" class="lap-tbl-copy"><i class="fa-regular fa-copy mr-1"></i><span id="lapTblCopyLabel_${id}">COPY</span></button>
         </div>
         <div class="lap-tbl-body" id="lapTblBody_${id}"></div>
       </div>`;
+    }
+    function lapTblUpdateCopyLabel(id) {
+      const st = lapTblState[id]; if (!st) return;
+      const el = document.getElementById('lapTblCopyLabel_' + id);
+      if (el) el.textContent = (st.checkable && st.selected.size) ? ('COPY (' + st.selected.size + ')') : 'COPY';
     }
     function lapTblFiltered(id) {
       const st = lapTblState[id]; if (!st) return [];
@@ -803,10 +838,24 @@
       if (!st.page || st.page > totalP) st.page = 1;
       const from = (st.page - 1) * LAP_PAGE_SIZE;
       const pageRows = list.slice(from, from + LAP_PAGE_SIZE);
-      const head = st.headers.map(h => `<th class="px-3 py-2 text-left">${h}</th>`).join('');
+      const allPageChecked = st.checkable && pageRows.length > 0 && pageRows.every((r,i) => st.selected.has(st.copyFn(r, from + i)));
+      const checkHeadCell = st.checkable
+        ? `<th class="px-3 py-2 w-8"><input type="checkbox" onclick="event.stopPropagation()" onchange="window['__lapToggleAll_${id}'](this.checked)" ${allPageChecked?'checked':''}></th>`
+        : '';
+      const head = checkHeadCell + st.headers.map(h => `<th class="px-3 py-2 text-left">${h}</th>`).join('');
+      const colCount = st.headers.length + (st.checkable ? 1 : 0);
       const rowsHtml = pageRows.length
-        ? pageRows.map((r,i) => st.rowFn(r, from + i)).join('')
-        : `<tr><td colspan="${st.headers.length}" class="px-3 py-6 text-center text-slate-500 italic text-[11px]">Tidak ada data.</td></tr>`;
+        ? pageRows.map((r,i) => {
+            const absIdx = from + i;
+            let rowHtml = st.rowFn(r, absIdx);
+            if (st.checkable) {
+              const checked = st.selected.has(st.copyFn(r, absIdx));
+              const chkTd = `<td class="px-3 py-1.5 w-8"><input type="checkbox" class="lap-row-chk" onclick="event.stopPropagation()" onchange="window['__lapToggleRow_${id}'](${absIdx},this.checked)" ${checked?'checked':''}></td>`;
+              rowHtml = rowHtml.replace(/<tr(\s[^>]*)?>/, m => m + chkTd);
+            }
+            return rowHtml;
+          }).join('')
+        : `<tr><td colspan="${colCount}" class="px-3 py-6 text-center text-slate-500 italic text-[11px]">Tidak ada data.</td></tr>`;
       const pager = list.length > LAP_PAGE_SIZE ? `
         <div class="flex items-center justify-between px-3 py-2 text-[10px] text-slate-400 border-t border-white/5">
           <span>${from+1}-${Math.min(from+LAP_PAGE_SIZE, list.length)} dari ${list.length}</span>
@@ -828,6 +877,7 @@
         st._revealed = true;
         FX.reveal(Array.from(body.querySelectorAll('tbody tr')).slice(0, 18), { y: 8, step: 12, duration: 300, scale: 1 });
       }
+      if (st.checkable) lapTblUpdateCopyLabel(id);
     }
     // dipanggil sesudah host.innerHTML dipasang: render body tiap tabel
     function lapTblMountAll() {
@@ -1337,7 +1387,7 @@
           ${lapTable('pga_pending', ['WEBSITE','ID TRANS','TANGGAL','ID USER','JUMLAH','STATUS','PGA REF NO','VENDOR'], pgaPendingRows,
             r => `<tr>${td(r.website)}${td(r.idTrans,'text-[10px]')}${td(r.tanggal)}${td(r.idUser,'font-bold text-cyan-300')}${td('Rp '+lapFmt(r.jumlah),'text-right text-emerald-400')}${td(r.statusText,'text-[10px] text-rose-300')}${td(r.pgaRefNo,'text-[10px]')}${td(r.vendorName,'text-amber-300')}</tr>`,
             r => [r.vendorName, r.website, r.idTrans, r.tanggal, r.idUser, 'Rp '+lapFmt(r.jumlah), r.statusText, r.pgaRefNo, 'Pending'].join('\t'),
-            ['website','idTrans','idUser','pgaRefNo','vendorName'], {title:'PGA Pending', open:true})}
+            ['website','idTrans','idUser','pgaRefNo','vendorName'], {title:'PGA Pending', open:true, checkable:true})}
         </div>`);
       lapTblMountAll();
       pgaPendingRepaint();
