@@ -28,11 +28,15 @@ export interface PgaPendingSnapshot {
 	updatedAt: number;
 }
 
-// Interval sinkron skrip Console = 5 detik. TTL dibuat 20 detik (4x lipat) --
-// cukup toleran terhadap 1-2 sinkron yang telat/gagal (jaringan admin sendat
-// dsb) tanpa membuat List berkedip kosong, tapi tetap "hilang" dalam hitungan
-// detik begitu skrip benar-benar berhenti (tab ditutup).
-const TTL_SECONDS = 20;
+// Interval sinkron skrip Console = 5 detik. TTL KV Cloudflare PUNYA MINIMUM 60
+// DETIK (nilai di bawah itu ditolak -- pernah salah diset 20 & bikin SETIAP
+// pgaPendingSync gagal dgn 500, jangan diulang) -- jadi TTL ini cuma jaring
+// pengaman kalau skrip/tab berhenti TOTAL (baru basi maks 60 detik kemudian).
+// "Hilang dalam hitungan detik" yang diminta pemilik tetap terpenuhi lewat
+// jalur UTAMA: tiap sync MENIMPA TOTAL snapshot (bukan merge), jadi baris yang
+// sudah tidak ada di kiriman terbaru (selesai diproses di sisi Motion) hilang
+// dalam <=5 detik TANPA menunggu TTL sama sekali.
+const TTL_SECONDS = 60;
 const MAX_ROWS = 200; // batas wajar -- skrip yang bertingkah tidak boleh menulis blob raksasa ke KV
 
 const key = (user: string) => "pga_pending:" + user;
