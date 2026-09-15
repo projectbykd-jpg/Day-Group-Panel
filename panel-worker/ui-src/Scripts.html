@@ -819,7 +819,7 @@
       body.innerHTML = `
         ${st.searchKeys.length ? `<div class="p-2"><input id="lapSearch_${id}" value="${st.q||''}" oninput="window['__lapSearch_${id}'](this.value)" placeholder="Cari di ${(st.title||id).toLowerCase()}..." class="w-full glass-inner rounded-lg px-3 py-1.5 text-xs text-slate-100"></div>` : ''}
         <div class="overflow-x-auto"><table class="w-full text-[11px] text-slate-300 font-mono min-w-[560px]">
-          <thead class="bg-slate-900/60 text-slate-400 text-[9px] uppercase sticky top-0"><tr>${head}</tr></thead>
+          <thead class="bg-slate-900/60 text-slate-400 text-[9px] uppercase sticky top-0" style="user-select:none"><tr>${head}</tr></thead>
           <tbody>${rowsHtml}</tbody></table></div>${st.footer || ''}${pager}`;
       if (keepFocus) { const si = document.getElementById('lapSearch_' + id); if (si) { si.focus(); si.setSelectionRange(si.value.length, si.value.length); } }
       // Animasi baris HANYA saat tabel pertama kali dibuka — bukan tiap ketik
@@ -1160,7 +1160,8 @@
       return "(async()=>{\n"
         + "  const O=location.origin, PANEL=" + JSON.stringify(panel) + ", TOKEN=" + JSON.stringify(token) + ";\n"
         + "  if(!/motionv2/i.test(O)){alert('Buka skrip ini di TAB MOTION (motionv2.com), bukan di sini.');return;}\n"
-        + "  if(window.__pgaPendingTimer){clearInterval(window.__pgaPendingTimer);console.log('%cPGA Pending: skrip lama dihentikan, mulai ulang.','color:#ff0');}\n"
+        + "  if(window.__pgaPendingTimer){clearInterval(window.__pgaPendingTimer);console.log('%cPGA Pending: skrip lama (interval biasa) dihentikan, mulai ulang.','color:#ff0');}\n"
+        + "  if(window.__pgaPendingWorker){try{window.__pgaPendingWorker.terminate();}catch(e){}console.log('%cPGA Pending: skrip lama (worker) dihentikan, mulai ulang.','color:#ff0');}\n"
         + "  const norm=s=>String(s||'').replace(/\\s+/g,' ').trim();\n"
         // Halaman WD Request BUKAN <table> HTML -- dibangun dari <div> MUI, dan
         // (ketahuan dari testing user) punya DUA representasi teks per baris
@@ -1205,6 +1206,11 @@
         + "      const statusFull=cellText(statusCell);\n"
         + "      const refM=statusFull.match(/PGA Ref No:?\\s*(\\S+)/i);\n"
         + "      const vendM=statusFull.match(/Vendor Name:?\\s*([^]*)$/i);\n"
+        // Baris yang PGA Ref No-nya belum muncul (badge PGA Pending sudah ada
+        // tapi ref-nya belum ke-assign di Motion) SENGAJA dilewati total --
+        // bukan cuma disembunyikan dari tombol COPY, tapi tidak masuk List
+        // sama sekali, karena datanya memang belum lengkap buat dicatat.
+        + "      if(!refM)return;\n"
         + "      found.push({\n"
         + "        website: cellText(cells[statusIdx-7]),\n"
         + "        idTrans: cellText(cells[statusIdx-6]),\n"
@@ -1230,7 +1236,26 @@
         + "  }\n"
         + "  console.log('%cPGA Pending: mulai sinkron tiap 2 detik. Biarkan tab ini TETAP TERBUKA di halaman WD Request.','color:#0f0;font-weight:bold');\n"
         + "  tick();\n"
-        + "  window.__pgaPendingTimer=setInterval(tick,2000);\n"
+        // Timer LEWAT WEB WORKER, bukan setInterval biasa di thread utama --
+        // Chrome (dan browser lain) MELAMBATKAN setInterval sampai cuma 1x per
+        // MENIT kalau tab-nya di-background/minimize (buat hemat baterai),
+        // padahal justru tujuan fitur ini supaya tab Motion boleh dikecilkan
+        // sambil kerja di tempat lain. Timer di dalam Worker TIDAK kena
+        // pelambatan itu, jadi tetap tiap 2 detik walau tab tidak aktif.
+        // Fallback ke setInterval biasa kalau Worker gagal dibuat (mis. CSP
+        // situsnya melarang blob: worker).\n"
+        + "  try{\n"
+        + "    const workerSrc='setInterval(function(){postMessage(1)},2000);';\n"
+        + "    const blobUrl=URL.createObjectURL(new Blob([workerSrc],{type:'application/javascript'}));\n"
+        + "    const worker=new Worker(blobUrl);\n"
+        + "    worker.onmessage=tick;\n"
+        + "    worker.onerror=function(e){console.log('PGA Pending: Worker error, fallback ke setInterval biasa --',e&&e.message);worker.terminate();window.__pgaPendingWorker=null;window.__pgaPendingTimer=setInterval(tick,2000);};\n"
+        + "    window.__pgaPendingWorker=worker;\n"
+        + "    console.log('%cPGA Pending: timer pakai Web Worker -- tetap tiap 2 detik walau tab Motion di-background/minimize.','color:#0ff');\n"
+        + "  }catch(e){\n"
+        + "    console.log('PGA Pending: Web Worker gagal dibuat, fallback ke setInterval biasa (bisa melambat kalau tab di-background) --',(e&&e.message)||e);\n"
+        + "    window.__pgaPendingTimer=setInterval(tick,2000);\n"
+        + "  }\n"
         + "  alert('PGA Pending: sinkron otomatis jalan tiap 2 detik selama tab ini tetap terbuka di halaman WD Request.\\n\\nBuka panel -> menu PGA Pending.');\n"
         + "})();";
     }
