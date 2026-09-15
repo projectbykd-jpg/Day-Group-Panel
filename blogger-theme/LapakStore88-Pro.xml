@@ -4131,6 +4131,12 @@ h1,h2,h3,h4,h5,h6,.post-title,.post-title a,.widget-title,.section-title h2,.sec
    Home & semua kategori sudah ada di baris nav bawah) -- dibuat SELALU tampil
    sebagai search bar, bukan ikon collapse lagi, biar mirip liputan6.com */
 .header-menu{display:none !important}
+/* Ikon garis-tiga (hamburger) mobile-menu-toggle dipakai untuk buka flyout
+   nav dari widget .header-menu di atas -- karena widget itu sudah disembunyikan
+   permanen (diganti search bar + baris kategori scroll horizontal), tombolnya
+   tidak berfungsi lagi & malah nangkring nimpa logo di HP. Sembunyikan sekalian
+   beserta flyout-nya. */
+.mobile-menu-toggle,.mobile-menu-wrap,.overlay{display:none !important}
 #header-wrap .container{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 20px}
 #nav-search{display:flex !important;position:static !important;width:auto;flex:1 1 auto;max-width:480px;height:auto;margin:0;background:transparent;padding:0}
 #nav-search .search-form{display:flex;align-items:center;width:100%;height:42px;background:#0b1524;border:1px solid rgba(148,163,184,.18);border-radius:999px;line-height:normal;overflow:hidden;padding:0 4px 0 18px}
