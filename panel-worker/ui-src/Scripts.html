@@ -1162,37 +1162,58 @@
         + "  if(!/motionv2/i.test(O)){alert('Buka skrip ini di TAB MOTION (motionv2.com), bukan di sini.');return;}\n"
         + "  if(window.__pgaPendingTimer){clearInterval(window.__pgaPendingTimer);console.log('%cPGA Pending: skrip lama dihentikan, mulai ulang.','color:#ff0');}\n"
         + "  const norm=s=>String(s||'').replace(/\\s+/g,' ').trim();\n"
-        // Sengaja BACA DOM tabel yang sudah dirender halaman (bukan panggil API
-        // Motion) -- header kolom dicocokkan by NAMA (WEBSITE/ID TRANS/dst),
-        // bukan index tetap, supaya tetap benar walau ada tabel lain di halaman
-        // yang urutan kolomnya beda (mis. Riwayat Withdraw Terakhir di bawahnya).
-        // Baris yang DIAMBIL cuma yang sel STATUS-nya memuat teks "PGA Pending" --
-        // filter ini juga yang otomatis menyingkirkan tabel riwayat (isinya
-        // "Approved", bukan badge PGA Pending).
+        // Halaman WD Request BUKAN <table> HTML -- ketahuan dari inspeksi live:
+        // dibangun dari <div> MUI (Material-UI), tiap "baris" adalah 1 kotak div
+        // yang teksnya gabungan LABEL+NILAI berurutan persis seperti yang
+        // dirender ("WEBSITE HUGOTOGEL ID TRANS. 1059169660 TANGGAL ... STATUS
+        // G PGA PGA Pending PGA Ref No: xxx Vendor Name: yyy"). Jadi diambil
+        // per BADGE "PGA Pending" (leaf, tanpa anak), lalu naik ke ELEMEN
+        // TERDEKAT yang teksnya sudah memuat WEBSITE+JUMLAH+STATUS sekaligus
+        // (itu = 1 baris utuh) -- bukan patokan level/kelas CSS tetap (kelas
+        // MUI seperti css-194jsvx acak per build, tidak boleh di-hardcode),
+        // lalu nilai tiap kolom diambil dengan memotong teks ANTARA dua label
+        // yang berurutan. Filter "PGA Pending" pada badge itu sendiri yang
+        // otomatis menyingkirkan baris Riwayat Withdraw Terakhir (isinya
+        // "Approved", bukan badge ini).
+        + "  function findRow(badge){\n"
+        + "    let p=badge;\n"
+        + "    for(let i=0;i<20&&p;i++){\n"
+        + "      const t=norm(p.innerText||p.textContent);\n"
+        + "      if(t.indexOf('WEBSITE')>=0&&t.indexOf('JUMLAH')>=0&&t.indexOf('STATUS')>=0)return p;\n"
+        + "      p=p.parentElement;\n"
+        + "    }\n"
+        + "    return null;\n"
+        + "  }\n"
+        + "  function between(text,startLabel,endLabel){\n"
+        + "    const si=text.indexOf(startLabel); if(si<0)return '';\n"
+        + "    const from=si+startLabel.length;\n"
+        + "    const ei=endLabel?text.indexOf(endLabel,from):-1;\n"
+        + "    let val=ei>=0?text.slice(from,ei):text.slice(from);\n"
+        + "    return norm(val.replace(/^[\\s.:]+/,''));\n"
+        + "  }\n"
         + "  function scan(){\n"
-        + "    const found=[];\n"
-        + "    document.querySelectorAll('table').forEach(table=>{\n"
-        + "      const headRow=table.querySelector('thead tr'); if(!headRow)return;\n"
-        + "      const headers=Array.from(headRow.children).map(th=>norm(th.textContent).toUpperCase());\n"
-        + "      const find=name=>headers.findIndex(h=>h.indexOf(name)===0);\n"
-        + "      const iWebsite=find('WEBSITE'), iIdTrans=find('ID TRANS'), iTanggal=find('TANGGAL'), iIdUser=find('ID USER'), iJumlah=find('JUMLAH'), iStatus=find('STATUS');\n"
-        + "      if(iStatus<0||iJumlah<0)return;\n"
-        + "      table.querySelectorAll('tbody tr').forEach(tr=>{\n"
-        + "        const tds=tr.children; const statusCell=tds[iStatus]; if(!statusCell)return;\n"
-        + "        const statusText=norm(statusCell.textContent);\n"
-        + "        if(statusText.toUpperCase().indexOf('PGA PENDING')<0)return;\n"
-        + "        const refM=statusText.match(/PGA Ref No:?\\s*(\\S+)/i);\n"
-        + "        const vendM=statusText.match(/Vendor Name:?\\s*([^]*)$/i);\n"
-        + "        found.push({\n"
-        + "          website: iWebsite>=0?norm(tds[iWebsite].textContent):'',\n"
-        + "          idTrans: iIdTrans>=0?norm(tds[iIdTrans].textContent):'',\n"
-        + "          tanggal: iTanggal>=0?norm(tds[iTanggal].textContent):'',\n"
-        + "          idUser: iIdUser>=0?norm(tds[iIdUser].textContent):'',\n"
-        + "          jumlah: parseInt(norm(tds[iJumlah].textContent).replace(/[^0-9]/g,''),10)||0,\n"
-        + "          statusText: statusText.replace(/PGA Ref No:[^]*$/i,'').replace(/Vendor Name:[^]*$/i,'').trim(),\n"
-        + "          pgaRefNo: refM?refM[1]:'',\n"
-        + "          vendorName: vendM?norm(vendM[1]):'',\n"
-        + "        });\n"
+        + "    const found=[]; const seen=new Set();\n"
+        + "    const badges=Array.prototype.filter.call(document.querySelectorAll('body *'),el=>el.children.length===0&&/PGA Pending/i.test(el.textContent||''));\n"
+        + "    badges.forEach(badge=>{\n"
+        + "      const row=findRow(badge); if(!row||seen.has(row))return; seen.add(row);\n"
+        + "      const text=norm(row.innerText||row.textContent);\n"
+        + "      const idTransRaw=between(text,'ID TRANS','TANGGAL');\n"
+        + "      const statusFull=between(text,'STATUS',null);\n"
+        + "      const refM=statusFull.match(/PGA Ref No:?\\s*(\\S+)/i);\n"
+        + "      const vendM=statusFull.match(/Vendor Name:?\\s*([^]*)$/i);\n"
+        // Amankan Vendor Name supaya tidak ikut menelan teks tombol aksi
+        // (REJECT/CHECK TRANS/NOTE/dst) kalau ternyata teksnya ikut kebawa
+        // dalam innerText baris yang sama.
+        + "      const vendorName=(vendM?norm(vendM[1]):'').replace(/\\b(REJECT|CHECK TRANS|NOTE|UNLOCK|SEND PGA|ALLOW GRAB)\\b[^]*$/i,'').trim();\n"
+        + "      found.push({\n"
+        + "        website: between(text,'WEBSITE','ID TRANS'),\n"
+        + "        idTrans: idTransRaw,\n"
+        + "        tanggal: between(text,'TANGGAL','ID USER'),\n"
+        + "        idUser: between(text,'ID USER','NAMA REKENING')||between(text,'ID USER','JUMLAH'),\n"
+        + "        jumlah: parseInt(between(text,'JUMLAH','STATUS').replace(/[^0-9]/g,''),10)||0,\n"
+        + "        statusText: statusFull.replace(/PGA Ref No:[^]*$/i,'').trim(),\n"
+        + "        pgaRefNo: refM?refM[1]:'',\n"
+        + "        vendorName: vendorName,\n"
         + "      });\n"
         + "    });\n"
         + "    return found;\n"
