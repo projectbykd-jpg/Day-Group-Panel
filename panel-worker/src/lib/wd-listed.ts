@@ -86,7 +86,22 @@ function mapRow(row: Record<string, unknown>): WdListedRow {
 }
 
 const norm = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max);
-const hasWebsite = (websites: string[], website: string) => websites.map((w) => w.toUpperCase().trim()).includes(website.toUpperCase().trim());
+// users.websites SENGAJA berisi KODE SINGKAT ("HUGO", "FOLA" -- convention yang
+// sama dipakai di modul prediksi/kirim result, lihat src/lib/prediction.ts),
+// BUKAN nama lengkap situs. Sementara "website" yang ke-scan dari Motion
+// (kolom WEBSITE di WD Request) adalah nama lengkap aslinya ("HUGOTOGEL").
+// Jadi dicocokkan via PREFIX ("HUGOTOGEL".startsWith("HUGO")), bukan sama
+// persis -- kalau dipaksa sama persis, List akan SELALU kosong utk semua
+// operator (ketahuan dari testing: akun dgn websites "HUGO,FOLA" sama sekali
+// tidak melihat baris "HUGOTOGEL" yang dia sendiri baru tambahkan).
+const hasWebsite = (websites: string[], website: string) => {
+	const target = String(website ?? "").toUpperCase().trim();
+	if (!target) return false;
+	return websites.some((w) => {
+		const code = String(w ?? "").toUpperCase().trim();
+		return !!code && (target.startsWith(code) || code.startsWith(target));
+	});
+};
 
 export async function wdListedAdd(env: Env, addedBy: string, rows: WdListedInput[]): Promise<number> {
 	await ensureTable(env);
@@ -123,14 +138,16 @@ export async function wdListedAdd(env: Env, addedBy: string, rows: WdListedInput
 
 export async function wdListedList(env: Env, websites: string[]): Promise<WdListedRow[]> {
 	await ensureTable(env);
-	const up = Array.from(new Set(websites.map((w) => String(w || "").toUpperCase().trim()).filter(Boolean)));
-	if (!up.length) return [];
-	const placeholders = up.map(() => "?").join(",");
+	const codes = Array.from(new Set(websites.map((w) => String(w || "").toUpperCase().trim()).filter(Boolean)));
+	if (!codes.length) return [];
+	// Difilter di sisi aplikasi (bukan SQL WHERE website IN (...)) karena
+	// cocoknya PREFIX (lihat hasWebsite di atas), bukan sama persis -- SQL
+	// exact-match akan selalu kosong utk kode singkat spt "HUGO" vs
+	// "HUGOTOGEL". Diambil dulu yang terbaru secukupnya lalu disaring.
 	const res = await getTurso(env)
-		.prepare(`SELECT * FROM wd_listed WHERE website IN (${placeholders}) ORDER BY id DESC LIMIT 500`)
-		.bind(...up)
+		.prepare(`SELECT * FROM wd_listed ORDER BY id DESC LIMIT 1000`)
 		.all<Record<string, unknown>>();
-	return (res.results ?? []).map(mapRow);
+	return (res.results ?? []).map(mapRow).filter((r) => hasWebsite(codes, r.website));
 }
 
 // Parsing struk https://dbb2b.q2checkout.com/struk/disbursement/<ref> -- HTML
