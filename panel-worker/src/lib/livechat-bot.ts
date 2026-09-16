@@ -59,6 +59,21 @@ async function ensureTables(env: Env): Promise<void> {
 	]) {
 		await db.prepare(stmt).run();
 	}
+	// livechat_session sempat dibuat versi lama (arsitektur userscript, sebelum
+	// pivot ke login langsung) -- CREATE TABLE IF NOT EXISTS di atas TIDAK
+	// mengubah tabel yang sudah ada, jadi kolom baru (queue_code, last_seen_at)
+	// harus ditambah lewat ALTER lazy ini supaya query lama yang sempat
+	// ke-deploy sebelum migrasi ini tidak lagi gagal dengan "no such column".
+	for (const stmt of [
+		`ALTER TABLE livechat_session ADD COLUMN queue_code TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE livechat_session ADD COLUMN last_seen_at TEXT NOT NULL DEFAULT ''`,
+	]) {
+		try {
+			await db.prepare(stmt).run();
+		} catch {
+			/* kolom sudah ada -- aman diabaikan */
+		}
+	}
 	tablesEnsured = true;
 }
 
