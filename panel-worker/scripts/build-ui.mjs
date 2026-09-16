@@ -85,6 +85,12 @@ const ARG_MAP = {
 	botFbRunNow: ["token"],
 	botFbTemplateGenerate: ["token"],
 	botNewsSkip: ["token", "data"],
+	livechatListSessions: ["token"],
+	livechatSetBotEnabled: ["token", "sessionKey", "enabled"],
+	livechatListTemplates: ["token"],
+	livechatSaveTemplate: ["token", "data"],
+	livechatDeleteTemplate: ["token", "id"],
+	livechatRecentLogs: ["token"],
 };
 
 const shim = `<script>

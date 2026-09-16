@@ -74,6 +74,17 @@ import {
 	botNewsToggleSource,
 } from "./api/bot";
 import { botNewsRun, disableGnewsSources, fbDirectRun, newsPruneQueueDaily, newsPullSources, publicNewsBanner, publicNewsDetail, publicNewsList, publicNewsPopular, publicNewsRandom, publicNewsSitemapXml, seedCategorySources } from "./lib/bot-news";
+import {
+	livechatBotPull,
+	livechatBotReport,
+	livechatBotSync,
+	livechatDeleteTemplate,
+	livechatListSessions,
+	livechatListTemplates,
+	livechatRecentLogs,
+	livechatSaveTemplate,
+	livechatSetBotEnabled,
+} from "./api/livechat";
 
 type Handler = (env: Env, body: Record<string, unknown>) => Promise<unknown>;
 const s = (v: unknown) => String(v ?? "");
@@ -211,6 +222,19 @@ const ROUTES: Record<string, Handler> = {
 	botFbRunNow: (env, b) => botFbRunNow(env, s(b.token)),
 	botFbTemplateGenerate: (env, b) => botFbTemplateGenerate(env, s(b.token)),
 	botNewsSkip: (env, b) => botNewsSkip(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
+
+	// Live Chat Auto-Reply — sisi panel (sesi login ADMIN/OPERATOR)
+	livechatListSessions: (env, b) => livechatListSessions(env, s(b.token)),
+	livechatSetBotEnabled: (env, b) => livechatSetBotEnabled(env, s(b.token), s(b.sessionKey), !!b.enabled),
+	livechatListTemplates: (env, b) => livechatListTemplates(env, s(b.token)),
+	livechatSaveTemplate: (env, b) => livechatSaveTemplate(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
+	livechatDeleteTemplate: (env, b) => livechatDeleteTemplate(env, s(b.token), Number(b.id)),
+	livechatRecentLogs: (env, b) => livechatRecentLogs(env, s(b.token)),
+	// Live Chat Auto-Reply — sisi userscript daylivechat.com (auth via LIVECHAT_BOT_KEY)
+	livechatBotSync: (env, b) => livechatBotSync(env, s(b.key), b.rows),
+	livechatBotPull: (env, b) => livechatBotPull(env, s(b.key)),
+	livechatBotReport: (env, b) =>
+		livechatBotReport(env, s(b.key), s(b.sessionKey), s(b.customerMessage), b.matchedTemplateId != null ? Number(b.matchedTemplateId) : null, s(b.replyText)),
 
 	// dipanggil GitHub Actions (auth via job key, bukan sesi)
 	lapJobStart: (env, b) => lapJobStart(env, s(b.jobId), s(b.key)),
