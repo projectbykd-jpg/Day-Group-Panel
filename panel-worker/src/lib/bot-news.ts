@@ -314,6 +314,7 @@ interface Rewritten {
 	metaDescription: string;
 	category: string;
 	keywords: string[];
+	ctaParagraph: string;
 }
 
 export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: { title: string; excerpt: string; source: string; url: string }): Promise<Rewritten> {
@@ -347,8 +348,11 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 		`(4) dampak atau relevansinya bagi pembaca/masyarakat/industri terkait, ` +
 		`(5) reaksi atau sudut pandang pihak-pihak terkait (SECARA UMUM/wajar, JANGAN mengarang kutipan/nama yang tidak ada di ringkasan), ` +
 		`(6) penutup yang merangkum & memberi gambaran ke depan. ` +
-		`Buat kalimat pembuka (paragraf pertama) yang menarik perhatian pembaca -- bukan sekadar mengulang judul, ` +
-		`tapi langsung masuk ke inti/kenapa ini penting, biar pembaca terpancing lanjut baca. ` +
+		`Paragraf PERTAMA WAJIB jadi hook yang bikin pembaca penasaran lanjut baca -- JANGAN mulai dengan mengulang ` +
+		`judul atau basa-basi umum ("Baru-baru ini...", "Dalam sebuah peristiwa..."). Mulai langsung dengan sesuatu yang ` +
+		`konkret & spesifik: angka/fakta paling mengejutkan dari ringkasan, gambaran singkat momen kejadiannya, atau ` +
+		`pertanyaan tajam yang langsung dijawab kalimat berikutnya -- lalu di kalimat ke-2/ke-3 baru jelaskan kenapa ini ` +
+		`penting buat pembaca. 2-3 kalimat pertama ini yang menentukan pembaca lanjut baca atau tidak, jadi jangan datar. ` +
 		`Variasikan struktur kalimat (jangan semua paragraf mulai dengan pola subjek yang sama), pakai bahasa yang hidup ` +
 		`dan konkret (bukan klise/basa-basi berita formal yang datar), tapi tetap akurat dan tidak berlebihan/clickbait. ` +
 		`Tiap paragraf idealnya 3-5 kalimat yang mengalir, bukan poin-poin pendek. ` +
@@ -365,7 +369,12 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 		`di bawah (bukan cuma ganti 1-2 kata atau tukar posisi kata), tetap akurat & merangkum inti berita yang sama, TIDAK ` +
 		`clickbait/menyesatkan, panjang wajar buat judul berita (bukan kalimat lengkap super panjang). Kalau JUDUL ASLI ` +
 		`disalin/nyaris disalin mentah, itu SALAH -- judul harus benar-benar hasil tulisan ulangmu sendiri, sama seperti isi artikelnya. ` +
-		`Balas HANYA JSON valid tanpa markdown: {"title": "...", "meta_description": "...", "category": "...", "keywords": ["...", "..."], "body_html": "<p>...</p><p>...</p>"}.\n\n` +
+		`Sertakan juga "cta_paragraph": SATU paragraf pendek (2-3 kalimat) TERPISAH dari body_html, ditulis dgn gaya ` +
+		`ngobrol yang hangat (bukan iklan kaku) mengajak pembaca terus mantengin berita terkini dari LapakStore88 -- ` +
+		`misal ajak follow/gabung kanal resminya biar tidak ketinggalan update berikutnya. JANGAN sertakan link/URL apa pun ` +
+		`di sini (link sebenarnya sudah ditempel otomatis terpisah oleh sistem) -- cukup ajakannya saja, dan JANGAN ` +
+		`menyebut platform spesifik (WhatsApp/Facebook/dll) supaya tetap relevan dipasang di mana saja. ` +
+		`Balas HANYA JSON valid tanpa markdown: {"title": "...", "meta_description": "...", "category": "...", "keywords": ["...", "..."], "cta_paragraph": "...", "body_html": "<p>...</p><p>...</p>"}.\n\n` +
 		`JUDUL ASLI (JANGAN disalin, tulis ulang beda): ${art.title}\n` +
 		`RINGKASAN: ${art.excerpt || "(tidak ada, tulis ringkas dari judul saja)"}\n` +
 		`SUMBER: ${art.source}`;
@@ -527,6 +536,7 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 	let metaDescription = "";
 	let category = "";
 	let keywords: string[] = [];
+	let ctaParagraph = "";
 
 	// 1) coba parse JSON apa adanya
 	const tryParse = (s: string): boolean => {
@@ -537,6 +547,7 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 				html = String(p.body_html || p.html || "").trim();
 				metaDescription = String(p.meta_description || "").trim();
 				category = String(p.category || "").trim().toLowerCase();
+				ctaParagraph = String(p.cta_paragraph || "").trim();
 				if (Array.isArray(p.keywords)) {
 					keywords = p.keywords.map((k: unknown) => String(k || "").trim()).filter(Boolean);
 				}
@@ -559,12 +570,14 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 		const bm = text.match(/"body_html"\s*:\s*"((?:[^"\\]|\\.)*)"/);
 		const dm = text.match(/"meta_description"\s*:\s*"((?:[^"\\]|\\.)*)"/);
 		const cm = text.match(/"category"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+		const ctam = text.match(/"cta_paragraph"\s*:\s*"((?:[^"\\]|\\.)*)"/);
 		if (bm) {
 			const unesc = (x: string) => x.replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\\\/g, "\\");
 			html = unesc(bm[1]).trim();
 			if (tm) title = unesc(tm[1]).trim();
 			if (dm) metaDescription = unesc(dm[1]).trim();
 			if (cm) category = unesc(cm[1]).trim().toLowerCase();
+			if (ctam) ctaParagraph = unesc(ctam[1]).trim();
 		}
 	}
 	// 4) benar-benar bukan JSON: anggap teks polos = body (bersihkan sisa JSON kalau ada)
@@ -628,7 +641,18 @@ export async function geminiRewrite(env: Env, cfg: Record<string, string>, art: 
 		.map((k) => k.replace(/^[#\-*\s]+/, "").trim())
 		.filter((k) => k.length > 1 && k.length <= 60)
 		.slice(0, 8);
-	return { title: title.slice(0, 180), html, metaDescription: metaDescription.slice(0, 155), category, keywords };
+	// Jaring pengaman -- AI diminta TIDAK menyertakan link/tag di cta_paragraph,
+	// tapi kalau tetap ada (mis. model kurang patuh), dibersihkan di sini supaya
+	// tidak nyelip <a> ganda/rusak berdampingan dgn link resmi yang ditempel
+	// terpisah oleh newsProcessOne. Kosong = wajar, blok ini nanti dilewati saja
+	// (bukan error) -- paragraf ajakan follow ini pemanis, bukan wajib.
+	ctaParagraph = ctaParagraph
+		.replace(/<[^>]+>/g, " ")
+		.replace(/https?:\/\/\S+/gi, "")
+		.replace(/\s+/g, " ")
+		.trim()
+		.slice(0, 400);
+	return { title: title.slice(0, 180), html, metaDescription: metaDescription.slice(0, 155), category, keywords, ctaParagraph };
 }
 
 // ---------------------------------------------------------------------------
@@ -969,6 +993,13 @@ export async function fbTemplateGenerate(
 		// situs sendiri, supaya caption manual ini juga ikut mempromosikan toko.
 		const promoUrl = (cfg.promo_url || "").trim();
 		if (promoUrl) parts.push(`🛒 ${(cfg.promo_text || "Butuh aplikasi premium termurah? Kunjungi LapakStore88").trim()}: ${promoUrl}`);
+		// Fanspage & Saluran WhatsApp -- sama seperti yang otomatis disisipkan di
+		// artikel Blogger/situs sendiri (lihat newsProcessOne), supaya caption
+		// manual dari menu Template FB ini ikut mempromosikan kanal-kanal itu juga.
+		const fbPageUrlTpl = (cfg.fb_page_url || "").trim();
+		if (fbPageUrlTpl) parts.push(`📘 Follow Fanspage kami: ${fbPageUrlTpl}`);
+		const waChannelUrlTpl = (cfg.wa_channel_url || "").trim();
+		if (waChannelUrlTpl) parts.push(`💬 Gabung Saluran WhatsApp kami: ${waChannelUrlTpl}`);
 		if (hashtags.length) parts.push(hashtags.join(" "));
 		const caption = parts.join("\n\n");
 		// Simpan hasilnya (bukan cuma tandai selesai) supaya bisa "dibuka lagi" dari Riwayat.
@@ -1089,6 +1120,13 @@ export async function newsProcessOne(
 				`<a href="${escAttr(String(row.url))}" rel="nofollow noopener" target="_blank">${escHtml(String(row.source))}</a></p>`;
 		}
 
+		// Paragraf ajakan follow hasil AI (gaya ngobrol, bukan link mentah) --
+		// SELALU disisipkan kalau AI berhasil menghasilkannya (kosong = wajar,
+		// bukan error, lihat geminiRewrite), jadi pengantar natural sebelum
+		// link Fanspage/Saluran WhatsApp di bawahnya.
+		if (rw.ctaParagraph) {
+			content += `\n<p style="font-size:14px;margin-top:20px">${escHtml(rw.ctaParagraph)}</p>`;
+		}
 		// Ajakan follow Fanspage Facebook (kalau sudah diisi di Konfigurasi Lanjutan).
 		const fbPageUrl = (cfg.fb_page_url || "").trim();
 		if (fbPageUrl) {
