@@ -1552,7 +1552,7 @@
         <div id="aiDevImageChips" class="flex flex-wrap gap-1.5"></div>
         <div id="aiDevLog" class="flex flex-col gap-3"></div>
         <div class="flex items-end gap-2 mt-1">
-          <textarea id="aiDevInput" rows="2" placeholder="Tulis permintaan... (mis. 'perbaiki bug X' atau lampirkan screenshot error)" class="flex-1 glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100 resize-none" onkeydown="if(event.key==='Enter'&amp;&amp;!event.shiftKey){event.preventDefault();aiDevSend();}"></textarea>
+          <textarea id="aiDevInput" rows="2" placeholder="Tulis permintaan... (mis. 'perbaiki bug X' atau tempel/lampirkan screenshot error)" class="flex-1 glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100 resize-none" onkeydown="if(event.key==='Enter'&amp;&amp;!event.shiftKey){event.preventDefault();aiDevSend();}" onpaste="aiDevHandlePaste(event)"></textarea>
           <button id="aiDevSendBtn" onclick="aiDevSend()" class="bg-gradient-to-r from-fuchsia-400 to-purple-500 text-slate-950 font-extrabold px-5 py-2.5 rounded-xl text-xs h-[42px] whitespace-nowrap"><i class="fa-solid fa-paper-plane mr-1"></i>Kirim</button>
         </div>
         <div id="aiDevBrowserModal" class="fixed inset-0 z-[999] items-center justify-center p-4" style="display:none;background:rgba(0,0,0,.6)">
@@ -1596,6 +1596,25 @@
       document.getElementById('aiDevImageInput').value = '';
     }
     function aiDevRemoveImage(i) { aiDevImages.splice(i, 1); aiDevRepaintImages(); }
+    // Ctrl+V gambar (screenshot dari clipboard) langsung di kotak chat --
+    // dipetakan ke jalur yang SAMA persis dgn klik "Lampirkan Gambar"
+    // (aiDevPickImages), jadi batas 4 gambar/pesan & preview-nya ikut sama.
+    function aiDevHandlePaste(ev) {
+      const items = (ev.clipboardData && ev.clipboardData.items) || [];
+      const imageFiles = [];
+      for (const item of items) {
+        if (item && item.type && item.type.indexOf('image/') === 0) {
+          const file = item.getAsFile();
+          if (file) imageFiles.push(file);
+        }
+      }
+      if (imageFiles.length) {
+        ev.preventDefault(); // biar tidak ikut nempel sbg teks/nama file aneh di textarea
+        aiDevPickImages(imageFiles);
+      }
+      // Kalau isi clipboard bukan gambar (teks biasa) -- dibiarkan lolos apa
+      // adanya, paste teks normal tetap jalan seperti biasa.
+    }
     function aiDevRepaintImages() {
       const box = document.getElementById('aiDevImageChips');
       if (!box) return;
