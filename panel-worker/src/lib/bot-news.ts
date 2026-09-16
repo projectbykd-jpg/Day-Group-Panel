@@ -1096,6 +1096,15 @@ export async function newsProcessOne(
 				`\n<p style="font-size:14px;margin-top:14px">📘 Follow Fanspage kami di Facebook: ` +
 				`<a href="${escAttr(fbPageUrl)}" rel="noopener" target="_blank"><strong>klik di sini</strong></a></p>`;
 		}
+		// Ajakan gabung Saluran WhatsApp (kalau sudah diisi) -- pola SAMA persis
+		// dgn Fanspage Facebook di atas, SELALU disisipkan (tidak digate
+		// postToBlogger) krn `content` yang sama ini ikut tayang di Berita Terkini.
+		const waChannelUrl = (cfg.wa_channel_url || "").trim();
+		if (waChannelUrl) {
+			content +=
+				`\n<p style="font-size:14px;margin-top:10px">💬 Gabung Saluran WhatsApp kami: ` +
+				`<a href="${escAttr(waChannelUrl)}" rel="noopener" target="_blank"><strong>klik di sini</strong></a></p>`;
+		}
 		// Promosi silang ke situs Blogger -- SELALU disisipkan (tidak digate
 		// postToBlogger) karena ini juga ikut tayang di artikel Berita Terkini
 		// LapakStore88, bukan cuma di postingan Blogger itu sendiri.
@@ -1614,6 +1623,7 @@ export async function botNewsSnapshot(env: Env) {
 			fb_direct_enabled: String(cfg.fb_direct_enabled || "0") === "1",
 			fb_direct_daily_cap: Number(cfg.fb_direct_daily_cap || "50"),
 			fb_page_url: cfg.fb_page_url || "",
+			wa_channel_url: cfg.wa_channel_url || "",
 			news_banner_enabled: String(cfg.news_banner_enabled || "0") === "1",
 			news_banner_image: cfg.news_banner_image || "",
 			news_banner_url: cfg.news_banner_url || "",
