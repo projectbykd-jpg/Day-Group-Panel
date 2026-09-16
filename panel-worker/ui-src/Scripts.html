@@ -1549,11 +1549,11 @@
           <textarea id="aiDevInput" rows="2" placeholder="Tulis permintaan... (mis. 'perbaiki bug X di file yang dilampirkan')" class="flex-1 glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100 resize-none" onkeydown="if(event.key==='Enter'&amp;&amp;!event.shiftKey){event.preventDefault();aiDevSend();}"></textarea>
           <button id="aiDevSendBtn" onclick="aiDevSend()" class="bg-gradient-to-r from-fuchsia-400 to-purple-500 text-slate-950 font-extrabold px-5 py-2.5 rounded-xl text-xs h-[42px] whitespace-nowrap"><i class="fa-solid fa-paper-plane mr-1"></i>Kirim</button>
         </div>
-        <div id="aiDevBrowserModal" hidden class="fixed inset-0 z-[999] flex items-center justify-center p-4" style="background:rgba(0,0,0,.6)">
+        <div id="aiDevBrowserModal" class="fixed inset-0 z-[999] items-center justify-center p-4" style="display:none;background:rgba(0,0,0,.6)">
           <div class="glass-card rounded-2xl p-4 w-full max-w-lg max-h-[80vh] flex flex-col gap-3">
             <div class="flex items-center justify-between">
               <span class="text-xs font-bold text-slate-200">Pilih File</span>
-              <button onclick="document.getElementById('aiDevBrowserModal').hidden=true" class="text-slate-400 hover:text-slate-200"><i class="fa-solid fa-xmark"></i></button>
+              <button onclick="document.getElementById('aiDevBrowserModal').style.display='none'" class="text-slate-400 hover:text-slate-200"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="flex gap-2">
               <input id="aiDevPathInput" placeholder="path/manual/file.ts (opsional, langsung ketik)" class="flex-1 glass-inner rounded-lg px-3 py-2 text-xs text-slate-100">
@@ -1577,7 +1577,7 @@
     function aiDevRemoveAttached(i) { aiDevAttached.splice(i, 1); aiDevRepaintAttached(); }
 
     function aiDevOpenBrowser() {
-      document.getElementById('aiDevBrowserModal').hidden = false;
+      document.getElementById('aiDevBrowserModal').style.display = 'flex';
       aiDevBrowseLoad('');
     }
     function aiDevAttachManualPath() {
@@ -1613,12 +1613,12 @@
       listEl.innerHTML = html || '<div class="text-[11px] text-slate-500 italic p-2">Folder kosong.</div>';
     }
     function aiDevAttachPath(path) {
-      if (aiDevAttached.some(f => f.path === path)) { toast('File itu sudah dilampirkan'); document.getElementById('aiDevBrowserModal').hidden = true; return; }
+      if (aiDevAttached.some(f => f.path === path)) { toast('File itu sudah dilampirkan'); document.getElementById('aiDevBrowserModal').style.display = 'none'; return; }
       google.script.run.withSuccessHandler(res => {
         if (!res || !res.success) { toast('Gagal ambil file: ' + ((res && res.message) || '?')); return; }
         aiDevAttached.push({ path: res.file.path, content: res.file.content });
         aiDevRepaintAttached();
-        document.getElementById('aiDevBrowserModal').hidden = true;
+        document.getElementById('aiDevBrowserModal').style.display = 'none';
         toast('File dilampirkan: ' + res.file.path);
       }).withFailureHandler(e => toast('Gagal: ' + ((e && e.message) || e))).aiDevReadFile(currentSessionToken, path);
     }
