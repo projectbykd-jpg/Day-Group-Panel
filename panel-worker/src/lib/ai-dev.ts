@@ -14,6 +14,8 @@
 // Konfigurasi Lanjutan) -- API provider yang sama, cuma dipakai utk keperluan
 // beda (nulis artikel vs ngobrolin kode), tidak perlu key terpisah.
 
+import { botCfgSet } from "./bot-news";
+
 const REPO = "projectbykd-jpg/Day-Group-Panel"; // sama seperti INVEST_TURBO_REPO di lib/invest? -- lihat api/invest.ts
 
 const ghHeaders = (token: string) => ({
@@ -317,8 +319,38 @@ async function callGeminiAgentic(
 	throw new Error(`AI (Gemini) kehabisan langkah pencarian (>${MAX_TOOL_STEPS}x panggil tools) sebelum kasih jawaban final.`);
 }
 
+// Groq SERING menghapus/membatasi akses model tanpa peringatan (terbukti lagi
+// di sini: llama-3.3-70b-versatile dkk balas 404 "does not exist or you do
+// not have access to it" ke key ini) -- daftar hardcoded APAPUN bisa basi
+// kapan saja, sama persis masalah yang sudah pernah dibenerin di
+// geminiRewrite (bot-news.ts). Solusinya sama: kalau SEMUA kandidat statis
+// gagal, tanya LANGSUNG ke Groq (GET /v1/models) model apa yang BENAR-BENAR
+// bisa diakses key ini, lalu simpan pilihan yang berhasil supaya panggilan
+// berikutnya langsung pakai itu tanpa discovery ulang. Cache-nya TERPISAH
+// dari cfg.groq_model milik Bot News (key "ai_dev_groq_model") -- model yang
+// cocok utk TOOL-USE (function calling) bisa beda dari yang cocok utk nulis
+// artikel panjang, tidak boleh saling menimpa.
+const AI_DEV_GROQ_MODEL_KEY = "ai_dev_groq_model";
 const GROQ_MODEL_CANDIDATES = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3-32b"];
 const GEMINI_MODEL_CANDIDATES = ["gemini-flash-latest", "gemini-2.0-flash"];
+
+async function discoverGroqToolModels(apiKey: string, alreadyTried: Set<string>): Promise<string[]> {
+	try {
+		const resp = await fetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: `Bearer ${apiKey}` } });
+		const body: any = await resp.json().catch(() => ({}));
+		const ids: string[] = Array.isArray(body?.data) ? body.data.map((m: any) => String(m?.id || "")) : [];
+		// Buang model non-chat (whisper/tts/guard/dll) DAN model "compound"
+		// (agent/routing bawaan Groq -- eksekusi tool-nya sendiri secara internal,
+		// tidak menerima skema `tools` custom kita) -- dahulukan nama model
+		// general-purpose yang dikenal (llama/qwen/dst) drpd yang tidak dikenal.
+		const isBad = (id: string) => /whisper|tts|guard|moderation|prompt-guard|compound|safety|embed/i.test(id);
+		const isKnownGood = (id: string) => /llama|qwen|gpt-oss|kimi|mixtral|gemma/i.test(id);
+		const usable = ids.filter((id) => id && !alreadyTried.has(id) && !isBad(id));
+		return [...usable.filter(isKnownGood), ...usable.filter((id) => !isKnownGood(id))].slice(0, 3);
+	} catch {
+		return [];
+	}
+}
 
 export async function aiDevChat(
 	env: Env,
@@ -355,15 +387,34 @@ export async function aiDevChat(
 			...trimmedHistory.map((m) => ({ role: m.role, content: m.text })),
 			{ role: "user", content: userContent },
 		];
+		const cachedModel = cfg[AI_DEV_GROQ_MODEL_KEY];
+		const staticCandidates = [...new Set([cachedModel, ...GROQ_MODEL_CANDIDATES].filter(Boolean))] as string[];
 		for (const gk of groqKeys) {
-			for (const model of GROQ_MODEL_CANDIDATES) {
+			const tried = new Set<string>();
+			for (const model of staticCandidates) {
+				tried.add(model);
 				try {
 					const out = await callGroqAgentic(env, gk, model, textMessages as unknown as Record<string, unknown>[]);
 					text = out.text;
 					readPaths = out.readPaths;
+					if (model !== cachedModel) await botCfgSet(env, { [AI_DEV_GROQ_MODEL_KEY]: model }).catch(() => {});
 					break;
 				} catch (e) {
 					errs.push("Groq/" + model + ": " + (e instanceof Error ? e.message : String(e)));
+				}
+			}
+			if (!text) {
+				const discovered = await discoverGroqToolModels(gk, tried);
+				for (const model of discovered) {
+					try {
+						const out = await callGroqAgentic(env, gk, model, textMessages as unknown as Record<string, unknown>[]);
+						text = out.text;
+						readPaths = out.readPaths;
+						await botCfgSet(env, { [AI_DEV_GROQ_MODEL_KEY]: model }).catch(() => {});
+						break;
+					} catch (e) {
+						errs.push("Groq/" + model + " (discovery): " + (e instanceof Error ? e.message : String(e)));
+					}
 				}
 			}
 			if (text) break;
