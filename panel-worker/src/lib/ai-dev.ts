@@ -263,20 +263,58 @@ async function callGroqAgentic(
 	throw new Error(`AI kehabisan langkah pencarian (>${MAX_TOOL_STEPS}x panggil tools) sebelum kasih jawaban final -- coba pertanyaan yang lebih spesifik.`);
 }
 
-async function callGemini(apiKey: string, model: string, systemPrompt: string, messages: { role: string; content: string }[]): Promise<string> {
-	const contents = messages
-		.filter((m) => m.role !== "system")
-		.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
-	const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ system_instruction: { parts: [{ text: systemPrompt }] }, contents, generationConfig: { temperature: 0.4 } }),
-	});
-	const body: any = await resp.json().catch(() => ({}));
-	if (!resp.ok) throw new Error("Gemini HTTP " + resp.status + ": " + JSON.stringify(body?.error || body).slice(0, 200));
-	const content = body?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text || "").join("");
-	if (!content) throw new Error("Gemini balas kosong (mungkin diblokir safety filter).");
-	return String(content);
+export interface AiDevImage {
+	mimeType: string;
+	data: string; // base64, TANPA prefix "data:...;base64,"
+}
+
+// Gemini DUKUNG tools (function calling) + gambar (inlineData) SEKALIGUS di
+// request yang sama -- beda dari Groq yang model tool-use-nya text-only.
+// Jadi kalau pesan ada gambar, jalurnya SELALU lewat sini (bukan Groq), biar
+// AI tetap bisa baca file sendiri DAN lihat gambar dalam 1 obrolan yang sama.
+// Formatnya: tools -> [{functionDeclarations:[{name,description,parameters}]}],
+// balasan tool-call -> parts berisi {functionCall:{name,args}}, dibalas balik
+// lewat parts berisi {functionResponse:{name,response}} dgn role "function".
+async function callGeminiAgentic(
+	env: Env,
+	apiKey: string,
+	model: string,
+	systemPrompt: string,
+	history: { role: "user" | "assistant"; text: string }[],
+	userText: string,
+	images: AiDevImage[],
+): Promise<{ text: string; readPaths: string[] }> {
+	const readPaths: string[] = [];
+	const contents: Record<string, unknown>[] = history.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.text }] }));
+	const userParts: Record<string, unknown>[] = [{ text: userText }];
+	for (const img of images) userParts.push({ inlineData: { mimeType: img.mimeType, data: img.data } });
+	contents.push({ role: "user", parts: userParts });
+
+	const tools = [{ functionDeclarations: TOOLS.map((t) => t.function) }];
+	for (let step = 0; step < MAX_TOOL_STEPS; step++) {
+		const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ system_instruction: { parts: [{ text: systemPrompt }] }, contents, tools, generationConfig: { temperature: 0.3 } }),
+		});
+		const body: any = await resp.json().catch(() => ({}));
+		if (!resp.ok) throw new Error("Gemini HTTP " + resp.status + ": " + JSON.stringify(body?.error || body).slice(0, 200));
+		const parts: any[] = body?.candidates?.[0]?.content?.parts || [];
+		const calls = parts.filter((p) => p?.functionCall);
+		if (!calls.length) {
+			const text = parts.map((p) => p?.text || "").join("").trim();
+			if (!text) throw new Error("Gemini balas kosong (mungkin diblokir safety filter, atau cuma tool call tanpa teks final).");
+			return { text, readPaths };
+		}
+		contents.push({ role: "model", parts });
+		for (const c of calls) {
+			const name = String(c.functionCall?.name ?? "");
+			const args = (c.functionCall?.args || {}) as Record<string, unknown>;
+			const result = await runTool(env, name, args, readPaths);
+			contents.push({ role: "function", parts: [{ functionResponse: { name, response: { result } } }] });
+		}
+	}
+	throw new Error(`AI (Gemini) kehabisan langkah pencarian (>${MAX_TOOL_STEPS}x panggil tools) sebelum kasih jawaban final.`);
 }
 
 const GROQ_MODEL_CANDIDATES = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3-32b"];
@@ -288,11 +326,15 @@ export async function aiDevChat(
 	history: AiDevMessage[],
 	attachedFiles: { path: string; content: string }[],
 	userMessage: string,
+	images: AiDevImage[] = [],
 ): Promise<AiDevReply> {
 	const groqKeys = String(cfg.groq_key || "").split(/[,\n]+/).map((s) => s.trim()).filter(Boolean);
 	const geminiKeys = String(cfg.gemini_key || "").split(/[,\n]+/).map((s) => s.trim()).filter(Boolean);
 	if (!groqKeys.length && !geminiKeys.length) {
 		throw new Error("Groq/Gemini key belum diisi -- isi dulu di menu BOT -> Konfigurasi Lanjutan (key yang sama dipakai di sini).");
+	}
+	if (images.length && !geminiKeys.length) {
+		throw new Error("Kirim gambar butuh gemini_key (Groq di sini text-only) -- isi dulu di menu BOT -> Konfigurasi Lanjutan.");
 	}
 	// Batasi konteks (percakapan + lampiran) -- terlalu besar boros token &
 	// beberapa model punya batas context window ketat di tier gratis.
@@ -301,37 +343,39 @@ export async function aiDevChat(
 		? attachedFiles.map((f) => `=== FILE: ${f.path} ===\n${f.content.slice(0, 20000)}`).join("\n\n")
 		: "(tidak ada file dilampirkan pesan ini -- pakai tools kalau perlu baca file)";
 	const userContent = `${userMessage}\n\n--- FILE YANG DILAMPIRKAN (opsional, di luar ini pakai tools) ---\n${attachText}`;
-	const textMessages = [
-		{ role: "system", content: SYSTEM_PROMPT },
-		...trimmedHistory.map((m) => ({ role: m.role, content: m.text })),
-		{ role: "user", content: userContent },
-	];
 
 	let text = "";
 	let readPaths: string[] = [];
 	const errs: string[] = [];
-	// Groq = jalur UTAMA & satu-satunya yang dipasangi tools (search_code/
-	// list_dir/read_file) -- format function-calling di sini ikut standar
-	// OpenAI yang dipakai Groq. Gemini cuma jaring pengaman TANPA tools (jalur
-	// lama, cuma jawab dari lampiran manual) kalau Groq/key-nya lagi bermasalah.
-	for (const gk of groqKeys) {
-		for (const model of GROQ_MODEL_CANDIDATES) {
-			try {
-				const out = await callGroqAgentic(env, gk, model, textMessages as unknown as Record<string, unknown>[]);
-				text = out.text;
-				readPaths = out.readPaths;
-				break;
-			} catch (e) {
-				errs.push("Groq/" + model + ": " + (e instanceof Error ? e.message : String(e)));
+	// Ada gambar -> LANGSUNG Gemini (satu2nya yang dukung tools + gambar
+	// bareng), Groq dilewati sama sekali (model tool-use-nya di sini text-only).
+	if (!images.length) {
+		const textMessages = [
+			{ role: "system", content: SYSTEM_PROMPT },
+			...trimmedHistory.map((m) => ({ role: m.role, content: m.text })),
+			{ role: "user", content: userContent },
+		];
+		for (const gk of groqKeys) {
+			for (const model of GROQ_MODEL_CANDIDATES) {
+				try {
+					const out = await callGroqAgentic(env, gk, model, textMessages as unknown as Record<string, unknown>[]);
+					text = out.text;
+					readPaths = out.readPaths;
+					break;
+				} catch (e) {
+					errs.push("Groq/" + model + ": " + (e instanceof Error ? e.message : String(e)));
+				}
 			}
+			if (text) break;
 		}
-		if (text) break;
 	}
 	if (!text) {
 		for (const gemk of geminiKeys) {
 			for (const model of GEMINI_MODEL_CANDIDATES) {
 				try {
-					text = await callGemini(gemk, model, SYSTEM_PROMPT, textMessages);
+					const out = await callGeminiAgentic(env, gemk, model, SYSTEM_PROMPT, trimmedHistory, userContent, images);
+					text = out.text;
+					readPaths = out.readPaths;
 					break;
 				} catch (e) {
 					errs.push("Gemini/" + model + ": " + (e instanceof Error ? e.message : String(e)));

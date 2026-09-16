@@ -1523,6 +1523,7 @@
     // Cloudflare tetap manual sesudahnya (belum ada auto-deploy).
     let aiDevHistory = [];
     let aiDevAttached = [];
+    let aiDevImages = []; // [{mimeType, data(dataURL), name}] -- per-PESAN, dikosongkan sesudah terkirim
     let aiDevBusy = false;
     let aiDevBrowsePath = '';
     let aiDevBrowseEntries = [];
@@ -1542,11 +1543,16 @@
         </div>
         <div class="flex items-center justify-between flex-wrap gap-2">
           <div id="aiDevAttachedChips" class="flex flex-wrap gap-1.5 flex-1"></div>
-          <button onclick="aiDevOpenBrowser()" class="glass-inner px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap"><i class="fa-solid fa-paperclip mr-1"></i>Lampirkan File</button>
+          <div class="flex items-center gap-2">
+            <button onclick="document.getElementById('aiDevImageInput').click()" class="glass-inner px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap"><i class="fa-solid fa-image mr-1"></i>Lampirkan Gambar</button>
+            <button onclick="aiDevOpenBrowser()" class="glass-inner px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap"><i class="fa-solid fa-paperclip mr-1"></i>Lampirkan File</button>
+          </div>
         </div>
+        <input id="aiDevImageInput" type="file" accept="image/*" multiple hidden onchange="aiDevPickImages(this.files)">
+        <div id="aiDevImageChips" class="flex flex-wrap gap-1.5"></div>
         <div id="aiDevLog" class="flex flex-col gap-3"></div>
         <div class="flex items-end gap-2 mt-1">
-          <textarea id="aiDevInput" rows="2" placeholder="Tulis permintaan... (mis. 'perbaiki bug X di file yang dilampirkan')" class="flex-1 glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100 resize-none" onkeydown="if(event.key==='Enter'&amp;&amp;!event.shiftKey){event.preventDefault();aiDevSend();}"></textarea>
+          <textarea id="aiDevInput" rows="2" placeholder="Tulis permintaan... (mis. 'perbaiki bug X' atau lampirkan screenshot error)" class="flex-1 glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100 resize-none" onkeydown="if(event.key==='Enter'&amp;&amp;!event.shiftKey){event.preventDefault();aiDevSend();}"></textarea>
           <button id="aiDevSendBtn" onclick="aiDevSend()" class="bg-gradient-to-r from-fuchsia-400 to-purple-500 text-slate-950 font-extrabold px-5 py-2.5 rounded-xl text-xs h-[42px] whitespace-nowrap"><i class="fa-solid fa-paper-plane mr-1"></i>Kirim</button>
         </div>
         <div id="aiDevBrowserModal" class="fixed inset-0 z-[999] items-center justify-center p-4" style="display:none;background:rgba(0,0,0,.6)">
@@ -1575,6 +1581,26 @@
         : '<span class="text-[10px] text-slate-500 italic">Belum ada file dilampirkan</span>';
     }
     function aiDevRemoveAttached(i) { aiDevAttached.splice(i, 1); aiDevRepaintAttached(); }
+
+    function aiDevPickImages(fileList) {
+      const files = Array.from(fileList || []).slice(0, 4 - aiDevImages.length);
+      if (!files.length) { if (fileList && fileList.length) toast('Maksimal 4 gambar per pesan'); return; }
+      files.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          aiDevImages.push({ mimeType: file.type || 'image/png', data: reader.result, name: file.name });
+          aiDevRepaintImages();
+        };
+        reader.readAsDataURL(file);
+      });
+      document.getElementById('aiDevImageInput').value = '';
+    }
+    function aiDevRemoveImage(i) { aiDevImages.splice(i, 1); aiDevRepaintImages(); }
+    function aiDevRepaintImages() {
+      const box = document.getElementById('aiDevImageChips');
+      if (!box) return;
+      box.innerHTML = aiDevImages.map((img, i) => `<span class="relative inline-block"><img src="${img.data}" class="w-14 h-14 object-cover rounded-lg border border-fuchsia-500/30"><i class="fa-solid fa-xmark absolute -top-1.5 -right-1.5 bg-rose-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[9px] cursor-pointer" onclick="aiDevRemoveImage(${i})"></i></span>`).join('');
+    }
 
     function aiDevOpenBrowser() {
       document.getElementById('aiDevBrowserModal').style.display = 'flex';
@@ -1632,7 +1658,10 @@
       }
       log.innerHTML = aiDevHistory.map((m, i) => {
         if (m.role === 'user') {
-          return `<div class="self-end max-w-[85%] bg-gradient-to-r from-fuchsia-500/20 to-purple-500/20 border border-fuchsia-500/30 rounded-2xl rounded-br-sm px-4 py-2.5 text-xs text-slate-100 whitespace-pre-wrap">${aiDevEsc(m.text)}</div>`;
+          const imagesHtml = (m.images || []).length
+            ? `<div class="flex flex-wrap gap-1.5 mb-2">${m.images.map(img => `<img src="${img.data}" class="w-16 h-16 object-cover rounded-lg border border-fuchsia-400/40">`).join('')}</div>`
+            : '';
+          return `<div class="self-end max-w-[85%] bg-gradient-to-r from-fuchsia-500/20 to-purple-500/20 border border-fuchsia-500/30 rounded-2xl rounded-br-sm px-4 py-2.5 text-xs text-slate-100 whitespace-pre-wrap">${imagesHtml}${aiDevEsc(m.text)}</div>`;
         }
         const readPathsHtml = (m.readPaths || []).length
           ? `<div class="text-[9.5px] text-slate-500 mt-2"><i class="fa-solid fa-magnifying-glass mr-1"></i>AI baca sendiri: ${m.readPaths.map(p => `<span class="font-mono text-slate-400">${aiDevEsc(p)}</span>`).join(', ')}</div>`
@@ -1661,8 +1690,11 @@
       if (!text) return;
       aiDevBusy = true;
       const priorHistory = aiDevHistory.slice();
-      aiDevHistory.push({ role: 'user', text });
+      const imagesToSend = aiDevImages.slice();
+      aiDevHistory.push({ role: 'user', text, images: imagesToSend });
       inp.value = '';
+      aiDevImages = [];
+      aiDevRepaintImages();
       aiDevRepaintLog();
       const btn = document.getElementById('aiDevSendBtn');
       if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Mikir...'; }
@@ -1676,7 +1708,7 @@
         aiDevBusy = false;
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-paper-plane mr-1"></i>Kirim'; }
         toast('Gagal hubungi AI: ' + ((e && e.message) || e));
-      }).aiDevChat(currentSessionToken, priorHistory, aiDevAttached, text);
+      }).aiDevChat(currentSessionToken, priorHistory, aiDevAttached, text, imagesToSend);
     }
 
     async function aiDevApplyProposal(i, pi, btn) {

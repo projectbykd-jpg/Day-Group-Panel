@@ -177,7 +177,7 @@ const ROUTES: Record<string, Handler> = {
 	// ai dev -- lihat src/lib/ai-dev.ts
 	aiDevListDir: (env, b) => aiDevListDirApi(env, s(b.token), s(b.path)),
 	aiDevReadFile: (env, b) => aiDevReadFileApi(env, s(b.token), s(b.path)),
-	aiDevChat: (env, b) => aiDevChatApi(env, s(b.token), b.history, b.attachedFiles, s(b.message)),
+	aiDevChat: (env, b) => aiDevChatApi(env, s(b.token), b.history, b.attachedFiles, s(b.message), b.images),
 	aiDevApply: (env, b) => aiDevApplyApi(env, s(b.token), s(b.path), s(b.content)),
 
 	// laporan harian

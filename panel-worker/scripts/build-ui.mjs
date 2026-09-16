@@ -68,7 +68,7 @@ const ARG_MAP = {
 	wdListedRemove: ["token", "id"],
 	aiDevListDir: ["token", "path"],
 	aiDevReadFile: ["token", "path"],
-	aiDevChat: ["token", "history", "attachedFiles", "message"],
+	aiDevChat: ["token", "history", "attachedFiles", "message", "images"],
 	aiDevApply: ["token", "path", "content"],
 	lapGetConfig: ["token"],
 	lapSaveConfig: ["token", "data"],
