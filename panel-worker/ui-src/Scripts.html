@@ -4805,7 +4805,7 @@ Tindakan ini tidak dapat dibatalkan.`,
       }).botNewsRunViaGithub(currentSessionToken, count, target);
     }
 
-    /* ===== LIVE CHAT AUTO-REPLY (sesi DayLiveChat yang dipilih operator) ===== */
+    /* ===== LIVE CHAT AUTO-REPLY (bot pacify member spam/kasar, sesi dipilih operator) ===== */
     let livechatSessionsCache = [];
     let livechatTemplatesCache = [];
     let livechatPollTimer = null;
@@ -4815,15 +4815,59 @@ Tindakan ini tidak dapat dibatalkan.`,
         const el = document.getElementById('livechat-sec-' + p.replace('livechat-', ''));
         if (el) el.style.display = (p === page) ? 'flex' : 'none';
       });
+      loadLivechatBotStatus();
+      loadLivechatCredentialStatus();
       if (page === 'livechat-sessions') { loadLivechatSessions(); startLivechatPolling(); }
       if (page === 'livechat-templates') { stopLivechatPolling(); loadLivechatTemplates(); }
     }
     function startLivechatPolling() {
       stopLivechatPolling();
-      livechatPollTimer = setInterval(() => { if (currentPage === 'livechat-sessions') loadLivechatSessions(true); }, 8000);
+      livechatPollTimer = setInterval(() => {
+        if (currentPage !== 'livechat-sessions') return;
+        loadLivechatSessions(true);
+        loadLivechatBotStatus();
+      }, 8000);
     }
     function stopLivechatPolling() {
       if (livechatPollTimer) { clearInterval(livechatPollTimer); livechatPollTimer = null; }
+    }
+
+    function loadLivechatBotStatus() {
+      google.script.run.withSuccessHandler(r => {
+        const dot = document.getElementById('livechatConnDot');
+        const label = document.getElementById('livechatConnLabel');
+        if (!dot || !label) return;
+        const connected = !!(r && r.connected);
+        dot.className = 'w-2 h-2 rounded-full ' + (connected ? 'bg-emerald-400' : 'bg-rose-400');
+        label.textContent = connected ? 'Terhubung ke DayLiveChat' : 'Belum terhubung';
+      }).withFailureHandler(() => {}).livechatBotStatus(currentSessionToken);
+    }
+
+    function loadLivechatCredentialStatus() {
+      google.script.run.withSuccessHandler(r => {
+        const hint = document.getElementById('livechatCredHint');
+        const emailEl = document.getElementById('livechatCredEmail');
+        if (!hint) return;
+        if (r && r.configured) {
+          hint.textContent = 'Tersimpan: ' + (r.email || '-') + ' (diubah: ' + (r.updatedAt || '-') + ')';
+          if (emailEl && !emailEl.value) emailEl.value = r.email || '';
+        } else {
+          hint.textContent = 'Belum ada akun CS tersimpan.';
+        }
+      }).withFailureHandler(() => {}).livechatGetCredentialStatus(currentSessionToken);
+    }
+
+    function saveLivechatCredential() {
+      const email = document.getElementById('livechatCredEmail').value.trim();
+      const password = document.getElementById('livechatCredPassword').value;
+      if (!email || !password) { toast('Email & password akun CS wajib diisi'); return; }
+      google.script.run.withSuccessHandler(r => {
+        if (!r || r.success === false) { toast((r && r.message) || 'Gagal menyimpan akun CS'); return; }
+        toast('Akun CS disimpan, mencoba menghubungkan...');
+        document.getElementById('livechatCredPassword').value = '';
+        loadLivechatCredentialStatus();
+        setTimeout(() => { loadLivechatBotStatus(); loadLivechatSessions(true); }, 3000);
+      }).withFailureHandler(e => toast((e && e.message) || String(e))).livechatSaveCredential(currentSessionToken, email, password);
     }
 
     function loadLivechatSessions(silent) {
@@ -4838,27 +4882,22 @@ Tindakan ini tidak dapat dibatalkan.`,
       const wrap = document.getElementById('livechatSessionList');
       const empty = document.getElementById('livechatSessionEmpty');
       const countEl = document.getElementById('livechatSessCount');
-      const hint = document.getElementById('livechatSyncHint');
       const list = livechatSessionsCache;
       if (countEl) countEl.textContent = list.length ? ('(' + list.length + ')') : '';
       if (!list.length) {
         wrap.innerHTML = '';
         empty.style.display = '';
-        if (hint) hint.textContent = 'Menunggu sinkron dari userscript...';
         return;
       }
       empty.style.display = 'none';
-      const newest = list.reduce((a, b) => (String(a.last_synced_at || '') > String(b.last_synced_at || '')) ? a : b);
-      if (hint) hint.textContent = 'Sinkron terakhir: ' + (newest.last_synced_at || '-');
       wrap.innerHTML = list.map(row => {
         const on = Number(row.bot_enabled) === 1;
-        const unread = Number(row.unread) === 1;
         const keySafe = String(row.session_key).replace(/'/g, "\\'");
-        return '<div class="mini-card flex items-center justify-between gap-3 flex-wrap' + (unread ? ' border border-cyan-400/30' : '') + '">'
+        return '<div class="mini-card flex items-center justify-between gap-3 flex-wrap' + (on ? ' border border-emerald-400/30' : '') + '">'
           + '<div class="flex flex-col gap-0.5 min-w-0">'
-            + '<div class="text-xs font-bold text-slate-100 truncate">' + escapeHtml(row.customer_name || row.session_key) + (unread ? ' <span class="text-cyan-400">&bull; baru</span>' : '') + '</div>'
-            + '<div class="text-[10px] text-slate-500 truncate">' + escapeHtml(row.session_key) + (row.category ? (' &middot; ' + escapeHtml(row.category)) : '') + '</div>'
-            + (row.last_message ? '<div class="text-[10px] text-slate-400 truncate max-w-[420px]">' + (row.last_sender === 'customer' ? 'Customer: ' : 'CS: ') + escapeHtml(row.last_message) + '</div>' : '')
+            + '<div class="text-xs font-bold text-slate-100 truncate">' + escapeHtml(row.customer_name || row.session_key) + '</div>'
+            + '<div class="text-[10px] text-slate-500 truncate">' + escapeHtml(row.queue_code || row.session_key) + (row.divisi ? (' &middot; ' + escapeHtml(row.divisi)) : '') + '</div>'
+            + (row.last_message ? '<div class="text-[10px] text-slate-400 truncate max-w-[420px]">' + (row.last_sender === 'member' ? 'Member: ' : row.last_sender === 'bot' ? 'Bot: ' : 'CS: ') + escapeHtml(row.last_message) + '</div>' : '')
           + '</div>'
           + '<div class="flex items-center gap-2 shrink-0">'
             + '<span class="text-[10px] font-bold ' + (on ? 'text-emerald-400' : 'text-slate-500') + '">' + (on ? 'BOT AKTIF' : 'MANUAL') + '</span>'
@@ -4886,16 +4925,13 @@ Tindakan ini tidak dapat dibatalkan.`,
     function renderLivechatTemplates() {
       const wrap = document.getElementById('livechatTemplateList');
       if (!livechatTemplatesCache.length) {
-        wrap.innerHTML = '<div class="mini-card text-xs text-slate-400 text-center py-6">Belum ada template. Tambahkan minimal 1 balasan default (fallback) di bawah.</div>';
+        wrap.innerHTML = '<div class="mini-card text-xs text-slate-400 text-center py-6">Belum ada balasan tersimpan. Tambahkan minimal 1 di bawah supaya bot punya kalimat buat dikirim.</div>';
         return;
       }
       wrap.innerHTML = livechatTemplatesCache.map(t => {
         return '<div class="mini-card flex items-center justify-between gap-3 flex-wrap">'
           + '<div class="flex flex-col gap-0.5 min-w-0 flex-1">'
-            + '<div class="text-[10px] text-slate-500 font-bold uppercase tracking-wide">' + (Number(t.active) ? '<span class="text-emerald-400">AKTIF</span>' : '<span class="text-slate-600">NONAKTIF</span>') + ' &middot; urutan ' + t.sort_order
-              + (t.category ? (' &middot; kategori: ' + escapeHtml(t.category)) : '')
-              + (t.keyword ? (' &middot; kata kunci: ' + escapeHtml(t.keyword)) : ' &middot; fallback (tanpa kata kunci)')
-            + '</div>'
+            + '<div class="text-[10px] text-slate-500 font-bold uppercase tracking-wide">' + (Number(t.active) ? '<span class="text-emerald-400">AKTIF</span>' : '<span class="text-slate-600">NONAKTIF</span>') + ' &middot; urutan ' + t.sort_order + '</div>'
             + '<div class="text-xs text-slate-200">' + escapeHtml(t.reply_text) + '</div>'
           + '</div>'
           + '<div class="flex items-center gap-2 shrink-0">'
@@ -4910,11 +4946,9 @@ Tindakan ini tidak dapat dibatalkan.`,
       const t = livechatTemplatesCache.find(x => Number(x.id) === Number(id));
       if (!t) return;
       document.getElementById('livechatTplId').value = t.id;
-      document.getElementById('livechatTplCategory').value = t.category || '';
-      document.getElementById('livechatTplKeyword').value = t.keyword || '';
       document.getElementById('livechatTplSort').value = t.sort_order || 0;
       document.getElementById('livechatTplReply').value = t.reply_text || '';
-      document.getElementById('livechatTplFormTitle').innerHTML = '<i class="fa-solid fa-pen text-cyan-300"></i>Edit Template #' + t.id;
+      document.getElementById('livechatTplFormTitle').innerHTML = '<i class="fa-solid fa-pen text-cyan-300"></i>Edit Balasan #' + t.id;
       document.getElementById('livechatTplSaveLabel').textContent = 'Simpan Perubahan';
       document.getElementById('livechatTplCancelBtn').style.display = '';
       document.getElementById('livechatTplReply').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -4922,12 +4956,10 @@ Tindakan ini tidak dapat dibatalkan.`,
 
     function cancelEditLivechatTemplate() {
       document.getElementById('livechatTplId').value = '';
-      document.getElementById('livechatTplCategory').value = '';
-      document.getElementById('livechatTplKeyword').value = '';
       document.getElementById('livechatTplSort').value = '0';
       document.getElementById('livechatTplReply').value = '';
-      document.getElementById('livechatTplFormTitle').innerHTML = '<i class="fa-solid fa-plus text-emerald-300"></i>Tambah Template';
-      document.getElementById('livechatTplSaveLabel').textContent = 'Tambah Template';
+      document.getElementById('livechatTplFormTitle').innerHTML = '<i class="fa-solid fa-plus text-emerald-300"></i>Tambah Balasan';
+      document.getElementById('livechatTplSaveLabel').textContent = 'Tambah Balasan';
       document.getElementById('livechatTplCancelBtn').style.display = 'none';
     }
 
@@ -4937,14 +4969,12 @@ Tindakan ini tidak dapat dibatalkan.`,
       if (!replyText) { toast('Isi balasan wajib diisi'); return; }
       const data = {
         id: id ? Number(id) : undefined,
-        category: document.getElementById('livechatTplCategory').value.trim(),
-        keyword: document.getElementById('livechatTplKeyword').value.trim(),
         sortOrder: Number(document.getElementById('livechatTplSort').value) || 0,
         replyText: replyText,
       };
       google.script.run.withSuccessHandler(r => {
-        if (!r || r.success === false) { toast((r && r.message) || 'Gagal menyimpan template'); return; }
-        toast('Template disimpan');
+        if (!r || r.success === false) { toast((r && r.message) || 'Gagal menyimpan balasan'); return; }
+        toast('Balasan disimpan');
         livechatTemplatesCache = r.templates || [];
         renderLivechatTemplates();
         cancelEditLivechatTemplate();
@@ -4952,10 +4982,10 @@ Tindakan ini tidak dapat dibatalkan.`,
     }
 
     function deleteLivechatTemplate(id) {
-      if (!confirm('Hapus template ini?')) return;
+      if (!confirm('Hapus balasan ini?')) return;
       google.script.run.withSuccessHandler(r => {
-        if (!r || r.success === false) { toast((r && r.message) || 'Gagal menghapus template'); return; }
-        toast('Template dihapus');
+        if (!r || r.success === false) { toast((r && r.message) || 'Gagal menghapus balasan'); return; }
+        toast('Balasan dihapus');
         livechatTemplatesCache = r.templates || [];
         renderLivechatTemplates();
       }).withFailureHandler(e => toast((e && e.message) || String(e))).livechatDeleteTemplate(currentSessionToken, Number(id));

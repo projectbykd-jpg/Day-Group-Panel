@@ -26,6 +26,20 @@
 			"remote": true
 		}
 	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "LIVECHAT_BOT",
+				"class_name": "LivechatBotDO"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["LivechatBotDO"]
+		}
+	],
 	"vars": {
 		"TZ_OFFSET_HOURS": "7",
 		"CRON_KEY": "2ivwrtzgczxuwe1w637k0l4ki9g4hthh2m64jnrz",

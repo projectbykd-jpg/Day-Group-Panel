@@ -91,6 +91,9 @@ const ARG_MAP = {
 	livechatSaveTemplate: ["token", "data"],
 	livechatDeleteTemplate: ["token", "id"],
 	livechatRecentLogs: ["token"],
+	livechatGetCredentialStatus: ["token"],
+	livechatSaveCredential: ["token", "email", "password"],
+	livechatBotStatus: ["token"],
 };
 
 const shim = `<script>

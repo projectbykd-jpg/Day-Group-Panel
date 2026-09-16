@@ -998,8 +998,10 @@
 
       </div>
 
-      <!-- VIEW: LIVE CHAT AUTO-REPLY (ADMIN/OPERATOR — operasikan bot balas otomatis
-           utk sesi chat DayLiveChat yang DIPILIH, lihat userscripts/daylivechat-autobot.user.js) -->
+      <!-- VIEW: LIVE CHAT AUTO-REPLY (ADMIN/OPERATOR — bot khusus pacify member
+           spam/kasar di sesi yang DIPILIH; panel login LANGSUNG ke DayLiveChat
+           pakai akun CS tersimpan, lewat Durable Object di worker -- TIDAK ada
+           userscript/ekstensi browser sama sekali). -->
       <div id="livechat-page" style="display:none" class="flex flex-col gap-5 fade-in">
 
         <div class="glass-card rounded-[2rem] p-6 flex items-center justify-between gap-3 flex-wrap">
@@ -1007,35 +1009,41 @@
             <div class="w-11 h-11 rounded-2xl bg-cyan-500/15 flex items-center justify-center"><i class="fa-solid fa-headset text-cyan-400"></i></div>
             <div>
               <div class="text-lg font-black text-slate-50">LIVE CHAT &middot; AUTO-REPLY</div>
-              <div class="text-[11px] text-slate-400">Operasikan bot balas otomatis khusus sesi chat DayLiveChat yang kamu pilih -- sesi lain tetap manual.</div>
+              <div class="text-[11px] text-slate-400">Bot pacify member spam/kasar khusus sesi yang kamu pilih -- sesi lain tetap dibalas manual oleh CS.</div>
             </div>
           </div>
-          <button onclick="loadLivechatSessions()" class="btn-secondary text-xs font-bold px-4 py-2.5 rounded-xl"><i class="fa-solid fa-rotate mr-1"></i>REFRESH</button>
+          <div class="flex items-center gap-2">
+            <div id="livechatConnChip" class="mini-card text-[10px] font-bold px-3 py-2 flex items-center gap-2"><span id="livechatConnDot" class="w-2 h-2 rounded-full bg-slate-500"></span><span id="livechatConnLabel">Mengecek koneksi...</span></div>
+            <button onclick="loadLivechatSessions();loadLivechatBotStatus();" class="btn-secondary text-xs font-bold px-4 py-2.5 rounded-xl"><i class="fa-solid fa-rotate mr-1"></i>REFRESH</button>
+          </div>
         </div>
 
         <!-- ============ SUB-HALAMAN: SESI CHAT ============ -->
         <div id="livechat-sec-sessions" class="flex flex-col gap-5">
           <div class="glass-card rounded-[2rem] p-6 flex flex-col gap-4">
-            <div class="flex items-start justify-between gap-4 flex-wrap">
-              <div class="panel-section-title"><i class="fa-solid fa-inbox text-cyan-400 text-sm"></i> SESI CHAT TERDETEKSI <span id="livechatSessCount" class="text-slate-500 font-normal normal-case"></span></div>
-              <div class="mini-card text-[10px] text-slate-400 font-semibold px-3 py-2" id="livechatSyncHint">Menunggu sinkron dari userscript...</div>
+            <div>
+              <div class="panel-section-title"><i class="fa-solid fa-key text-amber-300 text-sm"></i> AKUN CS DAYLIVECHAT</div>
+              <p class="text-[11px] text-slate-500 mt-1">Panel login langsung pakai akun CS ini utk membaca &amp; membalas chat -- tidak perlu buka browser DayLiveChat sama sekali di sisi bot.</p>
             </div>
-            <p class="text-[11px] text-slate-500 -mt-2">Daftar ini muncul otomatis begitu userscript <b>daylivechat-autobot</b> terpasang &amp; login di daylivechat.com/cs/chat. Nyalakan switch pada sesi yang ingin dibalas otomatis bot memakai Template Balasan.</p>
-            <div id="livechatSessionList" class="flex flex-col gap-2"></div>
-            <div id="livechatSessionEmpty" class="mini-card text-xs text-slate-400 text-center py-8" style="display:none">
-              Belum ada sesi chat tersinkron. Pasang userscript terlebih dulu (lihat panduan di bawah).
+            <div class="grid sm:grid-cols-2 gap-3">
+              <label class="cfg-field">Email akun CS<input id="livechatCredEmail" class="cfg-input" placeholder="mis. stafflima100@gmail.com" autocomplete="off"></label>
+              <label class="cfg-field">Password<input id="livechatCredPassword" type="password" class="cfg-input" placeholder="isi utk ganti/set password" autocomplete="new-password"></label>
+            </div>
+            <div class="flex items-center gap-3 flex-wrap">
+              <button onclick="saveLivechatCredential()" class="btn-secondary text-xs font-bold px-4 py-2.5 rounded-xl"><i class="fa-solid fa-floppy-disk mr-1"></i>Simpan Akun</button>
+              <span id="livechatCredHint" class="text-[10px] text-slate-500"></span>
             </div>
           </div>
 
-          <div class="glass-card rounded-[2rem] p-6 flex flex-col gap-3">
-            <div class="panel-section-title"><i class="fa-solid fa-circle-info text-amber-300 text-sm"></i> CARA PASANG USERSCRIPT</div>
-            <ol class="text-[11px] text-slate-400 flex flex-col gap-1.5 list-decimal list-inside">
-              <li>Pasang ekstensi <b>Tampermonkey</b> di Chrome/Edge yang dipakai buka DayLiveChat.</li>
-              <li>Buka menu Tampermonkey &rarr; <i>Create a new script</i> &rarr; tempel isi file <code class="text-cyan-300">panel-worker/userscripts/daylivechat-autobot.user.js</code> &rarr; simpan.</li>
-              <li>Buka <b>daylivechat.com/cs/chat</b> &amp; login CS seperti biasa -- akan muncul tombol mengambang kecil <b>"Auto-Reply Bot"</b> di pojok.</li>
-              <li>Klik tombol itu &rarr; isi <b>URL Panel</b> (<code class="text-cyan-300">https://panel-worker.projectbykd.workers.dev</code>) &amp; <b>Kunci Bot</b> (minta ke admin -- sama dengan secret <code class="text-cyan-300">LIVECHAT_BOT_KEY</code>) &rarr; ikuti langkah "Kalibrasi" sekali (klik daftar chat, kotak pesan, kotak ketik, tombol Kirim) &rarr; simpan.</li>
-              <li>Sesi chat yang terlihat userscript akan otomatis muncul di daftar atas. Nyalakan switch pada sesi yang mau dibalas otomatis.</li>
-            </ol>
+          <div class="glass-card rounded-[2rem] p-6 flex flex-col gap-4">
+            <div class="flex items-start justify-between gap-4 flex-wrap">
+              <div class="panel-section-title"><i class="fa-solid fa-inbox text-cyan-400 text-sm"></i> SESI CHAT <span id="livechatSessCount" class="text-slate-500 font-normal normal-case"></span></div>
+            </div>
+            <p class="text-[11px] text-slate-500 -mt-2">Daftar ini terisi otomatis begitu akun CS di atas berhasil login. Nyalakan switch pada sesi member yang ingin dibalas otomatis (mis. yang lagi spam/kasar) -- begitu ON, bot langsung mendeteksi pesan masuk dari member itu.</p>
+            <div id="livechatSessionList" class="flex flex-col gap-2"></div>
+            <div id="livechatSessionEmpty" class="mini-card text-xs text-slate-400 text-center py-8" style="display:none">
+              Belum ada sesi chat terdeteksi. Pastikan akun CS di atas sudah diisi &amp; benar, lalu klik REFRESH.
+            </div>
           </div>
         </div>
 
@@ -1044,20 +1052,16 @@
           <div class="glass-card rounded-[2rem] p-6 flex flex-col gap-4">
             <div>
               <div class="panel-section-title"><i class="fa-solid fa-comment-dots text-emerald-400 text-sm"></i> TEMPLATE BALASAN</div>
-              <p class="text-[11px] text-slate-500 mt-1">Bot mencocokkan pesan customer ke <b>kata kunci</b> (dipisah koma) dan/atau <b>kategori</b> pre-chat form (mis. "Kendala Permainan") secara berurutan sesuai Urutan -- yang cocok pertama dipakai. Kosongkan kata kunci &amp; kategori supaya jadi balasan default (fallback) kalau tidak ada yang cocok.</p>
+              <p class="text-[11px] text-slate-500 mt-1">Daftar kalimat balasan bot -- dipilih <b>ACAK</b> tiap kali membalas, tanpa memandang isi keluhan member (bot ini khusus pacify member spam/kasar, bukan FAQ). Member yang baru chat 1x dibalas 1x setelah toleransi 30 detik; kalau member lanjut spam (2 pesan atau lebih), bot balas maksimal tiap 15 detik sekali selama masih aktif.</p>
             </div>
             <div id="livechatTemplateList" class="flex flex-col gap-2"></div>
             <div class="cfg-group">
-              <div class="cfg-group-title" id="livechatTplFormTitle"><i class="fa-solid fa-plus text-emerald-300"></i>Tambah Template</div>
+              <div class="cfg-group-title" id="livechatTplFormTitle"><i class="fa-solid fa-plus text-emerald-300"></i>Tambah Balasan</div>
               <input type="hidden" id="livechatTplId" value="">
-              <div class="grid sm:grid-cols-3 gap-3">
-                <label class="cfg-field">Kategori (opsional)<input id="livechatTplCategory" class="cfg-input" placeholder="mis. Kendala Permainan"></label>
-                <label class="cfg-field">Kata kunci (pisah koma)<input id="livechatTplKeyword" class="cfg-input" placeholder="mis. deposit, transfer, dana masuk"></label>
-                <label class="cfg-field">Urutan<input id="livechatTplSort" type="number" class="cfg-input" value="0"></label>
-              </div>
-              <label class="cfg-field">Isi balasan<textarea id="livechatTplReply" class="cfg-input" rows="3" placeholder="mis. Untuk kendala deposit, mohon kirimkan bukti transfer ya kak, akan segera kami cek."></textarea></label>
+              <label class="cfg-field">Isi balasan<textarea id="livechatTplReply" class="cfg-input" rows="2" placeholder="mis. Mohon maaf atas ketidaknyamanannya kak, keluhan sudah kami catat dan akan segera ditindaklanjuti tim terkait 🙏"></textarea></label>
+              <label class="cfg-field" style="max-width:140px">Urutan tampil<input id="livechatTplSort" type="number" class="cfg-input" value="0"></label>
               <div class="flex items-center gap-2">
-                <button onclick="saveLivechatTemplate()" class="btn-secondary text-xs font-bold px-4 py-2.5 rounded-xl"><i class="fa-solid fa-floppy-disk mr-1"></i><span id="livechatTplSaveLabel">Tambah Template</span></button>
+                <button onclick="saveLivechatTemplate()" class="btn-secondary text-xs font-bold px-4 py-2.5 rounded-xl"><i class="fa-solid fa-floppy-disk mr-1"></i><span id="livechatTplSaveLabel">Tambah Balasan</span></button>
                 <button onclick="cancelEditLivechatTemplate()" id="livechatTplCancelBtn" class="text-[11px] text-slate-500 font-semibold underline" style="display:none">Batal edit</button>
               </div>
             </div>

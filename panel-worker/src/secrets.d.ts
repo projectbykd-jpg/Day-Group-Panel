@@ -11,6 +11,4 @@ interface Env {
 	TURSO_URL?: string;
 	/** Auth token Turso (read & write). */
 	TURSO_TOKEN?: string;
-	/** Kunci bersama utk userscript daylivechat-autobot.user.js (Live Chat Auto-Reply). */
-	LIVECHAT_BOT_KEY?: string;
 }
