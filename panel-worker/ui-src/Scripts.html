@@ -1634,6 +1634,9 @@
         if (m.role === 'user') {
           return `<div class="self-end max-w-[85%] bg-gradient-to-r from-fuchsia-500/20 to-purple-500/20 border border-fuchsia-500/30 rounded-2xl rounded-br-sm px-4 py-2.5 text-xs text-slate-100 whitespace-pre-wrap">${aiDevEsc(m.text)}</div>`;
         }
+        const readPathsHtml = (m.readPaths || []).length
+          ? `<div class="text-[9.5px] text-slate-500 mt-2"><i class="fa-solid fa-magnifying-glass mr-1"></i>AI baca sendiri: ${m.readPaths.map(p => `<span class="font-mono text-slate-400">${aiDevEsc(p)}</span>`).join(', ')}</div>`
+          : '';
         const proposalsHtml = (m.proposals || []).map((p, pi) => `
           <div class="glass-inner rounded-xl border border-emerald-500/25 mt-2 overflow-hidden">
             <div class="flex items-center justify-between px-3 py-2 bg-emerald-500/10 flex-wrap gap-1.5">
@@ -1645,7 +1648,7 @@
             </div>
             <pre id="aiDevCode_${i}_${pi}" hidden class="text-[10px] font-mono text-slate-300 p-3 overflow-x-auto max-h-64 overflow-y-auto m-0">${aiDevEsc(p.content)}</pre>
           </div>`).join('');
-        return `<div class="self-start max-w-[92%] glass-inner rounded-2xl rounded-bl-sm px-4 py-2.5 text-xs text-slate-200 whitespace-pre-wrap"><i class="fa-solid fa-robot text-fuchsia-400 mr-1.5"></i>${aiDevEsc(m.text)}${proposalsHtml}</div>`;
+        return `<div class="self-start max-w-[92%] glass-inner rounded-2xl rounded-bl-sm px-4 py-2.5 text-xs text-slate-200 whitespace-pre-wrap"><i class="fa-solid fa-robot text-fuchsia-400 mr-1.5"></i>${aiDevEsc(m.text)}${proposalsHtml}${readPathsHtml}</div>`;
       }).join('');
       log.scrollTop = log.scrollHeight;
     }
@@ -1667,7 +1670,7 @@
         aiDevBusy = false;
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-paper-plane mr-1"></i>Kirim'; }
         if (!res || !res.success) { toast('AI gagal balas: ' + ((res && res.message) || '?')); return; }
-        aiDevHistory.push({ role: 'assistant', text: res.reply, proposals: res.proposals || [] });
+        aiDevHistory.push({ role: 'assistant', text: res.reply, proposals: res.proposals || [], readPaths: res.readPaths || [] });
         aiDevRepaintLog();
       }).withFailureHandler(e => {
         aiDevBusy = false;

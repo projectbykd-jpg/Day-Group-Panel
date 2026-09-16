@@ -61,6 +61,20 @@ export async function aiDevReadFile(env: Env, path: string): Promise<{ path: str
 	return { path: clean, content: b64Decode(String(j.content)), sha: String(j.sha ?? "") };
 }
 
+export async function aiDevSearchCode(env: Env, query: string): Promise<{ path: string }[]> {
+	const token = requireGhToken(env);
+	const q = String(query || "").trim();
+	if (!q) return [];
+	const resp = await fetch(`https://api.github.com/search/code?q=${encodeURIComponent(q + " repo:" + REPO)}&per_page=15`, { headers: ghHeaders(token) });
+	if (!resp.ok) {
+		const body = await resp.text().catch(() => "");
+		throw new Error(`Pencarian "${q}" gagal (HTTP ${resp.status}): ${body.slice(0, 200)}`);
+	}
+	const j = (await resp.json()) as Record<string, unknown>;
+	const items = Array.isArray(j.items) ? (j.items as Record<string, unknown>[]) : [];
+	return items.map((it) => ({ path: String(it.path ?? "") })).filter((it) => it.path);
+}
+
 export async function aiDevWriteFile(env: Env, path: string, content: string, message: string): Promise<{ commitUrl: string }> {
 	const token = requireGhToken(env);
 	const clean = String(path || "").replace(/^\/+/, "");
@@ -102,23 +116,72 @@ export interface AiDevFileProposal {
 export interface AiDevReply {
 	reply: string;
 	proposals: AiDevFileProposal[];
+	readPaths: string[];
 }
 
 const SYSTEM_PROMPT =
-	`Kamu asisten coding untuk project "Day-Group-Panel" -- Cloudflare Worker (TypeScript, folder src/) + frontend ` +
-	`1 halaman HTML/JS (ui-src/Index.html, Scripts.html, Styles.html, dirakit scripts/build-ui.mjs), dipakai sbg panel admin bisnis ` +
-	`(togel/prediksi, laporan harian, bot berita, dll). Jawab berbahasa Indonesia santai (boleh sapa "bro"), jelas, tidak bertele-tele.\n\n` +
-	`Kamu TIDAK bisa membaca file sendiri -- HANYA file yang eksplisit dilampirkan user (ditandai "=== FILE: <path> ===" di bawah pesan) ` +
-	`yang kamu tahu isinya. Kalau butuh lihat file lain dulu sebelum bisa jawab, BILANG TERUS TERANG minta user lampirkan file itu -- ` +
-	`JANGAN PERNAH mengarang/menebak isi file yang belum kamu lihat.\n\n` +
-	`Kalau user minta PERUBAHAN KODE dan kamu sudah punya isi file terkait, usulkan isi file BARU LENGKAP (bukan potongan diff/patch) ` +
-	`dengan format PERSIS begini (boleh lebih dari satu blok kalau perlu ubah beberapa file sekaligus):\n` +
-	`===FILE: <path relatif dari root repo, SAMA PERSIS seperti yang diberikan di lampiran>===\n` +
+	`Kamu asisten coding untuk project "Day-Group-Panel" -- Cloudflare Worker (TypeScript) + frontend 1 halaman HTML/JS, dipakai sbg ` +
+	`panel admin bisnis (togel/prediksi, laporan harian, bot berita, dll). Jawab berbahasa Indonesia santai (boleh sapa "bro"), jelas, ` +
+	`tidak bertele-tele.\n\n` +
+	`Struktur repo: backend Cloudflare Worker di "panel-worker/src/" (index.ts = router utama tempat semua action didaftarkan, ` +
+	`src/api/*.ts = handler per fitur/menu, src/lib/*.ts = logic inti & akses database). Frontend 1 halaman di "panel-worker/ui-src/" ` +
+	`(Index.html = struktur HTML statis, Scripts.html = SEMUA javascript app, Styles.html = CSS custom, ketiganya dirakit jadi ` +
+	`1 file "public/index.html" oleh scripts/build-ui.mjs -- kalau ubah UI, edit file2 ui-src/ ini, BUKAN public/index.html langsung). ` +
+	`GitHub Actions workflow ada di ".github/workflows/" (root repo, bukan di dalam panel-worker/).\n\n` +
+	`Kamu PUNYA TOOLS buat menjelajah repo SENDIRI: list_dir(path) lihat isi folder, read_file(path) baca isi lengkap 1 file, ` +
+	`search_code(query) cari keyword/nama fungsi/potongan teks di SELURUH repo. PAKAI tools ini AKTIF buat cari & baca file yang ` +
+	`relevan SEBELUM menjawab -- kalau user cerita soal bug/fitur tanpa nyebut nama file, JANGAN nunggu ditanya balik, langsung cari ` +
+	`sendiri (mulai dari search_code kalau tau nama fungsi/kata kunci terkait, atau list_dir dari "panel-worker/src" / ` +
+	`"panel-worker/ui-src" kalau belum tau harus cari ke mana). JANGAN PERNAH mengarang/menebak isi file yang belum kamu baca via tools ` +
+	`atau yang dilampirkan user -- kalau ragu, baca dulu.\n\n` +
+	`Kalau user minta PERUBAHAN KODE dan kamu SUDAH baca isi file terkait (via tool read_file atau lampiran), usulkan isi file BARU ` +
+	`LENGKAP (bukan potongan diff/patch) dengan format PERSIS begini di jawaban FINAL kamu (boleh lebih dari satu blok kalau perlu ` +
+	`ubah beberapa file sekaligus):\n` +
+	`===FILE: <path relatif dari root repo, SAMA PERSIS seperti path yang kamu baca>===\n` +
 	`<isi lengkap file baru, dari baris pertama sampai baris terakhir>\n` +
 	`===END===\n\n` +
 	`Di LUAR blok ===FILE:...===END=== itu, jelaskan SINGKAT apa yang diubah & kenapa (buat manusia baca, bukan JSON/markup). ` +
 	`PENTING: kamu TIDAK bisa commit/deploy sendiri -- user yang REVIEW & klik tombol "Terapkan" tiap file yang kamu usulkan, jadi ` +
 	`jangan bilang "sudah saya terapkan" -- bilang "sudah aku usulkan, tinggal direview & diterapkan".`;
+
+const TOOLS = [
+	{
+		type: "function",
+		function: {
+			name: "list_dir",
+			description: "Lihat daftar file & folder di dalam suatu direktori repo.",
+			parameters: {
+				type: "object",
+				properties: { path: { type: "string", description: 'Path folder relatif dari root repo, kosongkan ("") utk root.' } },
+				required: ["path"],
+			},
+		},
+	},
+	{
+		type: "function",
+		function: {
+			name: "read_file",
+			description: "Baca isi lengkap 1 file di repo.",
+			parameters: {
+				type: "object",
+				properties: { path: { type: "string", description: "Path file relatif dari root repo." } },
+				required: ["path"],
+			},
+		},
+	},
+	{
+		type: "function",
+		function: {
+			name: "search_code",
+			description: "Cari keyword/nama fungsi/potongan teks di seluruh isi repo, balas daftar path file yang cocok.",
+			parameters: {
+				type: "object",
+				properties: { query: { type: "string", description: "Kata kunci pencarian." } },
+				required: ["query"],
+			},
+		},
+	},
+];
 
 function parseProposals(text: string): { reply: string; proposals: AiDevFileProposal[] } {
 	const proposals: AiDevFileProposal[] = [];
@@ -131,17 +194,73 @@ function parseProposals(text: string): { reply: string; proposals: AiDevFileProp
 	return { reply, proposals };
 }
 
-async function callGroq(apiKey: string, model: string, messages: { role: string; content: string }[]): Promise<string> {
-	const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-		method: "POST",
-		headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-		body: JSON.stringify({ model, messages, temperature: 0.4 }),
-	});
-	const body: any = await resp.json().catch(() => ({}));
-	if (!resp.ok) throw new Error("Groq HTTP " + resp.status + ": " + JSON.stringify(body?.error || body).slice(0, 200));
-	const content = body?.choices?.[0]?.message?.content;
-	if (!content) throw new Error("Groq balas kosong.");
-	return String(content);
+// Loop tool-use (function calling ala OpenAI, format yang dipakai Groq) --
+// AI boleh minta jalankan list_dir/read_file/search_code berkali-kali (max
+// MAX_STEPS) sebelum balas jawaban FINAL (tanpa tool_calls lagi). Tiap
+// panggilan tool dijalankan SERVER-SIDE (bukan browser), hasilnya (isi file/
+// daftar folder/hasil cari) dimasukkan balik ke percakapan sbg pesan role
+// "tool", supaya AI "melihat" hasilnya sebelum lanjut mikir.
+const MAX_TOOL_STEPS = 8;
+
+async function runTool(env: Env, name: string, args: Record<string, unknown>, readPaths: string[]): Promise<string> {
+	try {
+		if (name === "list_dir") {
+			const entries = await aiDevListDir(env, String(args.path ?? ""));
+			return entries.length ? entries.map((e) => `${e.type === "dir" ? "[folder]" : "[file]  "} ${e.path}`).join("\n") : "(folder kosong)";
+		}
+		if (name === "read_file") {
+			const file = await aiDevReadFile(env, String(args.path ?? ""));
+			readPaths.push(file.path);
+			return `=== FILE: ${file.path} ===\n${file.content.slice(0, 24000)}`;
+		}
+		if (name === "search_code") {
+			const hits = await aiDevSearchCode(env, String(args.query ?? ""));
+			return hits.length ? hits.map((h) => h.path).join("\n") : "(tidak ada hasil, coba kata kunci lain)";
+		}
+		return `ERROR: tool "${name}" tidak dikenal.`;
+	} catch (e) {
+		return `ERROR: ${e instanceof Error ? e.message : String(e)}`;
+	}
+}
+
+async function callGroqAgentic(
+	env: Env,
+	apiKey: string,
+	model: string,
+	initialMessages: Record<string, unknown>[],
+): Promise<{ text: string; readPaths: string[] }> {
+	const readPaths: string[] = [];
+	const messages = initialMessages.slice();
+	for (let step = 0; step < MAX_TOOL_STEPS; step++) {
+		const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+			method: "POST",
+			headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+			body: JSON.stringify({ model, messages, tools: TOOLS, tool_choice: "auto", temperature: 0.3 }),
+		});
+		const body: any = await resp.json().catch(() => ({}));
+		if (!resp.ok) throw new Error("Groq HTTP " + resp.status + ": " + JSON.stringify(body?.error || body).slice(0, 200));
+		const msg = body?.choices?.[0]?.message;
+		if (!msg) throw new Error("Groq balas kosong.");
+		const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
+		if (!toolCalls.length) {
+			const content = String(msg.content || "").trim();
+			if (!content) throw new Error("Groq balas kosong tanpa tool call.");
+			return { text: content, readPaths };
+		}
+		messages.push({ role: "assistant", content: msg.content ?? null, tool_calls: msg.tool_calls });
+		for (const tc of toolCalls) {
+			const name = String(tc?.function?.name ?? "");
+			let args: Record<string, unknown> = {};
+			try {
+				args = JSON.parse(tc?.function?.arguments || "{}");
+			} catch {
+				/* argumen rusak -- args tetap {} , tool-nya sendiri yg akan gagal & lapor error ke AI */
+			}
+			const result = await runTool(env, name, args, readPaths);
+			messages.push({ role: "tool", tool_call_id: tc?.id, content: result });
+		}
+	}
+	throw new Error(`AI kehabisan langkah pencarian (>${MAX_TOOL_STEPS}x panggil tools) sebelum kasih jawaban final -- coba pertanyaan yang lebih spesifik.`);
 }
 
 async function callGemini(apiKey: string, model: string, systemPrompt: string, messages: { role: string; content: string }[]): Promise<string> {
@@ -180,19 +299,27 @@ export async function aiDevChat(
 	const trimmedHistory = history.slice(-16);
 	const attachText = attachedFiles.length
 		? attachedFiles.map((f) => `=== FILE: ${f.path} ===\n${f.content.slice(0, 20000)}`).join("\n\n")
-		: "(tidak ada file dilampirkan pesan ini)";
-	const messages = [
+		: "(tidak ada file dilampirkan pesan ini -- pakai tools kalau perlu baca file)";
+	const userContent = `${userMessage}\n\n--- FILE YANG DILAMPIRKAN (opsional, di luar ini pakai tools) ---\n${attachText}`;
+	const textMessages = [
 		{ role: "system", content: SYSTEM_PROMPT },
 		...trimmedHistory.map((m) => ({ role: m.role, content: m.text })),
-		{ role: "user", content: `${userMessage}\n\n--- FILE YANG DILAMPIRKAN ---\n${attachText}` },
+		{ role: "user", content: userContent },
 	];
 
 	let text = "";
+	let readPaths: string[] = [];
 	const errs: string[] = [];
+	// Groq = jalur UTAMA & satu-satunya yang dipasangi tools (search_code/
+	// list_dir/read_file) -- format function-calling di sini ikut standar
+	// OpenAI yang dipakai Groq. Gemini cuma jaring pengaman TANPA tools (jalur
+	// lama, cuma jawab dari lampiran manual) kalau Groq/key-nya lagi bermasalah.
 	for (const gk of groqKeys) {
 		for (const model of GROQ_MODEL_CANDIDATES) {
 			try {
-				text = await callGroq(gk, model, messages);
+				const out = await callGroqAgentic(env, gk, model, textMessages as unknown as Record<string, unknown>[]);
+				text = out.text;
+				readPaths = out.readPaths;
 				break;
 			} catch (e) {
 				errs.push("Groq/" + model + ": " + (e instanceof Error ? e.message : String(e)));
@@ -204,7 +331,7 @@ export async function aiDevChat(
 		for (const gemk of geminiKeys) {
 			for (const model of GEMINI_MODEL_CANDIDATES) {
 				try {
-					text = await callGemini(gemk, model, SYSTEM_PROMPT, messages);
+					text = await callGemini(gemk, model, SYSTEM_PROMPT, textMessages);
 					break;
 				} catch (e) {
 					errs.push("Gemini/" + model + ": " + (e instanceof Error ? e.message : String(e)));
@@ -216,5 +343,5 @@ export async function aiDevChat(
 	if (!text) throw new Error("Semua provider AI gagal:\n" + errs.join("\n"));
 
 	const { reply, proposals } = parseProposals(text);
-	return { reply: reply || "(AI cuma balas usulan file, tanpa penjelasan.)", proposals };
+	return { reply: reply || "(AI cuma balas usulan file, tanpa penjelasan.)", proposals, readPaths };
 }
