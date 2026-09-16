@@ -313,7 +313,13 @@ async function callGeminiAgentic(
 			const name = String(c.functionCall?.name ?? "");
 			const args = (c.functionCall?.args || {}) as Record<string, unknown>;
 			const result = await runTool(env, name, args, readPaths);
-			contents.push({ role: "function", parts: [{ functionResponse: { name, response: { result } } }] });
+			// Role "function" DITOLAK oleh API Gemini yang aktif sekarang (error
+			// nyata: "Role 'function' is not supported... use SYSTEM/USER/ASSISTANT/
+			// DEVELOPER/CONTEXT/USER_CONTEXT/MODEL") -- beda dari dokumentasi lama.
+			// "user" satu2nya yang sudah pasti diterima (dipakai di tempat lain di
+			// payload yang sama tanpa keluhan), jadi hasil tool dikirim balik lewat
+			// situ.
+			contents.push({ role: "user", parts: [{ functionResponse: { name, response: { result } } }] });
 		}
 	}
 	throw new Error(`AI (Gemini) kehabisan langkah pencarian (>${MAX_TOOL_STEPS}x panggil tools) sebelum kasih jawaban final.`);
@@ -332,7 +338,9 @@ async function callGeminiAgentic(
 // artikel panjang, tidak boleh saling menimpa.
 const AI_DEV_GROQ_MODEL_KEY = "ai_dev_groq_model";
 const GROQ_MODEL_CANDIDATES = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3-32b"];
-const GEMINI_MODEL_CANDIDATES = ["gemini-flash-latest", "gemini-2.0-flash"];
+// "gemini-2.0-flash" MATI (404 nyata: "no longer available... use models/
+// gemini-3.6-flash") -- diganti ke rekomendasi Google itu langsung.
+const GEMINI_MODEL_CANDIDATES = ["gemini-flash-latest", "gemini-3.6-flash"];
 
 async function discoverGroqToolModels(apiKey: string, alreadyTried: Set<string>): Promise<string[]> {
 	try {
