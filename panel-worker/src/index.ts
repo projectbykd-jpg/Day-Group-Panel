@@ -47,6 +47,7 @@ import { investPump, investPumpUser } from "./lib/invest-scan";
 import { investGetState } from "./lib/invest";
 import { pgaPendingStatus, pgaPendingSync } from "./api/pga-pending";
 import { wdListedCheck, wdListedGetList, wdListedRemove, wdListedSync } from "./api/wd-listed";
+import { aiDevApplyApi, aiDevChatApi, aiDevListDirApi, aiDevReadFileApi } from "./api/ai-dev";
 import {
 	lapAdminStatus,
 	lapGetConfig,
@@ -172,6 +173,12 @@ const ROUTES: Record<string, Handler> = {
 	wdListedGetList: (env, b) => wdListedGetList(env, s(b.token)),
 	wdListedCheck: (env, b) => wdListedCheck(env, s(b.token), Number(b.id)),
 	wdListedRemove: (env, b) => wdListedRemove(env, s(b.token), Number(b.id)),
+
+	// ai dev -- lihat src/lib/ai-dev.ts
+	aiDevListDir: (env, b) => aiDevListDirApi(env, s(b.token), s(b.path)),
+	aiDevReadFile: (env, b) => aiDevReadFileApi(env, s(b.token), s(b.path)),
+	aiDevChat: (env, b) => aiDevChatApi(env, s(b.token), b.history, b.attachedFiles, s(b.message)),
+	aiDevApply: (env, b) => aiDevApplyApi(env, s(b.token), s(b.path), s(b.content)),
 
 	// laporan harian
 	lapGetConfig: (env, b) => lapGetConfig(env, s(b.token)),

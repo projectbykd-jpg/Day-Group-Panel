@@ -137,6 +137,10 @@
           <button onclick="switchPage('admin')" id="nav-admin" class="nav-extra admin-only sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-3 rounded-xl font-bold text-xs cursor-pointer nav-solo">
             <i class="fa-solid fa-shield-halved text-amber-400 text-sm shrink-0"></i><span class="tracking-wider">Admin</span>
           </button>
+          <!-- 5. AI DEV (admin saja) -->
+          <button onclick="switchPage('ai-dev')" id="nav-ai-dev" class="nav-extra admin-only sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-3 rounded-xl font-bold text-xs cursor-pointer nav-solo">
+            <i class="fa-solid fa-robot text-fuchsia-400 text-sm shrink-0"></i><span class="tracking-wider">AI Dev</span>
+          </button>
           <!-- GRUP 3: BOT (hanya role BOT) -->
           <div class="nav-group" data-group="bot">
             <button type="button" class="nav-group-head" onclick="toggleNavGroup('bot')">
@@ -723,6 +727,9 @@
 
       <!-- VIEW: PGA PENDING (sinkron live dari skrip Console di tab Motion) -->
       <div id="pga-pending-page" style="display:none" class="flex flex-col gap-5 fade-in"></div>
+
+      <!-- VIEW: AI DEV (admin saja) -->
+      <div id="ai-dev-page" style="display:none" class="flex flex-col gap-5 fade-in"></div>
 
       <!-- VIEW: BOT (role BOT — fitur NEWS: berita -> rewrite AI -> posting Blogger) -->
       <div id="bot-page" style="display:none" class="flex flex-col gap-5 fade-in">

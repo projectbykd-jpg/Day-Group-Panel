@@ -519,12 +519,13 @@
 
     const LAP_PAGES = ['lap-admin','lap-motion','lap-mozart','lap-setting'];
     const BOT_PAGES = ['bot-dashboard','bot-sources','bot-history','bot-fbdirect','bot-config'];
-    const NAV_KEYS = ['home','prediction','activity','admin','invest','pga-pending'].concat(LAP_PAGES).concat(BOT_PAGES);
+    const NAV_KEYS = ['home','prediction','activity','admin','invest','pga-pending','ai-dev'].concat(LAP_PAGES).concat(BOT_PAGES);
     const HEADER_KICKER = {
       home: 'KD-GROUP PANEL · RESULT HARI INI',
       prediction: 'KD-GROUP PANEL · PREDIKSI & KATA PENUTUP',
       invest: 'KD-GROUP PANEL · AUTOCHECK INVEST',
       'pga-pending': 'LAPORAN HARIAN · PGA PENDING (LIVE)',
+      'ai-dev': 'KD-GROUP PANEL · AI DEV ASSISTANT',
       activity: 'KD-GROUP PANEL · RIWAYAT AKTIVITAS',
       admin: 'KD-GROUP PANEL · ADMIN CONTROL CENTER',
       'lap-admin': 'LAPORAN HARIAN · LAP ADMIN',
@@ -559,11 +560,11 @@
     function switchPage(page) {
       const pages = {
         home:'main-panel', prediction:'prediction-page', activity:'activity-page',
-        admin:'admin-page', invest:'invest-page', 'pga-pending':'pga-pending-page',
+        admin:'admin-page', invest:'invest-page', 'pga-pending':'pga-pending-page', 'ai-dev':'ai-dev-page',
         'lap-admin':'lap-page', 'lap-motion':'lap-page', 'lap-mozart':'lap-page', 'lap-setting':'lap-page',
         'bot-dashboard':'bot-page', 'bot-sources':'bot-page', 'bot-history':'bot-page', 'bot-fbdirect':'bot-page', 'bot-config':'bot-page'
       };
-      ['main-panel','prediction-page','activity-page','admin-page','invest-page','pga-pending-page','bot-page','lap-page'].forEach(id => {
+      ['main-panel','prediction-page','activity-page','admin-page','invest-page','pga-pending-page','ai-dev-page','bot-page','lap-page'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
       });
@@ -630,6 +631,10 @@
       if (page === 'pga-pending') {
         renderPgaPendingPage();
         startPgaPendingPolling();
+      }
+
+      if (page === 'ai-dev') {
+        renderAiDevPage();
       }
 
       if (BOT_PAGES.includes(page)) {
@@ -1508,6 +1513,191 @@
         if (lapTblState['wd_listed']) { lapTblState['wd_listed'].rows = wdListedRows; lapTblRepaint('wd_listed'); }
         toast('Baris dihapus dari WD Listed');
       }).withFailureHandler(e => toast('Gagal menghapus: ' + ((e && e.message) || e))).wdListedRemove(currentSessionToken, id);
+    }
+
+    // ================= AI DEV (admin) -- asisten coding di dalam panel =================
+    // AI baca file HANYA yang dilampirkan manual (klik "Lampirkan File" / tempel
+    // path) -- BUKAN otomatis menjelajah repo sendiri (lebih terprediksi & hemat
+    // token). Usulan perubahan file WAJIB direview & diklik "Terapkan" satu per
+    // satu (commit ke GitHub) -- AI tidak pernah commit sendiri. Deploy ke
+    // Cloudflare tetap manual sesudahnya (belum ada auto-deploy).
+    let aiDevHistory = [];
+    let aiDevAttached = [];
+    let aiDevBusy = false;
+    let aiDevBrowsePath = '';
+    let aiDevBrowseEntries = [];
+
+    function aiDevEsc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[ch])); }
+
+    function renderAiDevPage() {
+      const host = document.getElementById('ai-dev-page');
+      if (!host) return;
+      host.innerHTML = lapHeaderCard('fa-robot', 'AI Dev Assistant', 'Ngobrol sama AI buat baca & usulkan perubahan kode project ini -- langsung dari GitHub.', `
+        <div class="glass-inner rounded-2xl p-4 border border-fuchsia-500/20 text-[11px] text-slate-300 leading-relaxed">
+          <div class="font-bold text-fuchsia-300 mb-1"><i class="fa-solid fa-circle-info mr-1"></i>Cara kerja</div>
+          AI ini cuma tahu isi file yang KAMU lampirkan (klik <b>Lampirkan File</b> di bawah) -- dia tidak baca file lain sendiri.
+          Kalau AI usulkan perubahan, itu tampil sbg kartu kode yang WAJIB kamu review & klik <b>Terapkan</b> dulu baru ke-commit ke
+          GitHub -- AI tidak pernah commit sendiri. Sesudah commit, deploy ke server tetap manual (minta Claude Code, atau jalankan
+          <code>npm run deploy</code> sendiri).
+        </div>
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div id="aiDevAttachedChips" class="flex flex-wrap gap-1.5 flex-1"></div>
+          <button onclick="aiDevOpenBrowser()" class="glass-inner px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap"><i class="fa-solid fa-paperclip mr-1"></i>Lampirkan File</button>
+        </div>
+        <div id="aiDevLog" class="flex flex-col gap-3"></div>
+        <div class="flex items-end gap-2 mt-1">
+          <textarea id="aiDevInput" rows="2" placeholder="Tulis permintaan... (mis. 'perbaiki bug X di file yang dilampirkan')" class="flex-1 glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100 resize-none" onkeydown="if(event.key==='Enter'&amp;&amp;!event.shiftKey){event.preventDefault();aiDevSend();}"></textarea>
+          <button id="aiDevSendBtn" onclick="aiDevSend()" class="bg-gradient-to-r from-fuchsia-400 to-purple-500 text-slate-950 font-extrabold px-5 py-2.5 rounded-xl text-xs h-[42px] whitespace-nowrap"><i class="fa-solid fa-paper-plane mr-1"></i>Kirim</button>
+        </div>
+        <div id="aiDevBrowserModal" hidden class="fixed inset-0 z-[999] flex items-center justify-center p-4" style="background:rgba(0,0,0,.6)">
+          <div class="glass-card rounded-2xl p-4 w-full max-w-lg max-h-[80vh] flex flex-col gap-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-200">Pilih File</span>
+              <button onclick="document.getElementById('aiDevBrowserModal').hidden=true" class="text-slate-400 hover:text-slate-200"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="flex gap-2">
+              <input id="aiDevPathInput" placeholder="path/manual/file.ts (opsional, langsung ketik)" class="flex-1 glass-inner rounded-lg px-3 py-2 text-xs text-slate-100">
+              <button onclick="aiDevAttachManualPath()" class="glass-inner px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap">Lampirkan</button>
+            </div>
+            <div id="aiDevBrowserPath" class="text-[10px] text-slate-500 font-mono"></div>
+            <div id="aiDevBrowserList" class="flex-1 overflow-y-auto flex flex-col gap-1"></div>
+          </div>
+        </div>`);
+      aiDevRepaintAttached();
+      aiDevRepaintLog();
+    }
+
+    function aiDevRepaintAttached() {
+      const box = document.getElementById('aiDevAttachedChips');
+      if (!box) return;
+      box.innerHTML = aiDevAttached.length
+        ? aiDevAttached.map((f, i) => `<span class="inline-flex items-center gap-1.5 glass-inner rounded-full px-3 py-1 text-[10px] font-mono text-cyan-300"><i class="fa-solid fa-file-code"></i>${aiDevEsc(f.path)}<i class="fa-solid fa-xmark cursor-pointer text-slate-500 hover:text-rose-400 ml-1" onclick="aiDevRemoveAttached(${i})"></i></span>`).join('')
+        : '<span class="text-[10px] text-slate-500 italic">Belum ada file dilampirkan</span>';
+    }
+    function aiDevRemoveAttached(i) { aiDevAttached.splice(i, 1); aiDevRepaintAttached(); }
+
+    function aiDevOpenBrowser() {
+      document.getElementById('aiDevBrowserModal').hidden = false;
+      aiDevBrowseLoad('');
+    }
+    function aiDevAttachManualPath() {
+      const inp = document.getElementById('aiDevPathInput');
+      const p = (inp.value || '').trim();
+      if (!p) { toast('Isi path file dulu'); return; }
+      aiDevAttachPath(p);
+    }
+    function aiDevBrowseLoad(path) {
+      aiDevBrowsePath = path;
+      const listEl = document.getElementById('aiDevBrowserList');
+      const pathEl = document.getElementById('aiDevBrowserPath');
+      if (pathEl) pathEl.textContent = '/' + path;
+      if (listEl) listEl.innerHTML = '<div class="text-[11px] text-slate-500 italic p-2">Memuat...</div>';
+      google.script.run.withSuccessHandler(res => {
+        if (!res || !res.success) { if (listEl) listEl.innerHTML = '<div class="text-[11px] text-rose-400 p-2">Gagal memuat.</div>'; return; }
+        aiDevBrowseEntries = res.entries || [];
+        aiDevRepaintBrowser();
+      }).withFailureHandler(e => { if (listEl) listEl.innerHTML = '<div class="text-[11px] text-rose-400 p-2">' + aiDevEsc((e && e.message) || e) + '</div>'; }).aiDevListDir(currentSessionToken, path);
+    }
+    function aiDevRepaintBrowser() {
+      const listEl = document.getElementById('aiDevBrowserList');
+      if (!listEl) return;
+      let html = '';
+      if (aiDevBrowsePath) {
+        const parent = aiDevBrowsePath.split('/').slice(0, -1).join('/');
+        html += `<div class="glass-inner rounded-lg px-3 py-2 text-xs cursor-pointer hover:text-cyan-300" onclick="aiDevBrowseLoad('${aiDevEsc(parent)}')"><i class="fa-solid fa-arrow-turn-up mr-2"></i>.. (naik)</div>`;
+      }
+      html += aiDevBrowseEntries.map(e => {
+        if (e.type === 'dir') return `<div class="glass-inner rounded-lg px-3 py-2 text-xs cursor-pointer hover:text-cyan-300" onclick="aiDevBrowseLoad('${aiDevEsc(e.path)}')"><i class="fa-solid fa-folder text-amber-400 mr-2"></i>${aiDevEsc(e.name)}</div>`;
+        return `<div class="glass-inner rounded-lg px-3 py-2 text-xs cursor-pointer hover:text-emerald-300 flex items-center justify-between" onclick="aiDevAttachPath('${aiDevEsc(e.path)}')"><span><i class="fa-solid fa-file text-slate-400 mr-2"></i>${aiDevEsc(e.name)}</span><i class="fa-solid fa-plus text-slate-500"></i></div>`;
+      }).join('');
+      listEl.innerHTML = html || '<div class="text-[11px] text-slate-500 italic p-2">Folder kosong.</div>';
+    }
+    function aiDevAttachPath(path) {
+      if (aiDevAttached.some(f => f.path === path)) { toast('File itu sudah dilampirkan'); document.getElementById('aiDevBrowserModal').hidden = true; return; }
+      google.script.run.withSuccessHandler(res => {
+        if (!res || !res.success) { toast('Gagal ambil file: ' + ((res && res.message) || '?')); return; }
+        aiDevAttached.push({ path: res.file.path, content: res.file.content });
+        aiDevRepaintAttached();
+        document.getElementById('aiDevBrowserModal').hidden = true;
+        toast('File dilampirkan: ' + res.file.path);
+      }).withFailureHandler(e => toast('Gagal: ' + ((e && e.message) || e))).aiDevReadFile(currentSessionToken, path);
+    }
+
+    function aiDevRepaintLog() {
+      const log = document.getElementById('aiDevLog');
+      if (!log) return;
+      if (!aiDevHistory.length) {
+        log.innerHTML = '<div class="text-center text-[11px] text-slate-500 italic py-6">Belum ada obrolan. Lampirkan file (opsional) lalu tulis permintaanmu di bawah.</div>';
+        return;
+      }
+      log.innerHTML = aiDevHistory.map((m, i) => {
+        if (m.role === 'user') {
+          return `<div class="self-end max-w-[85%] bg-gradient-to-r from-fuchsia-500/20 to-purple-500/20 border border-fuchsia-500/30 rounded-2xl rounded-br-sm px-4 py-2.5 text-xs text-slate-100 whitespace-pre-wrap">${aiDevEsc(m.text)}</div>`;
+        }
+        const proposalsHtml = (m.proposals || []).map((p, pi) => `
+          <div class="glass-inner rounded-xl border border-emerald-500/25 mt-2 overflow-hidden">
+            <div class="flex items-center justify-between px-3 py-2 bg-emerald-500/10 flex-wrap gap-1.5">
+              <span class="text-[10px] font-mono font-bold text-emerald-300"><i class="fa-solid fa-file-pen mr-1"></i>${aiDevEsc(p.path)}</span>
+              <div class="flex items-center gap-1.5">
+                <button onclick="aiDevToggleCode(${i},${pi})" class="lap-pg-btn !w-auto px-2">Lihat</button>
+                <button onclick="aiDevApplyProposal(${i},${pi},this)" class="lap-pg-btn !w-auto px-2 text-emerald-400"><i class="fa-solid fa-check mr-1"></i>Terapkan</button>
+              </div>
+            </div>
+            <pre id="aiDevCode_${i}_${pi}" hidden class="text-[10px] font-mono text-slate-300 p-3 overflow-x-auto max-h-64 overflow-y-auto m-0">${aiDevEsc(p.content)}</pre>
+          </div>`).join('');
+        return `<div class="self-start max-w-[92%] glass-inner rounded-2xl rounded-bl-sm px-4 py-2.5 text-xs text-slate-200 whitespace-pre-wrap"><i class="fa-solid fa-robot text-fuchsia-400 mr-1.5"></i>${aiDevEsc(m.text)}${proposalsHtml}</div>`;
+      }).join('');
+      log.scrollTop = log.scrollHeight;
+    }
+    function aiDevToggleCode(i, pi) { const el = document.getElementById('aiDevCode_' + i + '_' + pi); if (el) el.hidden = !el.hidden; }
+
+    function aiDevSend() {
+      if (aiDevBusy) return;
+      const inp = document.getElementById('aiDevInput');
+      const text = (inp.value || '').trim();
+      if (!text) return;
+      aiDevBusy = true;
+      const priorHistory = aiDevHistory.slice();
+      aiDevHistory.push({ role: 'user', text });
+      inp.value = '';
+      aiDevRepaintLog();
+      const btn = document.getElementById('aiDevSendBtn');
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Mikir...'; }
+      google.script.run.withSuccessHandler(res => {
+        aiDevBusy = false;
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-paper-plane mr-1"></i>Kirim'; }
+        if (!res || !res.success) { toast('AI gagal balas: ' + ((res && res.message) || '?')); return; }
+        aiDevHistory.push({ role: 'assistant', text: res.reply, proposals: res.proposals || [] });
+        aiDevRepaintLog();
+      }).withFailureHandler(e => {
+        aiDevBusy = false;
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-paper-plane mr-1"></i>Kirim'; }
+        toast('Gagal hubungi AI: ' + ((e && e.message) || e));
+      }).aiDevChat(currentSessionToken, priorHistory, aiDevAttached, text);
+    }
+
+    async function aiDevApplyProposal(i, pi, btn) {
+      const msg = aiDevHistory[i];
+      const p = msg && msg.proposals && msg.proposals[pi];
+      if (!p) return;
+      const approved = await confirmCenter({
+        type: 'danger',
+        title: 'Terapkan perubahan ke GitHub?',
+        message: 'File "' + p.path + '" akan DI-COMMIT LANGSUNG ke branch main. Pastikan sudah direview isinya (klik Lihat) sebelum lanjut.',
+        confirmText: 'YA, TERAPKAN'
+      });
+      if (!approved) return;
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; }
+      google.script.run.withSuccessHandler(res => {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-check mr-1"></i>Terapkan'; }
+        if (!res || !res.success) { toast('Gagal terapkan: ' + ((res && res.message) || '?')); return; }
+        toast('Diterapkan ke GitHub: ' + p.path + ' -- jangan lupa minta deploy juga.');
+        const idx = aiDevAttached.findIndex(f => f.path === p.path);
+        if (idx >= 0) aiDevAttached[idx].content = p.content; // biar obrolan lanjutan pakai versi terbaru
+      }).withFailureHandler(e => {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-check mr-1"></i>Terapkan'; }
+        toast('Gagal terapkan: ' + ((e && e.message) || e));
+      }).aiDevApply(currentSessionToken, p.path, p.content);
     }
 
     function lapRenderMotion(host) {
