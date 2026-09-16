@@ -1258,6 +1258,11 @@
         + "      const statusIdx=cells.indexOf(statusCell);\n"
         + "      if(statusIdx<7)return;\n"
         + "      const cellText=c=>c?norm(c.innerText||c.textContent):'';\n"
+        // Kadang (tergantung breakpoint/varian render) label kolomnya IKUT
+        // kebawa nempel di depan nilai dlm sel yang sama (mis. sel WEBSITE
+        // isinya \"WEBSITE XOTOGEL\", bukan cuma \"XOTOGEL\") -- dibersihkan di
+        // sini apapun bentuknya: kalau labelnya tidak ada pun, ini no-op aman.\n"
+        + "      const strip=(t,labelRe)=>t.replace(new RegExp('^'+labelRe+'\\\\.?:?\\\\s*','i'),'').trim();\n"
         + "      const statusFull=cellText(statusCell);\n"
         + "      const refM=statusFull.match(/PGA Ref No:?\\s*(\\S+)/i);\n"
         + "      const vendM=statusFull.match(/Vendor Name:?\\s*([^]*)$/i);\n"
@@ -1267,11 +1272,11 @@
         // sama sekali, karena datanya memang belum lengkap buat dicatat.
         + "      if(!refM)return;\n"
         + "      found.push({\n"
-        + "        website: cellText(cells[statusIdx-7]),\n"
-        + "        idTrans: cellText(cells[statusIdx-6]),\n"
-        + "        tanggal: cellText(cells[statusIdx-5]),\n"
-        + "        idUser: cellText(cells[statusIdx-4]),\n"
-        + "        jumlah: parseInt(cellText(cells[statusIdx-1]).replace(/[^0-9]/g,''),10)||0,\n"
+        + "        website: strip(cellText(cells[statusIdx-7]),'WEBSITE'),\n"
+        + "        idTrans: strip(cellText(cells[statusIdx-6]),'ID\\\\s*TRANS'),\n"
+        + "        tanggal: strip(cellText(cells[statusIdx-5]),'TANGGAL'),\n"
+        + "        idUser: strip(cellText(cells[statusIdx-4]),'ID\\\\s*USER'),\n"
+        + "        jumlah: parseInt(strip(cellText(cells[statusIdx-1]),'JUMLAH').replace(/[^0-9]/g,''),10)||0,\n"
         + "        statusText: 'Grabbed PGA PGA Pending 000',\n"
         + "        pgaRefNo: refM?refM[1]:'',\n"
         + "        vendorName: vendM?norm(vendM[1]):'',\n"

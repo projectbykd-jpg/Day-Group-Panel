@@ -113,9 +113,17 @@ export async function wdListedAdd(env: Env, addedBy: string, rows: WdListedInput
 		const now = tsNow();
 		const res = await db
 			.prepare(
+				// ON CONFLICT nyegarkan (bukan skip) -- kalau operator centang+COPY
+				// baris yang REF-nya sudah ada (mis. tersimpan dgn data rusak dari
+				// bug scan sebelumnya, atau field lain berubah), datanya ketimpa yang
+				// terbaru. check_status/check_date SENGAJA tidak disentuh di sini
+				// (biarkan hasil CEK terakhir, bukan direset kosong tiap re-add).
 				`INSERT INTO wd_listed (website, id_trans, tanggal, id_user, jumlah, status_text, pga_ref_no, vendor_name, added_by, created_at, updated_at)
 				 VALUES (?,?,?,?,?,?,?,?,?,?,?)
-				 ON CONFLICT(pga_ref_no) DO NOTHING`,
+				 ON CONFLICT(pga_ref_no) DO UPDATE SET
+				   website = excluded.website, id_trans = excluded.id_trans, tanggal = excluded.tanggal,
+				   id_user = excluded.id_user, jumlah = excluded.jumlah, status_text = excluded.status_text,
+				   vendor_name = excluded.vendor_name, updated_at = excluded.updated_at`,
 			)
 			.bind(
 				norm(r.website, 60).toUpperCase(),
