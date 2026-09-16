@@ -1403,8 +1403,8 @@
           <div id="wdListedTableWrap">
             ${lapTable('wd_listed', ['WEBSITE','ID TRANS','TANGGAL','ID USER','JUMLAH','PGA REF NO','VENDOR','CEK TERAKHIR','ACTION'], wdListedRows,
               r => `<tr>${td(r.website)}${td(r.idTrans,'text-[10px]')}${td(r.tanggal)}${td(r.idUser,'font-bold text-cyan-300')}${td('Rp '+lapFmt(r.jumlah),'text-right text-emerald-400')}${td(`<a href="https://dbb2b.q2checkout.com/struk/disbursement/${encodeURIComponent(r.pgaRefNo)}" target="_blank" rel="noopener" class="text-[10px] underline decoration-dotted">${r.pgaRefNo}</a>`)}${td(r.vendorName,'text-amber-300')}${td(r.checkStatus?(`<span class="${wdListedStatusClass(r.checkStatus)}">${r.checkStatus}</span>${r.checkDate?`<div class="text-[9px] text-slate-500 mt-0.5">${r.checkDate}</div>`:''}`):'<span class="text-slate-600">—</span>')}${td(`<div class="flex items-center gap-1.5"><button onclick="wdListedCheckClick(${r.id},this)" class="lap-pg-btn !w-auto px-2" title="Cek status terbaru"><i class="fa-solid fa-rotate"></i> CEK</button><button onclick="wdListedDeleteClick(${r.id})" class="lap-pg-btn !w-auto px-2 text-rose-400" title="Hapus dari list"><i class="fa-solid fa-xmark"></i></button></div>`)}</tr>`,
-              r => [r.vendorName, r.website, r.idTrans, r.tanggal, r.idUser, 'Rp '+lapFmt(r.jumlah), r.checkStatus||r.statusText, r.pgaRefNo, r.checkStatus||'Pending'].join('\t'),
-              ['website','idTrans','idUser','pgaRefNo','vendorName'], {title:'WD Listed', open:true})}
+              r => r.pgaRefNo,
+              ['website','idTrans','idUser','pgaRefNo','vendorName'], {title:'WD Listed', open:true, checkable:true})}
           </div>
         </div>`);
       lapTblMountAll();
@@ -1422,6 +1422,41 @@
           if (list.length) wdListedSyncRows(list);
         }
         origPgaCopy(ev);
+      };
+      // Format COPY WD Listed BEDA TOTAL dari tabel lain (bukan 1 baris per
+      // transaksi) -- tiap baris jadi blok multi-baris (WEB/Trans ID/Date
+      // Trans/User ID/Status/PGA Ref. No), dipisah 1 baris kosong antar blok,
+      // dan SATU baris "KET : DONE FU KE TICKETING" di paling akhir (cuma
+      // sekali walau yang dicentang banyak) -- jadi TIDAK dipakaikan copyFn
+      // bawaan lapTable (yang isinya cuma pgaRefNo, dipakai internal buat
+      // identitas checkbox saja), tombol COPY-nya di-timpa total di sini.
+      window['__lapCopy_wd_listed'] = (ev2) => {
+        ev2 && ev2.stopPropagation();
+        const st = lapTblState['wd_listed'];
+        let list = lapTblFiltered('wd_listed');
+        if (st && st.checkable && st.selected.size) {
+          list = list.filter((r,i) => st.selected.has(st.copyFn(r,i)));
+        }
+        if (!list.length) { toast('Data kosong'); return; }
+        const pad2 = n => String(n).padStart(2,'0');
+        // "9/17/2026 3:34:43 AM" (apa adanya dari Motion) -> "09/17/2026 03:34:43"
+        // (format 24 jam berpadding, sesuai contoh yang diminta).
+        const formatDateTrans = t => {
+          const m = String(t||'').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)?$/i);
+          if (!m) return t || '';
+          let [, mo, d, y, h, mi, s, ap] = m;
+          h = parseInt(h, 10);
+          if (ap) {
+            const apUp = ap.toUpperCase();
+            if (apUp === 'PM' && h !== 12) h += 12;
+            if (apUp === 'AM' && h === 12) h = 0;
+          }
+          return pad2(mo) + '/' + pad2(d) + '/' + y + ' ' + pad2(h) + ':' + mi + ':' + s;
+        };
+        const block = r => 'WEB : ' + r.website + '\nTrans ID : ' + r.idTrans + '\nDate Trans : ' + formatDateTrans(r.tanggal) +
+          '\nUser ID : ' + r.idUser + '\nStatus : ' + r.statusText + '\nPGA Ref. No: ' + r.pgaRefNo;
+        const text = list.map(block).join('\n\n') + '\n\nKET : DONE FU KE TICKETING';
+        navigator.clipboard.writeText(text).then(() => toast(list.length + ' baris disalin'));
       };
       loadWdListed();
       wdListedTimer && clearInterval(wdListedTimer);
