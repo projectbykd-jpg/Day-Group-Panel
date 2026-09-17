@@ -22,6 +22,19 @@ import {
 } from "../lib/livechat-bot";
 
 const DLC_ORIGIN = "https://daylivechat.com";
+// DayLiveChat menolak (403) request tanpa header "browser wajar" -- terbukti
+// lewat log: login LANGSUNG sukses dari sesi curl biasa tapi ditolak dari
+// outbound fetch Workers polos (cuma content-type). Kemungkinan WAF/anti-bot
+// di depan situsnya menyaring berdasar User-Agent/Origin/Referer, bukan IP
+// per-se -- makanya SEMUA request ke DayLiveChat (login, inbox, upgrade
+// websocket) di bawah ini SELALU menyertakan header ini, meniru persis apa
+// yang dikirim browser CS asli waktu buka /cs/chat.
+const DLC_BROWSER_HEADERS: Record<string, string> = {
+	"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+	Origin: DLC_ORIGIN,
+	Referer: DLC_ORIGIN + "/cs/chat",
+	Accept: "application/json, text/plain, */*",
+};
 // Toleransi sebelum membalas member yang BARU chat 1x (belum dianggap spam).
 const GRACE_MS = 30_000;
 // Jarak MINIMAL antar balasan otomatis selama member masih spam (>=2 pesan).
@@ -95,11 +108,11 @@ export class LivechatBotDO implements DurableObject {
 		if (!cred) return null;
 		const resp = await fetch(DLC_ORIGIN + "/api/auth/login", {
 			method: "POST",
-			headers: { "content-type": "application/json" },
+			headers: { "content-type": "application/json", ...DLC_BROWSER_HEADERS },
 			body: JSON.stringify({ email: cred.email, password: cred.password }),
 		});
 		if (!resp.ok) {
-			console.error("livechat login gagal", resp.status);
+			console.error("livechat login gagal", resp.status, await resp.text().catch(() => ""));
 			return null;
 		}
 		const data = (await resp.json()) as { token?: string };
@@ -126,7 +139,7 @@ export class LivechatBotDO implements DurableObject {
 			if (!token) return; // belum ada kredensial CS tersimpan -- diam, tunggu di-set lewat panel
 			this.pendingToken = token;
 			const resp = await fetch(DLC_ORIGIN + "/socket.io/?EIO=4&transport=websocket", {
-				headers: { Upgrade: "websocket" },
+				headers: { Upgrade: "websocket", ...DLC_BROWSER_HEADERS },
 			});
 			const ws = (resp as unknown as { webSocket: WebSocket | null }).webSocket;
 			if (!ws) throw new Error("Server tidak meng-upgrade koneksi ke WebSocket");
@@ -221,8 +234,11 @@ export class LivechatBotDO implements DurableObject {
 	private async refreshInbox(): Promise<void> {
 		const token = await this.getToken();
 		if (!token) return;
-		const resp = await fetch(DLC_ORIGIN + "/api/chats/inbox", { headers: { Authorization: "Bearer " + token } });
-		if (!resp.ok) return;
+		const resp = await fetch(DLC_ORIGIN + "/api/chats/inbox", { headers: { Authorization: "Bearer " + token, ...DLC_BROWSER_HEADERS } });
+		if (!resp.ok) {
+			console.error("livechat inbox gagal", resp.status);
+			return;
+		}
 		const rows = (await resp.json()) as InboxRow[];
 		this.lastInboxRefresh = Date.now();
 		if (!Array.isArray(rows)) return;
