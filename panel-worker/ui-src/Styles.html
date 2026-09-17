@@ -290,6 +290,11 @@
     .pretty-table tbody tr:nth-child(even){background:rgba(30,41,59,.18)}
     .pretty-table tbody tr:hover{background:rgba(6,182,212,.055)}
     .pretty-table tbody tr:last-child td{border-bottom:none}
+    /* ===== Baris "belum ada data" terpadu — sebelumnya beberapa tabel cuma
+       taruh teks abu-abu polos (beda font-style/padding satu sama lain),
+       sekarang 1 pola konsisten: ikon redup + teks, padding lega. ===== */
+    .table-empty-cell{padding:36px 16px !important;text-align:center;color:#64748b;font-size:11px;font-style:normal;font-weight:600}
+    .table-empty-cell i{display:block;font-size:22px;margin-bottom:9px;opacity:.4}
     /* Grup field bertopik di halaman Setting BOT -- dulu semua field ditumpuk
        rata dalam 1 grid raksasa dgn label sepanjang paragraf (bikin "pening"),
        sekarang dikelompokkan per topik dgn label pendek + helper text terpisah. */
