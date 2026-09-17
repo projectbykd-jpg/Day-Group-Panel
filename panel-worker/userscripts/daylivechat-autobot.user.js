@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DayLiveChat Auto-Reply Bot (Day-Group Panel)
 // @namespace    daygroup-panel
-// @version      2.2.0
+// @version      2.3.0
 // @description  Balas otomatis member yang spam/kasar di sesi chat yang DIPILIH lewat Day-Group Panel (Live Chat > Sesi Chat). Sesi yang tidak diaktifkan tetap 100% manual.
 // @author       Day-Group Panel
 // @match        https://daylivechat.com/*
@@ -228,6 +228,7 @@
 		if (r && r.success) {
 			enabledKeys = r.enabledKeys || [];
 			templates = r.templates || [];
+			catchUpNewlyEnabled();
 		}
 	}
 
@@ -320,11 +321,13 @@
 		});
 	}
 
-	function onNewMessage(msg) {
-		if (!msg || msg.sender_type !== "member" || msg.chat_id == null) return;
-		const chatId = String(msg.chat_id);
+	// Inti logika hitung burst -- dipakai baik oleh event real-time
+	// ('chat:new_message') MAUPUN oleh "cek pesan terakhir" saat sesi baru
+	// di-ON-kan operator (lihat catchUpNewlyEnabled), supaya keduanya
+	// konsisten persis.
+	function handleMemberMessage(chatId, content, msgKeyHint) {
 		if (!CFG.masterOn || !enabledKeys.includes(chatId)) return;
-		const msgHash = chatId + "::" + hashText(msg.content);
+		const msgHash = chatId + "::" + (msgKeyHint != null ? msgKeyHint : hashText(content));
 		if (REPLIED[msgHash]) return;
 		REPLIED[msgHash] = Date.now();
 		saveRepliedMap(REPLIED);
@@ -340,6 +343,51 @@
 			setTimeout(() => tryReply(chatId), GRACE_MS);
 		} else {
 			tryReply(chatId);
+		}
+	}
+
+	function onNewMessage(msg) {
+		if (!msg || msg.sender_type !== "member" || msg.chat_id == null) return;
+		handleMemberMessage(String(msg.chat_id), msg.content);
+	}
+
+	// Sesi yang BARU SAJA diaktifkan operator (baru muncul di enabledKeys sejak
+	// pullPanel() terakhir) belum tentu pesan member-nya "baru" -- kalau member
+	// sudah kirim pesan SEBELUM di-ON-kan, event socket real-time itu sudah
+	// lewat & tidak pernah kepakai (bot belum aktif waktu itu). Di sini kita
+	// cek riwayat chat itu langsung begitu diaktifkan: kalau pesan PALING
+	// BAWAH ternyata dari member (belum dibalas CS/bot sama sekali), anggap
+	// sebagai pesan baru supaya operator tidak perlu nunggu member kirim lagi.
+	const previouslyEnabled = new Set();
+	async function catchUpNewlyEnabled() {
+		const token = getToken();
+		if (!token) return;
+		for (const chatId of enabledKeys) {
+			if (previouslyEnabled.has(chatId)) continue;
+			previouslyEnabled.add(chatId);
+			const row = inboxCache.get(chatId);
+			const queueCode = row && row.queue_code;
+			if (!queueCode) continue;
+			try {
+				const res = await fetch(location.origin + "/api/chats/" + encodeURIComponent(queueCode) + "/messages", {
+					headers: { Authorization: "Bearer " + token },
+				});
+				if (!res.ok) continue;
+				const data = await res.json();
+				const messages = (data && data.messages) || [];
+				const last = messages[messages.length - 1];
+				if (last && last.sender_type === "member") {
+					handleMemberMessage(chatId, last.content, "catchup:" + (last.id != null ? last.id : hashText(last.content)));
+				}
+			} catch (e) {
+				log("Cek riwayat sesi " + chatId + " gagal: " + (e && e.message ? e.message : e));
+			}
+		}
+		// Sesi yang dimatikan lagi harus dilupakan supaya kalau dinyalakan ULANG
+		// nanti, pesan terakhirnya dicek lagi dari awal (bukan dianggap "sudah
+		// pernah dicek" selamanya).
+		for (const chatId of Array.from(previouslyEnabled)) {
+			if (!enabledKeys.includes(chatId)) previouslyEnabled.delete(chatId);
 		}
 	}
 
