@@ -126,9 +126,13 @@ export async function setSessionBot(env: Env, sessionKey: string, enabled: boole
  * Dipanggil userscript (auth via LIVECHAT_BOT_KEY, bukan sesi login) tiap
  * beberapa detik: upsert daftar sesi yang terlihat lewat GET /api/chats/inbox
  * (dipanggil userscript langsung ke DayLiveChat, browser CS sendiri yang
- * IP-nya sudah diizinkan). bot_enabled TIDAK PERNAH disentuh dari sini --
- * hanya setSessionBot (dipicu toggle operator di panel) yang boleh mengubahnya,
- * supaya toggle operator tidak pernah kereset cuma karena sinkron ulang.
+ * IP-nya sudah diizinkan). Untuk sesi yang MASIH ada di Kotak Masuk,
+ * bot_enabled TIDAK disentuh sama sekali di sini -- hanya setSessionBot
+ * (dipicu toggle operator di panel) yang boleh mengubahnya. TAPI begitu sesi
+ * SUDAH TIDAK ADA lagi di Kotak Masuk (member keluar/chat ditutup), fungsi
+ * ini SENGAJA mematikan bot_enabled-nya sendiri (permintaan operator: jangan
+ * biarkan switch nyangkut ON pada member yang sudah pergi) lalu membuang
+ * barisnya -- lihat detail di bawah.
  */
 export async function syncSessionsFromScript(
 	env: Env,
@@ -168,22 +172,30 @@ export async function syncSessionsFromScript(
 		n++;
 	}
 	// `rows` SELALU daftar LENGKAP Kotak Masuk saat ini (dikirim userscript
-	// tiap tick, termasuk kalau kosong) -- jadi sesi manual (bot_enabled=0)
-	// yang tidak ada lagi di daftar ini berarti sudah ditutup/diarsipkan di
-	// DayLiveChat, langsung dibuang SEKARANG JUGA (bukan nunggu basi berjam-jam
-	// seperti sebelumnya). Sesi yang bot_enabled=1 tetap dikasih toleransi 15
-	// menit sebelum ikut dibuang -- supaya toggle operator tidak hilang cuma
-	// gara-gara 1 kali sinkron sempat gagal/telat.
+	// tiap tick, termasuk kalau kosong, dan cuma dikirim kalau fetch-nya
+	// BENERAN sukses -- lihat refreshInbox() di userscript -- jadi daftar ini
+	// bisa dipercaya, tidak perlu toleransi "mungkin cuma gagal sinkron
+	// sesaat"). Sesi yang tidak ada lagi di daftar ini berarti member sudah
+	// keluar/chat ditutup di DayLiveChat:
+	//   1. Kalau sesinya masih bot_enabled -- matikan OTOMATIS dulu (operator
+	//      minta ini: jangan biarkan switch nyangkut ON pada member yang
+	//      sudah pergi).
+	//   2. Baris yang sudah bot_enabled=0 (baik dari awal maupun baru saja
+	//      dimatikan di langkah 1) langsung dibuang dari daftar panel.
 	if (keys.length) {
 		const placeholders = keys.map(() => "?").join(",");
+		await db
+			.prepare(`UPDATE livechat_session SET bot_enabled = 0, bot_updated_at = ? WHERE bot_enabled = 1 AND session_key NOT IN (${placeholders})`)
+			.bind(now, ...keys)
+			.run();
 		await db
 			.prepare(`DELETE FROM livechat_session WHERE bot_enabled = 0 AND session_key NOT IN (${placeholders})`)
 			.bind(...keys)
 			.run();
 	} else {
+		await db.prepare(`UPDATE livechat_session SET bot_enabled = 0, bot_updated_at = ? WHERE bot_enabled = 1`).bind(now).run();
 		await db.prepare(`DELETE FROM livechat_session WHERE bot_enabled = 0`).run();
 	}
-	await db.prepare(`DELETE FROM livechat_session WHERE bot_enabled = 1 AND last_seen_at < datetime(?, '-15 minutes')`).bind(now).run();
 	return { synced: n };
 }
 
