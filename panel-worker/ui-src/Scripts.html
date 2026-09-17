@@ -4820,7 +4820,7 @@ Tindakan ini tidak dapat dibatalkan.`,
     }
     function startLivechatPolling() {
       stopLivechatPolling();
-      livechatPollTimer = setInterval(() => { if (currentPage === 'livechat-sessions') loadLivechatSessions(true); }, 8000);
+      livechatPollTimer = setInterval(() => { if (currentPage === 'livechat-sessions') loadLivechatSessions(true); }, 5000);
     }
     function stopLivechatPolling() {
       if (livechatPollTimer) { clearInterval(livechatPollTimer); livechatPollTimer = null; }

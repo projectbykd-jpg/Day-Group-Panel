@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DayLiveChat Auto-Reply Bot (Day-Group Panel)
 // @namespace    daygroup-panel
-// @version      2.0.1
+// @version      2.1.0
 // @description  Balas otomatis member yang spam/kasar di sesi chat yang DIPILIH lewat Day-Group Panel (Live Chat > Sesi Chat). Sesi yang tidak diaktifkan tetap 100% manual.
 // @author       Day-Group Panel
 // @match        https://daylivechat.com/*
@@ -201,7 +201,7 @@
 			const res = await fetch(location.origin + "/api/chats/inbox", { headers: { Authorization: "Bearer " + token } });
 			if (!res.ok) return;
 			const rows = await res.json();
-			if (!Array.isArray(rows) || !rows.length) return;
+			if (!Array.isArray(rows)) return;
 			const syncRows = [];
 			for (const r of rows) {
 				inboxCache.set(String(r.id), r);
@@ -212,6 +212,9 @@
 					divisi: r.division_name || "",
 				});
 			}
+			// Kirim daftar ini APA ADANYA (termasuk kalau kosong) -- panel memakai
+			// daftar ini sbg sumber kebenaran Kotak Masuk saat ini utk membuang
+			// sesi manual yang sudah ditutup/diarsipkan, bukan cuma buat nambah.
 			await panelApi("livechatBotSync", { rows: syncRows });
 		} catch (e) {
 			log("Sync inbox gagal: " + (e && e.message ? e.message : e));
@@ -352,6 +355,6 @@
 		if (!getToken()) return;
 		ensureSocket();
 	}, 5000);
-	setInterval(refreshInbox, 15000);
-	setInterval(pullPanel, 8000);
+	setInterval(refreshInbox, 5000);
+	setInterval(pullPanel, 5000);
 })();

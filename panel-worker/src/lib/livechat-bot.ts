@@ -138,9 +138,11 @@ export async function syncSessionsFromScript(
 	const db = getTurso(env);
 	const now = tsNow();
 	let n = 0;
+	const keys: string[] = [];
 	for (const row of rows) {
 		const key = String(row.sessionKey || "").trim();
 		if (!key) continue;
+		keys.push(key);
 		await db
 			.prepare(
 				`INSERT INTO livechat_session (session_key, queue_code, customer_name, divisi, last_message, last_sender, bot_enabled, last_seen_at, bot_updated_at)
@@ -165,9 +167,23 @@ export async function syncSessionsFromScript(
 			.run();
 		n++;
 	}
-	// Sesi yang sudah tidak sinkron > 2 jam dianggap sudah ditutup/selesai --
-	// dibuang supaya daftar di panel tidak menumpuk sesi mati selamanya.
-	await db.prepare(`DELETE FROM livechat_session WHERE last_seen_at < datetime(?, '-2 hours')`).bind(now).run();
+	// `rows` SELALU daftar LENGKAP Kotak Masuk saat ini (dikirim userscript
+	// tiap tick, termasuk kalau kosong) -- jadi sesi manual (bot_enabled=0)
+	// yang tidak ada lagi di daftar ini berarti sudah ditutup/diarsipkan di
+	// DayLiveChat, langsung dibuang SEKARANG JUGA (bukan nunggu basi berjam-jam
+	// seperti sebelumnya). Sesi yang bot_enabled=1 tetap dikasih toleransi 15
+	// menit sebelum ikut dibuang -- supaya toggle operator tidak hilang cuma
+	// gara-gara 1 kali sinkron sempat gagal/telat.
+	if (keys.length) {
+		const placeholders = keys.map(() => "?").join(",");
+		await db
+			.prepare(`DELETE FROM livechat_session WHERE bot_enabled = 0 AND session_key NOT IN (${placeholders})`)
+			.bind(...keys)
+			.run();
+	} else {
+		await db.prepare(`DELETE FROM livechat_session WHERE bot_enabled = 0`).run();
+	}
+	await db.prepare(`DELETE FROM livechat_session WHERE bot_enabled = 1 AND last_seen_at < datetime(?, '-15 minutes')`).bind(now).run();
 	return { synced: n };
 }
 
