@@ -3744,7 +3744,7 @@
       const body = document.getElementById('activeSessionsBody');
       if (!body) return;
       if (meta) meta.textContent = 'Memuat sesi aktif...';
-      if (!lastSessionsSignature) body.innerHTML = '<tr><td colspan="7" class="p-3 text-slate-500">Memuat...</td></tr>';
+      if (!lastSessionsSignature) body.innerHTML = '<tr><td colspan="7" class="table-loading-cell"><i class="fa-solid fa-circle-notch"></i>Memuat...</td></tr>';
 
       google.script.run
         .withSuccessHandler(data => renderActiveSessions(data))

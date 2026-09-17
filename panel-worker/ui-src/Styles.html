@@ -295,6 +295,10 @@
        sekarang 1 pola konsisten: ikon redup + teks, padding lega. ===== */
     .table-empty-cell{padding:36px 16px !important;text-align:center;color:#64748b;font-size:11px;font-style:normal;font-weight:600}
     .table-empty-cell i{display:block;font-size:22px;margin-bottom:9px;opacity:.4}
+    /* Sama seperti table-empty-cell tapi dengan ikon berputar -- dipakai
+       ganti teks "Memuat..." polos supaya jelas kelihatan lagi proses. */
+    .table-loading-cell{padding:28px 16px !important;text-align:center;color:#7c8aa0;font-size:11px;font-weight:600}
+    .table-loading-cell i{margin-right:7px;color:#22d3ee;animation:orbit 1s linear infinite;display:inline-block}
     /* Grup field bertopik di halaman Setting BOT -- dulu semua field ditumpuk
        rata dalam 1 grid raksasa dgn label sepanjang paragraf (bikin "pening"),
        sekarang dikelompokkan per topik dgn label pendek + helper text terpisah. */
@@ -980,7 +984,7 @@
     .site-card-code { font-size:15px; font-weight:900; color:#f8fafc; letter-spacing:.03em; }
     .site-card-name { font-size:10px; color:#94a3b8; }
     .site-card-badges { display:flex; flex-wrap:wrap; gap:5px; }
-    .site-badge { font-size:8.5px; font-weight:800; padding:3px 7px; border-radius:999px; border:1px solid rgba(255,255,255,.08); letter-spacing:.02em; }
+    .site-badge { font-size:9px; font-weight:800; padding:3px 7px; border-radius:999px; border:1px solid rgba(255,255,255,.08); letter-spacing:.02em; }
     .site-badge.on { color:#a7f3d0; background:rgba(16,185,129,.12); border-color:rgba(52,211,153,.24); }
     .site-badge.off { color:#64748b; background:rgba(2,6,23,.35); }
     .site-card-actions { display:flex; gap:7px; margin-top:2px; }
