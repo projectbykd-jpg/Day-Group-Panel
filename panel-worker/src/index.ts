@@ -75,17 +75,16 @@ import {
 } from "./api/bot";
 import { botNewsRun, disableGnewsSources, fbDirectRun, newsPruneQueueDaily, newsPullSources, publicNewsBanner, publicNewsDetail, publicNewsList, publicNewsPopular, publicNewsRandom, publicNewsSitemapXml, seedCategorySources } from "./lib/bot-news";
 import {
-	livechatBotStatus,
+	livechatBotPull,
+	livechatBotReport,
+	livechatBotSync,
 	livechatDeleteTemplate,
-	livechatGetCredentialStatus,
 	livechatListSessions,
 	livechatListTemplates,
 	livechatRecentLogs,
-	livechatSaveCredential,
 	livechatSaveTemplate,
 	livechatSetBotEnabled,
 } from "./api/livechat";
-export { LivechatBotDO } from "./durable/livechat-bot-do";
 
 type Handler = (env: Env, body: Record<string, unknown>) => Promise<unknown>;
 const s = (v: unknown) => String(v ?? "");
@@ -224,16 +223,19 @@ const ROUTES: Record<string, Handler> = {
 	botFbTemplateGenerate: (env, b) => botFbTemplateGenerate(env, s(b.token)),
 	botNewsSkip: (env, b) => botNewsSkip(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
 
-	// Live Chat Auto-Reply — panel login LANGSUNG ke DayLiveChat (role ADMIN/OPERATOR)
+	// Live Chat Auto-Reply — sisi panel (sesi login ADMIN/OPERATOR)
 	livechatListSessions: (env, b) => livechatListSessions(env, s(b.token)),
 	livechatSetBotEnabled: (env, b) => livechatSetBotEnabled(env, s(b.token), s(b.sessionKey), !!b.enabled),
 	livechatListTemplates: (env, b) => livechatListTemplates(env, s(b.token)),
 	livechatSaveTemplate: (env, b) => livechatSaveTemplate(env, s(b.token), (b.data ?? {}) as Record<string, unknown>),
 	livechatDeleteTemplate: (env, b) => livechatDeleteTemplate(env, s(b.token), Number(b.id)),
 	livechatRecentLogs: (env, b) => livechatRecentLogs(env, s(b.token)),
-	livechatGetCredentialStatus: (env, b) => livechatGetCredentialStatus(env, s(b.token)),
-	livechatSaveCredential: (env, b) => livechatSaveCredential(env, s(b.token), s(b.email), s(b.password)),
-	livechatBotStatus: (env, b) => livechatBotStatus(env, s(b.token)),
+	// Live Chat Auto-Reply — sisi userscript daylivechat.com (auth via LIVECHAT_BOT_KEY,
+	// bukan sesi login -- lihat catatan kenapa di lib/livechat-bot.ts)
+	livechatBotSync: (env, b) => livechatBotSync(env, s(b.key), b.rows),
+	livechatBotPull: (env, b) => livechatBotPull(env, s(b.key)),
+	livechatBotReport: (env, b) =>
+		livechatBotReport(env, s(b.key), s(b.sessionKey), s(b.customerMessage), b.matchedTemplateId != null ? Number(b.matchedTemplateId) : null, s(b.replyText)),
 
 	// dipanggil GitHub Actions (auth via job key, bukan sesi)
 	lapJobStart: (env, b) => lapJobStart(env, s(b.jobId), s(b.key)),
@@ -657,16 +659,6 @@ export default {
 			await newsPruneQueueDaily(env).catch((e) => console.error("news queue prune error", e));
 		} else {
 			await investPump(env).catch((e) => console.error("invest pump error", e));
-			// Heartbeat Live Chat Auto-Reply tiap menit -- jaring pengaman kalau
-			// koneksi Socket.IO Durable Object ke DayLiveChat putus diam-diam
-			// tanpa alarm terjadwal (mis. cold start ulang) -- "bangunkan" lagi
-			// tanpa perlu operator buka panel/toggle apa pun.
-			try {
-				const id = env.LIVECHAT_BOT.idFromName("global");
-				await env.LIVECHAT_BOT.get(id).fetch("https://livechat-bot/wake");
-			} catch (e) {
-				console.error("livechat bot heartbeat error", e);
-			}
 		}
 	},
 } satisfies ExportedHandler<Env>;

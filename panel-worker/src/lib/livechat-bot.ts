@@ -1,21 +1,32 @@
 // Modul "Live Chat Auto-Reply" — bot balas otomatis khusus sesi chat
 // DayLiveChat (daylivechat.com, dipakai CS HUGOTOGEL) yang SENGAJA dipilih
-// operator lewat panel ini. DayLiveChat tidak punya API publik, tapi
-// aplikasinya (dibongkar dari /js/cs-dashboard.js) ternyata REST + Socket.IO
-// biasa (login JWT lewat POST /api/auth/login, real-time lewat Socket.IO
-// event 'chat:new_message', kirim balasan lewat emit 'cs:message') -- jadi
-// panel ini login LANGSUNG pakai akun CS yang disimpan di sini, TIDAK lewat
-// browser/ekstensi sama sekali. Koneksi Socket.IO yang perlu tetap hidup
-// dipegang oleh Durable Object (lihat src/durable/livechat-bot-do.ts),
-// modul ini murni penyimpanan (Turso):
-//   - livechat_credential : 1 baris, email+password akun CS DayLiveChat.
-//   - livechat_session    : sesi chat yang pernah terlihat DO + status
+// operator lewat panel ini.
+//
+// PENTING kenapa arsitekturnya begini: DayLiveChat mengunci login akun CS ke
+// IP tertentu (fitur keamanan resmi mereka -- terbukti lewat percobaan nyata:
+// login dari Cloudflare Worker/Durable Object SELALU ditolak 403 "IP tidak
+// diizinkan untuk akun ini", walau kredensial benar), dan tidak ada akses
+// admin DayLiveChat di sini untuk melonggarkan itu. Jadi "mata & tangan"
+// bot-nya TERPAKSA jalan dari userscript browser (lihat userscripts/) yang
+// beroperasi dari IP CS yang SUDAH diizinkan -- BUKAN dari server. Userscript
+// itu memakai token login yang SUDAH ADA di localStorage browser (hasil login
+// manual CS seperti biasa) + client Socket.IO bawaan halaman itu sendiri,
+// jadi TIDAK PERNAH menyimpan password di mana pun.
+//
+// Modul ini murni penyimpanan (Turso), dipakai dari 2 arah:
+//   - Panel (sesi login ADMIN/OPERATOR): lihat/toggle sesi, kelola template.
+//   - Userscript (auth via secret LIVECHAT_BOT_KEY, bukan sesi login): sync
+//     daftar sesi yang terlihat, tarik sesi mana yang bot_enabled + template,
+//     lapor tiap balasan otomatis yang terkirim.
+//
+// Tabel:
+//   - livechat_session : sesi chat yang pernah terlihat userscript + status
 //     bot_enabled (di-toggle dari panel) -- HANYA sesi yang diaktifkan
 //     operator yang dibalas otomatis, sisanya tetap manual.
-//   - livechat_template   : daftar kalimat balasan (dipilih ACAK tiap bot
+//   - livechat_template : daftar kalimat balasan (dipilih ACAK tiap bot
 //     membalas -- bot ini khusus pacify member spam/kasar, bukan FAQ, jadi
 //     balasannya TIDAK memandang isi keluhan member).
-//   - livechat_log        : jejak setiap balasan otomatis yang terkirim.
+//   - livechat_log      : jejak setiap balasan otomatis yang terkirim.
 import { getTurso } from "./turso";
 import { tsNow } from "./time";
 
@@ -24,12 +35,6 @@ async function ensureTables(env: Env): Promise<void> {
 	if (tablesEnsured) return;
 	const db = getTurso(env);
 	for (const stmt of [
-		`CREATE TABLE IF NOT EXISTS livechat_credential (
-			id INTEGER PRIMARY KEY CHECK (id = 1),
-			email TEXT NOT NULL DEFAULT '',
-			password TEXT NOT NULL DEFAULT '',
-			updated_at TEXT NOT NULL DEFAULT ''
-		)`,
 		`CREATE TABLE IF NOT EXISTS livechat_session (
 			session_key TEXT PRIMARY KEY,
 			queue_code TEXT NOT NULL DEFAULT '',
@@ -97,37 +102,6 @@ export interface LivechatTemplateRow {
 	updated_at: string;
 }
 
-export interface LivechatCredential {
-	email: string;
-	password: string;
-	updatedAt: string;
-}
-
-// --- Kredensial akun CS DayLiveChat ---
-
-export async function getCredential(env: Env): Promise<LivechatCredential | null> {
-	await ensureTables(env);
-	const row = await getTurso(env)
-		.prepare(`SELECT email, password, updated_at FROM livechat_credential WHERE id = 1`)
-		.first<{ email: string; password: string; updated_at: string }>();
-	if (!row || !row.email || !row.password) return null;
-	return { email: row.email, password: row.password, updatedAt: row.updated_at };
-}
-
-export async function saveCredential(env: Env, email: string, password: string): Promise<void> {
-	await ensureTables(env);
-	const cleanEmail = String(email ?? "").trim();
-	const cleanPassword = String(password ?? "").trim();
-	if (!cleanEmail || !cleanPassword) throw new Error("Email & password akun CS wajib diisi.");
-	await getTurso(env)
-		.prepare(
-			`INSERT INTO livechat_credential (id, email, password, updated_at) VALUES (1, ?, ?, ?)
-			 ON CONFLICT(id) DO UPDATE SET email = excluded.email, password = excluded.password, updated_at = excluded.updated_at`,
-		)
-		.bind(cleanEmail, cleanPassword, tsNow())
-		.run();
-}
-
 // --- Sesi chat ---
 
 /** Dipanggil panel (role ADMIN/OPERATOR) untuk menampilkan daftar sesi + status toggle. */
@@ -148,51 +122,62 @@ export async function setSessionBot(env: Env, sessionKey: string, enabled: boole
 		.run();
 }
 
-export async function isSessionBotEnabled(env: Env, sessionKey: string): Promise<boolean> {
+/**
+ * Dipanggil userscript (auth via LIVECHAT_BOT_KEY, bukan sesi login) tiap
+ * beberapa detik: upsert daftar sesi yang terlihat lewat GET /api/chats/inbox
+ * (dipanggil userscript langsung ke DayLiveChat, browser CS sendiri yang
+ * IP-nya sudah diizinkan). bot_enabled TIDAK PERNAH disentuh dari sini --
+ * hanya setSessionBot (dipicu toggle operator di panel) yang boleh mengubahnya,
+ * supaya toggle operator tidak pernah kereset cuma karena sinkron ulang.
+ */
+export async function syncSessionsFromScript(
+	env: Env,
+	rows: Array<{ sessionKey: string; queueCode?: string; customerName?: string; divisi?: string; lastMessage?: string; lastSender?: string }>,
+): Promise<{ synced: number }> {
 	await ensureTables(env);
-	const row = await getTurso(env)
-		.prepare(`SELECT bot_enabled FROM livechat_session WHERE session_key = ?`)
-		.bind(sessionKey)
-		.first<{ bot_enabled: number }>();
-	return !!row && Number(row.bot_enabled) === 1;
+	const db = getTurso(env);
+	const now = tsNow();
+	let n = 0;
+	for (const row of rows) {
+		const key = String(row.sessionKey || "").trim();
+		if (!key) continue;
+		await db
+			.prepare(
+				`INSERT INTO livechat_session (session_key, queue_code, customer_name, divisi, last_message, last_sender, bot_enabled, last_seen_at, bot_updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, 0, ?, '')
+				 ON CONFLICT(session_key) DO UPDATE SET
+					queue_code = excluded.queue_code,
+					customer_name = excluded.customer_name,
+					divisi = excluded.divisi,
+					last_message = excluded.last_message,
+					last_sender = excluded.last_sender,
+					last_seen_at = excluded.last_seen_at`,
+			)
+			.bind(
+				key,
+				String(row.queueCode ?? "").slice(0, 100),
+				String(row.customerName ?? "").slice(0, 200),
+				String(row.divisi ?? "").slice(0, 100),
+				String(row.lastMessage ?? "").slice(0, 2000),
+				String(row.lastSender ?? "").slice(0, 30),
+				now,
+			)
+			.run();
+		n++;
+	}
+	// Sesi yang sudah tidak sinkron > 2 jam dianggap sudah ditutup/selesai --
+	// dibuang supaya daftar di panel tidak menumpuk sesi mati selamanya.
+	await db.prepare(`DELETE FROM livechat_session WHERE last_seen_at < datetime(?, '-2 hours')`).bind(now).run();
+	return { synced: n };
 }
 
-/**
- * Dipanggil Durable Object (lihat livechat-bot-do.ts) tiap kali chat terlihat
- * lewat inbox/socket -- upsert data tampilan (nama, pesan terakhir, dst) di
- * panel. bot_enabled TIDAK PERNAH disentuh dari sini, hanya setSessionBot
- * (dipicu toggle operator) yang boleh mengubahnya.
- */
-export async function upsertSessionSeen(
-	env: Env,
-	row: { sessionKey: string; queueCode?: string; customerName?: string; divisi?: string; lastMessage?: string; lastSender?: string },
-): Promise<void> {
+/** Dipanggil userscript: daftar session_key yang boleh dioperasikan bot saat ini + template aktif. */
+export async function pullEnabledSessions(env: Env): Promise<{ enabledKeys: string[]; templates: LivechatTemplateRow[] }> {
 	await ensureTables(env);
-	const key = String(row.sessionKey || "").trim();
-	if (!key) return;
-	const now = tsNow();
-	await getTurso(env)
-		.prepare(
-			`INSERT INTO livechat_session (session_key, queue_code, customer_name, divisi, last_message, last_sender, bot_enabled, last_seen_at, bot_updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, 0, ?, '')
-			 ON CONFLICT(session_key) DO UPDATE SET
-				queue_code = excluded.queue_code,
-				customer_name = excluded.customer_name,
-				divisi = excluded.divisi,
-				last_message = excluded.last_message,
-				last_sender = excluded.last_sender,
-				last_seen_at = excluded.last_seen_at`,
-		)
-		.bind(
-			key,
-			String(row.queueCode ?? "").slice(0, 100),
-			String(row.customerName ?? "").slice(0, 200),
-			String(row.divisi ?? "").slice(0, 100),
-			String(row.lastMessage ?? "").slice(0, 2000),
-			String(row.lastSender ?? "").slice(0, 30),
-			now,
-		)
-		.run();
+	const db = getTurso(env);
+	const sessions = await db.prepare(`SELECT session_key FROM livechat_session WHERE bot_enabled = 1`).all<{ session_key: string }>();
+	const templates = await db.prepare(`SELECT * FROM livechat_template WHERE active = 1 ORDER BY sort_order ASC, id ASC`).all<LivechatTemplateRow>();
+	return { enabledKeys: sessions.results.map((r) => r.session_key), templates: templates.results };
 }
 
 // --- Template balasan (daftar acak, tanpa memandang isi keluhan member) ---
@@ -201,17 +186,6 @@ export async function listTemplates(env: Env): Promise<LivechatTemplateRow[]> {
 	await ensureTables(env);
 	const r = await getTurso(env).prepare(`SELECT * FROM livechat_template ORDER BY sort_order ASC, id ASC`).all<LivechatTemplateRow>();
 	return r.results;
-}
-
-export async function listActiveTemplates(env: Env): Promise<LivechatTemplateRow[]> {
-	await ensureTables(env);
-	const r = await getTurso(env).prepare(`SELECT * FROM livechat_template WHERE active = 1`).all<LivechatTemplateRow>();
-	return r.results;
-}
-
-export function pickRandomTemplate(templates: LivechatTemplateRow[]): LivechatTemplateRow | null {
-	if (!templates.length) return null;
-	return templates[Math.floor(Math.random() * templates.length)];
 }
 
 export async function saveTemplate(env: Env, data: { id?: number; replyText: string; active?: boolean; sortOrder?: number }): Promise<void> {

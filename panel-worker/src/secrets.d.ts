@@ -11,4 +11,8 @@ interface Env {
 	TURSO_URL?: string;
 	/** Auth token Turso (read & write). */
 	TURSO_TOKEN?: string;
+	/** Kunci bersama utk userscript daylivechat-autobot.user.js (Live Chat Auto-Reply) --
+	 *  DayLiveChat mengunci login CS ke IP tertentu, jadi bot-nya HARUS jalan dari
+	 *  browser CS sendiri (userscript), bukan dari server -- lihat livechat-bot.ts. */
+	LIVECHAT_BOT_KEY?: string;
 }

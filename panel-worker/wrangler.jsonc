@@ -26,18 +26,21 @@
 			"remote": true
 		}
 	],
-	"durable_objects": {
-		"bindings": [
-			{
-				"name": "LIVECHAT_BOT",
-				"class_name": "LivechatBotDO"
-			}
-		]
-	},
+	// LivechatBotDO (Durable Object) DIBUANG -- terbukti tidak bisa jalan sama
+	// sekali karena DayLiveChat mengunci login akun CS ke IP tertentu (fitur
+	// keamanan resmi mereka, cuma admin yang bisa buka), dan tidak ada akses
+	// admin di sini. Diganti userscript browser (lihat userscripts/) yang
+	// jalan dari IP CS yang SUDAH diizinkan. Migration "v2" WAJIB ada supaya
+	// Cloudflare tahu class lama itu resmi dihapus (bukan cuma hilang dari
+	// wrangler.jsonc begitu saja), lihat catatan migrations Durable Objects.
 	"migrations": [
 		{
 			"tag": "v1",
 			"new_sqlite_classes": ["LivechatBotDO"]
+		},
+		{
+			"tag": "v2",
+			"deleted_classes": ["LivechatBotDO"]
 		}
 	],
 	"vars": {
