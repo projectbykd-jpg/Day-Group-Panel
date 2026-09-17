@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DayLiveChat Auto-Reply Bot (Day-Group Panel)
 // @namespace    daygroup-panel
-// @version      2.1.0
+// @version      2.2.0
 // @description  Balas otomatis member yang spam/kasar di sesi chat yang DIPILIH lewat Day-Group Panel (Live Chat > Sesi Chat). Sesi yang tidak diaktifkan tetap 100% manual.
 // @author       Day-Group Panel
 // @match        https://daylivechat.com/*
@@ -231,9 +231,14 @@
 		}
 	}
 
-	function pickTemplate() {
+	// excludeId = id template yang TERAKHIR dipakai buat chat ini -- dibuang dulu
+	// dari kandidat acak (kalau masih ada pilihan lain) supaya tidak kebetulan
+	// kepilih 2x berturut-turut ke member yang sama.
+	function pickTemplate(excludeId) {
 		if (!templates.length) return null;
-		return templates[Math.floor(Math.random() * templates.length)];
+		const pool = templates.length > 1 && excludeId != null ? templates.filter((t) => t.id !== excludeId) : templates;
+		const from = pool.length ? pool : templates;
+		return from[Math.floor(Math.random() * from.length)];
 	}
 	function hashText(s) {
 		let h = 0;
@@ -266,10 +271,12 @@
 	}
 
 	// Burst state per chat -- direset tiap kali bot berhasil balas (burstCount
-	// dihitung SEJAK balasan terakhir, bukan akumulasi selamanya).
-	const burst = new Map(); // chatId -> { count, lastMsgAt, lastReplyAt }
+	// dihitung SEJAK balasan terakhir, bukan akumulasi selamanya). lastTemplateId
+	// dipakai supaya pickTemplate() tidak pernah pilih kalimat yang sama 2x
+	// berturut-turut ke member yang sama.
+	const burst = new Map(); // chatId -> { count, lastMsgAt, lastReplyAt, lastTemplateId }
 	function getBurst(chatId) {
-		return burst.get(chatId) || { count: 0, lastMsgAt: 0, lastReplyAt: 0 };
+		return burst.get(chatId) || { count: 0, lastMsgAt: 0, lastReplyAt: 0, lastTemplateId: null };
 	}
 
 	async function tryReply(chatId) {
@@ -291,7 +298,7 @@
 		} else if (b.count !== 1) {
 			return;
 		}
-		const tpl = pickTemplate();
+		const tpl = pickTemplate(b.lastTemplateId);
 		if (!tpl) {
 			log("Tidak ada template balasan aktif -- lewati sesi " + chatId);
 			return;
@@ -302,6 +309,7 @@
 			return;
 		}
 		b.lastReplyAt = Date.now();
+		b.lastTemplateId = tpl.id;
 		burst.set(chatId, b);
 		log("Auto-balas terkirim ke sesi " + chatId + ".");
 		panelApi("livechatBotReport", {
