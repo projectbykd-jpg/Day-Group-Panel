@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         DayLiveChat Auto-Reply Bot (Day-Group Panel)
 // @namespace    daygroup-panel
-// @version      2.0.0
+// @version      2.0.1
 // @description  Balas otomatis member yang spam/kasar di sesi chat yang DIPILIH lewat Day-Group Panel (Live Chat > Sesi Chat). Sesi yang tidak diaktifkan tetap 100% manual.
 // @author       Day-Group Panel
-// @match        https://daylivechat.com/cs/*
+// @match        https://daylivechat.com/*
 // @run-at       document-idle
 // @grant        GM_getValue
 // @grant        GM_setValue
