@@ -367,18 +367,18 @@
               <button onclick="loadPredictionStatus()" class="text-[10px] text-cyan-400 hover:underline flex items-center gap-1.5"><i class="fa-solid fa-rotate"></i> Refresh Status</button>
             </div>
             
-            <div class="glass-inner rounded-2xl overflow-hidden border border-white/5 shadow-inner">
+            <div class="pretty-table-wrap">
               <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse">
+                <table class="pretty-table">
                   <thead>
-                    <tr class="border-b border-white/10 bg-slate-900/60 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-                      <th class="p-4">Nama Prediksi</th>
-                      <th class="p-4 text-center">Jam Posting</th>
-                      <th class="p-4 text-center">Status</th>
-                      <th class="p-4 text-right">Copy / Send Auto</th>
+                    <tr>
+                      <th>Nama Prediksi</th>
+                      <th class="text-center">Jam Posting</th>
+                      <th class="text-center">Status</th>
+                      <th class="text-right">Copy / Send Auto</th>
                     </tr>
                   </thead>
-                  <tbody id="prediction-table-body" class="text-xs font-medium text-slate-200 divide-y divide-white/5">
+                  <tbody id="prediction-table-body">
                     <!-- Dimuat via JS -->
                   </tbody>
                 </table>
@@ -539,11 +539,11 @@
               </div>
               <button onclick="loadActiveSessions()" class="glass-inner px-4 py-3 rounded-2xl text-[10px] font-bold shrink-0"><i class="fa-solid fa-rotate mr-2"></i>REFRESH SESI</button>
             </div>
-            <div class="overflow-x-auto glass-inner rounded-2xl">
-              <table class="w-full text-xs" style="min-width:720px">
-                <thead><tr class="text-slate-400 text-left text-[9px] uppercase tracking-wider">
-                  <th class="p-3">Username</th><th class="p-3">Role</th><th class="p-3">Website</th>
-                  <th class="p-3 text-center">Sesi</th><th class="p-3">Login</th><th class="p-3">Sesi Berakhir</th><th class="p-3 text-center">Auto Post</th>
+            <div class="pretty-table-wrap overflow-x-auto">
+              <table class="pretty-table" style="min-width:720px">
+                <thead><tr>
+                  <th>Username</th><th>Role</th><th>Website</th>
+                  <th class="text-center">Sesi</th><th>Login</th><th>Sesi Berakhir</th><th class="text-center">Auto Post</th>
                 </tr></thead>
                 <tbody id="activeSessionsBody"></tbody>
               </table>

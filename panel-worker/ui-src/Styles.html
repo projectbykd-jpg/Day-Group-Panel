@@ -58,6 +58,13 @@
     }
 
     * { box-sizing: border-box; }
+    /* Tanpa ini, dropdown <select> (opsi Role/Status/Kategori, dsb), checkbox,
+       date picker, dan scrollbar bawaan Firefox SEMUA muncul putih terang
+       (skema warna default OS) di tengah panel gelap -- kontras banget & jadi
+       salah satu sumber kesan "norak"/tidak konsisten paling gampang kelihatan.
+       1 baris ini bikin browser render semua widget native itu pakai varian
+       gelapnya sendiri, otomatis, tanpa perlu re-style tiap elemen manual. */
+    :root { color-scheme: dark; }
     button, a, input, select, textarea, .glass-card, .glass-inner { transition: background-color .2s ease, border-color .2s ease, color .2s ease, box-shadow .2s ease, opacity .2s ease, transform .2s ease; }
     body { font-family: var(--font-sans); font-size: 14px; line-height: 1.55; background: #060a15; background-image: radial-gradient(1100px circle at 0% -5%, rgba(34, 211, 238, 0.07), transparent 55%), radial-gradient(1000px circle at 100% 105%, rgba(139, 92, 246, 0.06), transparent 55%); background-attachment: fixed; min-height: 100vh; color: var(--text-strong); overflow-x: hidden; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
 
@@ -272,6 +279,17 @@
 
 
     .nav-extra{display:none}.admin-only{display:none}.modal-shell{position:fixed;inset:0;background:rgba(2,6,23,.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:1000000;display:none;align-items:center;justify-content:center;padding:1rem}.modal-shell.open{display:flex;animation:overlayIn .16s ease-out both}.result-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:12px;border-radius:15px;background:rgba(15,23,42,.62);border:1px solid rgba(255,255,255,.07)}.status-ok{color:#34d399}.status-bad{color:#fb7185}.status-skip{color:#94a3b8}.mini-card{background:rgba(15,23,42,.58);border:1px solid rgba(255,255,255,.07);border-radius:18px;padding:16px}.log-table{min-width:900px}.log-table td,.log-table th{padding:12px;border-bottom:1px solid rgba(255,255,255,.06);vertical-align:top}.switch{width:48px;height:26px;border-radius:999px;background:#334155;position:relative;cursor:pointer}.switch::after{content:'';position:absolute;width:20px;height:20px;left:3px;top:3px;border-radius:50%;background:white;transition:.2s}.switch.on{background:#10b981}.switch.on::after{left:25px}
+    /* ===== Tabel rapi terpadu — dipakai di tabel mana pun yang sebelumnya
+       cuma <table class="w-full text-xs"> polos (header putih polos, tanpa
+       zebra/hover, terasa beda sendiri dari admin-users-table/log-table yang
+       sudah rapi). Cukup tambah class "pretty-table" di <table>-nya. ===== */
+    .pretty-table-wrap{border-radius:16px;border:1px solid rgba(255,255,255,.08);overflow:hidden;background:rgba(2,6,23,.22)}
+    .pretty-table{width:100%;border-collapse:separate;border-spacing:0}
+    .pretty-table thead th{position:sticky;top:0;z-index:2;background:#111b31;color:#94a3b8;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:11px 14px;text-align:left;white-space:nowrap;border-bottom:1px solid rgba(255,255,255,.08)}
+    .pretty-table tbody td{padding:11px 14px;color:#cbd5e1;font-size:11px;vertical-align:middle;border-bottom:1px solid rgba(255,255,255,.055)}
+    .pretty-table tbody tr:nth-child(even){background:rgba(30,41,59,.18)}
+    .pretty-table tbody tr:hover{background:rgba(6,182,212,.055)}
+    .pretty-table tbody tr:last-child td{border-bottom:none}
     /* Grup field bertopik di halaman Setting BOT -- dulu semua field ditumpuk
        rata dalam 1 grid raksasa dgn label sepanjang paragraf (bikin "pening"),
        sekarang dikelompokkan per topik dgn label pendek + helper text terpisah. */
