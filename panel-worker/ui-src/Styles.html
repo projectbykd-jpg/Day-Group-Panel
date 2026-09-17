@@ -44,6 +44,17 @@
       --success: #34d399;
       --danger: #fb7185;
       --warning: #fbbf24;
+
+      /* ===== Skala pill/badge terpadu — dipakai lewat var() oleh SEMUA
+         komponen berbentuk "pil" (header-stat, log-status-badge, site-badge,
+         summary-pill, lap-chip, mini-chip, dst) supaya ukurannya konsisten
+         satu sama lain tanpa perlu menyatukan class-nya (banyak dipakai di
+         tempat berbeda-beda, menyatukan class = ganti ratusan pemanggilan). */
+      --pill-radius: 999px;
+      --pill-pad-y: 6px;
+      --pill-pad-x: 10px;
+      --pill-fs: 10px;
+      --pill-fw: 800;
     }
 
     * { box-sizing: border-box; }
@@ -106,7 +117,10 @@
     /* ===== Hierarki tombol: Primary (aksi kritis) > Secondary (utility) > Danger (destruktif) =====
        Primary dipakai HANYA untuk 1 aksi utama per kartu (kirim/send), supaya operator langsung
        tau tombol mana yang paling penting tanpa harus baca teksnya dulu. */
-    .btn-primary { background:linear-gradient(110deg,#22d3ee,#3b82f6 55%,#8b5cf6); color:#04121f; font-weight:800; box-shadow:0 8px 22px -8px rgba(56,130,246,.5), 0 1px 0 rgba(255,255,255,.15) inset; }
+    /* Dulu 3 warna (cyan->biru->ungu) -- kesan "gamer rainbow". Diringkas jadi
+       2 warna supaya lebih tenang/"dashboard SaaS", bukan kurang saturasi
+       arah lain. */
+    .btn-primary { background:linear-gradient(110deg,#22d3ee,#3b82f6); color:#04121f; font-weight:800; box-shadow:0 8px 22px -8px rgba(56,130,246,.5), 0 1px 0 rgba(255,255,255,.15) inset; }
     .btn-primary:hover { filter:brightness(1.06); box-shadow:0 12px 30px -8px rgba(56,130,246,.62), 0 1px 0 rgba(255,255,255,.2) inset; }
     .btn-secondary { background:rgba(30,41,59,.55); color:#cbd5e1; border:1px solid rgba(148,163,184,.18); font-weight:700; box-shadow:none; }
     .btn-secondary:hover { background:rgba(30,41,59,.8); border-color:rgba(148,163,184,.32); color:#f1f5f9; }
@@ -138,7 +152,7 @@
 
     /* ===== Header summary strip: ringkasan status hari ini, ganti tagline statis ===== */
     .header-stat-strip { display:flex; flex-wrap:wrap; gap:8px; }
-    .header-stat { display:inline-flex; align-items:center; gap:7px; padding:7px 13px; border-radius:999px; background:rgba(255,255,255,.035); border:1px solid rgba(255,255,255,.08); font-size:10.5px; font-weight:800; color:#e2e8f0; white-space:nowrap; }
+    .header-stat { display:inline-flex; align-items:center; gap:7px; padding:var(--pill-pad-y) var(--pill-pad-x); border-radius:var(--pill-radius); background:rgba(255,255,255,.035); border:1px solid rgba(255,255,255,.08); font-size:var(--pill-fs); font-weight:var(--pill-fw); color:#e2e8f0; white-space:nowrap; }
     .header-stat-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
     .header-stat-dot.ok { background:var(--success); box-shadow:0 0 4px rgba(52,211,153,.4); }
     .header-stat-dot.bad { background:var(--danger); box-shadow:0 0 4px rgba(251,113,133,.4); }
@@ -1208,6 +1222,13 @@
       color:#cbd5e1;
       box-shadow:none;
     }
+    /* Ikon menu dulu warna-warni penuh (satu warna beda per item) sepanjang
+       waktu -- kesannya ramai/"norak". Diredam ke opacity rendah saat idle,
+       baru terlihat penuh warna waktu di-hover/aktif -- warnanya tetap ada
+       sbg penanda cepat per fitur, tapi sidebar-nya kelihatan lebih tenang
+       waktu tidak disentuh (pola umum dashboard SaaS premium). */
+    .sidebar-nav i{ opacity:.68; transition:opacity .16s ease; }
+    .sidebar-nav:hover i, .sidebar-nav.nav-active i{ opacity:1; }
     /* ===== Menu grup (dropdown) ===== */
     .nav-groups{ margin-top:2px }
     .nav-group{ display:flex; flex-direction:column; gap:3px }
