@@ -45,6 +45,7 @@ import {
 } from "./api/invest";
 import { investPump, investPumpUser } from "./lib/invest-scan";
 import { investGetState } from "./lib/invest";
+import { ensurePerfIndexes } from "./lib/db";
 import { pgaPendingStatus, pgaPendingSync } from "./api/pga-pending";
 import { wdListedCheck, wdListedGetList, wdListedRemove, wdListedSync } from "./api/wd-listed";
 import {
@@ -651,6 +652,10 @@ export default {
 		}
 
 		if (event.cron === "*/5 * * * *") {
+			// Index performa yang ditambahkan belakangan -- dibuat dari sini (cron,
+			// sekali per cold-start) supaya tidak perlu jalankan skrip migrasi manual
+			// dan tidak menambah beban di jalur request user. No-op setelah ada.
+			await ensurePerfIndexes(env).catch((e) => console.error("ensure index error", e));
 			await runAutoPostRouter(env).catch((e) => console.error("auto-post router error", e));
 			await dailyPrune(env).catch((e) => console.error("prune error", e));
 			// Sekali/hari (guard sendiri di dalam fungsinya) -- buang antrean berita

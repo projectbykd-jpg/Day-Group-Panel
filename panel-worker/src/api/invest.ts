@@ -23,12 +23,18 @@ async function investUser(env: Env, token: string): Promise<string> {
 
 export async function investGetConfig(env: Env, token: string) {
 	const user = await investUser(env, token);
-	const cfg = await investLoadConfig(env, user);
+	// Tiga query Turso ini tidak saling bergantung -> jalan barengan. Turso
+	// diakses lewat HTTP, jadi tiap round-trip berurutan menambah jeda nyata.
+	const [cfg, state, warningCount] = await Promise.all([
+		investLoadConfig(env, user),
+		investGetState(env, user),
+		investWarningCount(env, user),
+	]);
 	return {
 		success: true,
 		config: investConfigForClient(cfg),
-		state: await investGetState(env, user),
-		warningCount: await investWarningCount(env, user),
+		state,
+		warningCount,
 	};
 }
 
@@ -180,12 +186,14 @@ export async function investResetScan(env: Env, token: string) {
 
 export async function investGetStatus(env: Env, token: string) {
 	const user = await investUser(env, token);
-	const st = await investGetState(env, user);
-	return { ...st, success: true, warningCount: await investWarningCount(env, user) };
+	// Endpoint ini di-poll tiap beberapa detik selama scan jalan -> dua query
+	// Turso-nya dibuat barengan, bukan berurutan.
+	const [st, warningCount] = await Promise.all([investGetState(env, user), investWarningCount(env, user)]);
+	return { ...st, success: true, warningCount };
 }
 
 export async function investGetWarnings(env: Env, token: string) {
 	const user = await investUser(env, token);
-	const users = await investGetWarningsList(env, user);
-	return { success: true, users, state: await investGetState(env, user), warningCount: users.length };
+	const [users, state] = await Promise.all([investGetWarningsList(env, user), investGetState(env, user)]);
+	return { success: true, users, state, warningCount: users.length };
 }

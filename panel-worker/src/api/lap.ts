@@ -32,10 +32,12 @@ function credsForClient(c: LapCreds) {
 
 export async function lapGetConfig(env: Env, token: string) {
 	const s = await requireSession(env, token, { ignoreMaintenance: true });
+	// Dua query Turso independen -> barengan, bukan berurutan.
+	const [creds, results] = await Promise.all([lapLoadCreds(env, s.username), lapLoadResults(env, s.username)]);
 	return {
 		success: true,
-		config: credsForClient(await lapLoadCreds(env, s.username)),
-		results: await lapLoadResults(env, s.username),
+		config: credsForClient(creds),
+		results,
 	};
 }
 
