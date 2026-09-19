@@ -44,6 +44,26 @@ export function normalizeDashOptions(raw: unknown): DashOptions {
 	};
 }
 
+// ---------------------------------------------------------------------------
+// Filter tanggal yang RAMAH INDEX
+// ---------------------------------------------------------------------------
+// activity_log.ts formatnya selalu "yyyy-MM-dd HH:mm:ss" (lihat tsNow() di
+// lib/time.ts & DEFAULT kolomnya di migration/001_init.sql), jadi perbandingan
+// STRING biasa sudah setara dengan perbandingan tanggal.
+//
+// Bedanya: `ts >= ? AND ts < ?` masih bisa memakai index ix_activity_ts,
+// sedangkan pola lama `substr(ts,1,10) = ?` TIDAK BISA -- SQLite tidak punya
+// index untuk hasil pemanggilan fungsi, jadi tiap query tanggal memindai
+// SELURUH tabel activity_log. Itu penyebab utama Dashboard & halaman Aktivitas
+// terasa berat (dua-duanya query tanggal, dan dipanggil tiap load/refresh).
+//
+// dayHi memakai "~" (0x7E) sebagai batas atas eksklusif: karakter itu lebih
+// besar dari spasi pemisah jam ("2026-09-19 23:59:59" < "2026-09-19~") tapi
+// tetap lebih kecil dari tanggal berikutnya ("2026-09-19~" < "2026-09-20"),
+// jadi tidak perlu hitung "besoknya tanggal berapa" sama sekali.
+const dayLo = (dateKey: string): string => dateKey;
+const dayHi = (dateKey: string): string => dateKey + "~";
+
 // Ringkasan aktivitas untuk header/poll — SATU query agregat (bukan 5 full-scan
 // seperti getDashboardData). Dipakai live-poll supaya tidak menghabiskan kuota
 // "rows read" D1 (5 juta/hari di paket Free).
@@ -71,19 +91,25 @@ export async function getActivitySummary(env: Env, profile: UserProfile): Promis
 async function buildActivitySummary(env: Env, profile: UserProfile) {
 	const isAdmin = profile.role === "ADMIN";
 	const today = dateKeyNow();
-	const scope = isAdmin ? "substr(ts,1,10) = ?" : "substr(ts,1,10) = ? AND username = ?";
-	const args: unknown[] = isAdmin ? [today] : [today, profile.username];
-	const s = await env.DB.prepare(
-		`SELECT
-		   COUNT(*) AS today,
-		   SUM(CASE WHEN action = 'LOGIN' AND status = 'BERHASIL' THEN 1 ELSE 0 END) AS login,
-		   SUM(CASE WHEN upper(action) LIKE '%SEND%' OR upper(action) LIKE '%KIRIM%' THEN 1 ELSE 0 END) AS sends,
-		   SUM(CASE WHEN status = 'BERHASIL' THEN 1 ELSE 0 END) AS success,
-		   SUM(CASE WHEN upper(status) IN ('GAGAL','ERROR') THEN 1 ELSE 0 END) AS failed
-		 FROM activity_log WHERE ${scope}`,
-	)
-		.bind(...args)
-		.first<Record<string, number>>();
+	const scope = isAdmin ? "ts >= ? AND ts < ?" : "ts >= ? AND ts < ? AND username = ?";
+	const args: unknown[] = isAdmin
+		? [dayLo(today), dayHi(today)]
+		: [dayLo(today), dayHi(today), profile.username];
+	// Dua query ini tidak saling bergantung -> jalankan barengan, bukan berurutan.
+	const [s, maintenance] = await Promise.all([
+		env.DB.prepare(
+			`SELECT
+			   COUNT(*) AS today,
+			   SUM(CASE WHEN action = 'LOGIN' AND status = 'BERHASIL' THEN 1 ELSE 0 END) AS login,
+			   SUM(CASE WHEN upper(action) LIKE '%SEND%' OR upper(action) LIKE '%KIRIM%' THEN 1 ELSE 0 END) AS sends,
+			   SUM(CASE WHEN status = 'BERHASIL' THEN 1 ELSE 0 END) AS success,
+			   SUM(CASE WHEN upper(status) IN ('GAGAL','ERROR') THEN 1 ELSE 0 END) AS failed
+			 FROM activity_log WHERE ${scope}`,
+		)
+			.bind(...args)
+			.first<Record<string, number>>(),
+		getMaintenance(env),
+	]);
 	return {
 		role: profile.role,
 		stats: {
@@ -94,7 +120,7 @@ async function buildActivitySummary(env: Env, profile: UserProfile) {
 			failed: Number(s?.failed ?? 0),
 			found: Number(s?.today ?? 0),
 		},
-		maintenance: await getMaintenance(env),
+		maintenance,
 	};
 }
 
@@ -105,6 +131,58 @@ export interface ActivityRow {
 	status: string;
 	detail: string;
 	content: string;
+}
+
+// Isi dropdown filter (username/action/status) = 3x SELECT DISTINCT atas
+// activity_log. Dulu ketiganya dijalankan BERURUTAN setiap halaman dibuka
+// (getBootstrapData memanggil dgn facets:true), padahal isinya nyaris tidak
+// pernah berubah dalam hitungan detik. Sekarang: dijalankan barengan DAN
+// di-cache per-isolate 60 dtk -- mayoritas load tidak menyentuh D1 sama sekali
+// untuk bagian ini. Pola & alasannya sama dengan _sumCache di atas.
+interface FilterOptions {
+	usernames: string[];
+	actions: string[];
+	statuses: string[];
+}
+const _facetCache = new Map<string, { ts: number; data: FilterOptions }>();
+const FACET_TTL_MS = 60_000;
+
+async function getFilterOptions(env: Env, profile: UserProfile, today: string): Promise<FilterOptions> {
+	const isAdmin = profile.role === "ADMIN";
+	// Non-admin selalu dibatasi hari ini -> tanggal ikut jadi bagian kunci cache
+	// supaya entri kemarin tidak kebawa lewat pergantian hari.
+	const key = isAdmin ? "__admin__" : `${profile.username}|${today}`;
+	const hit = _facetCache.get(key);
+	if (hit && Date.now() - hit.ts < FACET_TTL_MS) return hit.data;
+
+	const distinct = async (col: "username" | "action" | "status"): Promise<string[]> => {
+		if (isAdmin) {
+			const res = await env.DB.prepare(
+				`SELECT DISTINCT ${col} AS v FROM activity_log WHERE ${col} <> '' ORDER BY v LIMIT 200`,
+			).all<{ v: string }>();
+			return (res.results ?? []).map((r) => r.v);
+		}
+		const res = await env.DB.prepare(
+			`SELECT DISTINCT ${col} AS v FROM activity_log
+			 WHERE ${col} <> '' AND username = ? AND ts >= ? AND ts < ? ORDER BY v LIMIT 200`,
+		)
+			.bind(profile.username, dayLo(today), dayHi(today))
+			.all<{ v: string }>();
+		return (res.results ?? []).map((r) => r.v);
+	};
+
+	const [usernames, actions, statuses] = await Promise.all([
+		distinct("username"),
+		distinct("action"),
+		distinct("status"),
+	]);
+	const data: FilterOptions = { usernames, actions, statuses };
+	_facetCache.set(key, { ts: Date.now(), data });
+	if (_facetCache.size > 64) {
+		const oldest = [..._facetCache.entries()].sort((a, b) => a[1].ts - b[1].ts)[0];
+		if (oldest) _facetCache.delete(oldest[0]);
+	}
+	return data;
 }
 
 export async function getDashboardData(env: Env, profile: UserProfile, opts: DashOptions) {
@@ -118,20 +196,21 @@ export async function getDashboardData(env: Env, profile: UserProfile, opts: Das
 		// operator/viewer: hanya aktivitas sendiri, hanya hari ini
 		where.push("username = ?");
 		args.push(profile.username);
-		where.push("substr(ts,1,10) = ?");
-		args.push(today);
+		where.push("ts >= ? AND ts < ?");
+		args.push(dayLo(today), dayHi(today));
 	} else {
 		if (opts.username) {
 			where.push("username = ?");
 			args.push(opts.username);
 		}
 		if (opts.dateFrom) {
-			where.push("substr(ts,1,10) >= ?");
-			args.push(opts.dateFrom);
+			where.push("ts >= ?");
+			args.push(dayLo(opts.dateFrom));
 		}
 		if (opts.dateTo) {
-			where.push("substr(ts,1,10) <= ?");
-			args.push(opts.dateTo);
+			// "<= dateTo" versi ramah-index: seluruh hari dateTo ikut (lihat dayHi).
+			where.push("ts < ?");
+			args.push(dayHi(opts.dateTo));
 		}
 	}
 	if (opts.action) {
@@ -151,21 +230,60 @@ export async function getDashboardData(env: Env, profile: UserProfile, opts: Das
 	}
 	const whereSql = where.length ? "WHERE " + where.join(" AND ") : "";
 
-	const totalRow = await env.DB.prepare(`SELECT COUNT(*) AS n FROM activity_log ${whereSql}`)
-		.bind(...args)
-		.first<{ n: number }>();
+	// Statistik: cakupan HARI INI untuk user ini (admin = semua user hari ini).
+	const statArgs: unknown[] = [dayLo(today), dayHi(today)];
+	let statScope = "ts >= ? AND ts < ?";
+	if (!isAdmin) {
+		statScope += " AND username = ?";
+		statArgs.push(profile.username);
+	}
+
+	const rowsQuery = (off: number) =>
+		env.DB.prepare(
+			`SELECT ts, username, action, status, detail, content
+			 FROM activity_log ${whereSql}
+			 ORDER BY id DESC LIMIT ? OFFSET ?`,
+		)
+			.bind(...args, opts.pageSize, off)
+			.all<Record<string, string>>();
+
+	// Semua query di bawah ini saling INDEPENDEN -> dijalankan barengan (dulu
+	// berurutan: COUNT -> baris -> statistik -> 3x DISTINCT -> maintenance =
+	// 7 round-trip menunggu satu per satu tiap kali halaman dibuka/refresh).
+	//
+	// Query baris ikut dijalankan duluan memakai halaman yang DIMINTA user,
+	// supaya tidak perlu menunggu COUNT selesai. Kalau halaman itu ternyata
+	// melebihi jumlah halaman hasil filter (mis. user ada di halaman 5 lalu
+	// memfilter sampai sisa 2 halaman), barisnya diambil ulang di bawah dengan
+	// offset yang sudah dikoreksi -- kasus jarang, jadi hampir semua request
+	// tetap cukup satu gelombang query.
+	const optimisticOffset = (opts.page - 1) * opts.pageSize;
+	const [totalRow, optimisticRows, s, maintenance, filterOptions] = await Promise.all([
+		env.DB.prepare(`SELECT COUNT(*) AS n FROM activity_log ${whereSql}`)
+			.bind(...args)
+			.first<{ n: number }>(),
+		rowsQuery(optimisticOffset),
+		env.DB.prepare(
+			`SELECT
+			   COUNT(*) AS today,
+			   SUM(CASE WHEN action = 'LOGIN' AND status = 'BERHASIL' THEN 1 ELSE 0 END) AS login,
+			   SUM(CASE WHEN upper(action) LIKE '%SEND%' OR upper(action) LIKE '%KIRIM%' THEN 1 ELSE 0 END) AS sends,
+			   SUM(CASE WHEN status = 'BERHASIL' THEN 1 ELSE 0 END) AS success,
+			   SUM(CASE WHEN upper(status) IN ('GAGAL','ERROR') THEN 1 ELSE 0 END) AS failed
+			 FROM activity_log WHERE ${statScope}`,
+		)
+			.bind(...statArgs)
+			.first<Record<string, number>>(),
+		getMaintenance(env),
+		opts.facets ? getFilterOptions(env, profile, today) : Promise.resolve(null),
+	]);
+
 	const total = Number(totalRow?.n ?? 0);
 	const totalPages = Math.max(Math.ceil(total / opts.pageSize), 1);
 	const page = Math.min(opts.page, totalPages);
 	const offset = (page - 1) * opts.pageSize;
+	const rowsRes = offset === optimisticOffset ? optimisticRows : await rowsQuery(offset);
 
-	const rowsRes = await env.DB.prepare(
-		`SELECT ts, username, action, status, detail, content
-		 FROM activity_log ${whereSql}
-		 ORDER BY id DESC LIMIT ? OFFSET ?`,
-	)
-		.bind(...args, opts.pageSize, offset)
-		.all<Record<string, string>>();
 	// Frontend lama membaca baris sebagai ARRAY: [ts, user, action, status, detail, content, source].
 	const rows: string[][] = (rowsRes.results ?? []).map((r) => [
 		r.ts ?? "",
@@ -177,25 +295,6 @@ export async function getDashboardData(env: Env, profile: UserProfile, opts: Das
 		"HARI INI",
 	]);
 
-	// Statistik: cakupan HARI INI untuk user ini (admin = semua user hari ini).
-	const statArgs: unknown[] = [today];
-	let statScope = "substr(ts,1,10) = ?";
-	if (!isAdmin) {
-		statScope += " AND username = ?";
-		statArgs.push(profile.username);
-	}
-	const s = await env.DB.prepare(
-		`SELECT
-		   COUNT(*) AS today,
-		   SUM(CASE WHEN action = 'LOGIN' AND status = 'BERHASIL' THEN 1 ELSE 0 END) AS login,
-		   SUM(CASE WHEN upper(action) LIKE '%SEND%' OR upper(action) LIKE '%KIRIM%' THEN 1 ELSE 0 END) AS sends,
-		   SUM(CASE WHEN status = 'BERHASIL' THEN 1 ELSE 0 END) AS success,
-		   SUM(CASE WHEN upper(status) IN ('GAGAL','ERROR') THEN 1 ELSE 0 END) AS failed
-		 FROM activity_log WHERE ${statScope}`,
-	)
-		.bind(...statArgs)
-		.first<Record<string, number>>();
-
 	const stats = {
 		today: Number(s?.today ?? 0),
 		login: Number(s?.login ?? 0),
@@ -205,27 +304,11 @@ export async function getDashboardData(env: Env, profile: UserProfile, opts: Das
 		found: total,
 	};
 
-	const distinct = async (col: "username" | "action" | "status"): Promise<string[]> => {
-		if (isAdmin) {
-			const res = await env.DB.prepare(
-				`SELECT DISTINCT ${col} AS v FROM activity_log WHERE ${col} <> '' ORDER BY v LIMIT 200`,
-			).all<{ v: string }>();
-			return (res.results ?? []).map((r) => r.v);
-		}
-		const res = await env.DB.prepare(
-			`SELECT DISTINCT ${col} AS v FROM activity_log
-			 WHERE ${col} <> '' AND username = ? AND substr(ts,1,10) = ? ORDER BY v LIMIT 200`,
-		)
-			.bind(profile.username, today)
-			.all<{ v: string }>();
-		return (res.results ?? []).map((r) => r.v);
-	};
-
 	return {
 		role: profile.role,
 		rows,
 		stats,
-		maintenance: await getMaintenance(env),
+		maintenance,
 		pagination: {
 			page,
 			pageSize: opts.pageSize,
@@ -235,12 +318,6 @@ export async function getDashboardData(env: Env, profile: UserProfile, opts: Das
 			hasNext: page < totalPages,
 		},
 		sourceInfo: { currentTotal: total, backupTotal: 0, archiveScanned: 0, scanLimited: false },
-		filterOptions: opts.facets
-			? {
-					usernames: await distinct("username"),
-					actions: await distinct("action"),
-					statuses: await distinct("status"),
-				}
-			: null,
+		filterOptions,
 	};
 }

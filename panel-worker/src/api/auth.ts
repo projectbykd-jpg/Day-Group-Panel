@@ -94,13 +94,25 @@ export async function requireSession(
 	token: string,
 	opts: { admin?: boolean; ignoreMaintenance?: boolean; allowBot?: boolean } = {},
 ): Promise<Session> {
+	// Status maintenance TIDAK bergantung pada sesi/profil -> dimulai barengan
+	// dengan pembacaan sesi, bukan menunggu giliran sesudahnya. Fungsi ini jalan
+	// di SETIAP request yang butuh login, jadi memangkas satu round-trip di sini
+	// terasa di semua halaman sekaligus.
+	// .catch kosong di bawah HANYA menandai promise-nya "sudah ditangani" supaya
+	// tidak jadi unhandled rejection kalau alur ini keburu throw duluan (sesi
+	// tidak valid dsb). Promise aslinya tetap utuh -- kalau query-nya memang
+	// gagal, `await maintenanceP` di bawah tetap melempar error yang sama
+	// seperti sebelumnya.
+	const maintenanceP = getMaintenance(env);
+	maintenanceP.catch(() => {});
+
 	const rec = await loadSession(env, token);
 	if (!rec) throw new Error("Sesi tidak valid atau telah berakhir. Silakan login kembali.");
 	const p = await getUserProfile(env, rec.username);
 	if (!p) throw new Error("Akun tidak ditemukan.");
 	if (p.status !== "AKTIF") throw new Error("Akun sedang " + String(p.status || "NONAKTIF").toLowerCase() + ".");
 	if (p.lockedUntil && p.lockedUntil > tsNow()) throw new Error("Akun terkunci sementara.");
-	const maintenance = await getMaintenance(env);
+	const maintenance = await maintenanceP;
 	if (maintenance.enabled && p.role !== "ADMIN" && !opts.ignoreMaintenance) {
 		throw new Error(maintenance.message);
 	}

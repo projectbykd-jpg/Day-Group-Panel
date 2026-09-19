@@ -1,0 +1,62 @@
+name: Deploy panel-worker ke Cloudflare
+
+# Deploy TANPA komputer. Pemilik cukup punya HP:
+#  - Otomatis tiap ada perubahan kode panel-worker yang masuk ke branch main.
+#  - Atau manual lewat tombol "Run workflow" di tab Actions (juga bisa dipicu
+#    dari sesi Claude Code lewat GitHub API).
+#
+# SYARAT SEKALI SETUP: simpan API token Cloudflare sebagai repository secret
+# bernama CLOUDFLARE_API_TOKEN (Settings > Secrets and variables > Actions).
+# Token dibuat di dash.cloudflare.com > My Profile > API Tokens, pakai template
+# "Edit Cloudflare Workers". Tokennya TIDAK pernah tampil di log run ini --
+# GitHub menyensornya otomatis.
+on:
+  push:
+    branches: [main]
+    paths:
+      # Hanya deploy kalau yang berubah memang bagian Worker-nya. Perubahan
+      # dokumentasi/tema Blogger/workflow lain tidak ikut memicu deploy.
+      - "panel-worker/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+concurrency:
+  # Jangan pernah dua deploy jalan bersamaan; yang lebih baru menang, yang lama
+  # dibatalkan (tidak ada gunanya menyelesaikan deploy versi usang).
+  group: deploy-panel-worker
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        working-directory: panel-worker
+        # `npm install`, BUKAN `npm ci` -- package-lock.json repo ini belum
+        # sinkron dgn package.json, dan `npm ci` menolak jalan kalau begitu.
+        run: npm install
+
+      - name: Cek TypeScript (batal deploy kalau ada error)
+        working-directory: panel-worker
+        run: npx tsc --noEmit -p .
+
+      - name: Build UI + deploy ke Cloudflare
+        working-directory: panel-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        # `npm run deploy` sudah menjalankan build-ui (lewat predeploy) lalu
+        # wrangler deploy -- sama persis dgn yang dijalankan manual di laptop.
+        run: |
+          if [ -z "${CLOUDFLARE_API_TOKEN}" ]; then
+            echo "::error::Secret CLOUDFLARE_API_TOKEN belum diisi di repo ini."
+            echo "Buka: Settings > Secrets and variables > Actions > New repository secret"
+            echo "Nama: CLOUDFLARE_API_TOKEN -- Isi: token dari dash.cloudflare.com (template 'Edit Cloudflare Workers')"
+            exit 1
+          fi
+          npm run deploy

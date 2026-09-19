@@ -1,8 +1,8 @@
 // Port wrapper prediksi V6Core.gs (getPredictionStatusData / generatePredictionCopyBundle /
 // generateClosingPredictionCopy / sendPredictionAuto / sendClosingPredictionAuto) + router auto-post.
 import { requireSession } from "./auth";
-import { getUserProfile } from "../lib/db";
-import { getSiteAccount } from "../lib/site";
+import { getUserProfiles } from "../lib/db";
+import { getSiteAccounts } from "../lib/site";
 import { logActivity } from "../lib/activity";
 import {
 	JADWAL_PREDIKSI_CONFIG,
@@ -102,10 +102,13 @@ async function activeSessionUsernames(env: Env): Promise<string[]> {
 }
 
 async function autoPostWebsites(env: Env, usernames: string[]): Promise<string[]> {
+	// Dua query batch (profil user + akun website), bukan 1 query per user lalu
+	// 1 query per website -- fungsi ini dipanggil TIAP MENIT oleh cron auto-post,
+	// jadi hemat round-trip di sini berlaku terus sepanjang hari.
 	const set: Record<string, boolean> = {};
-	for (const u of usernames) {
-		const p = await getUserProfile(env, u);
-		if (!p || !p.permissions.telegram) continue;
+	const profiles = await getUserProfiles(env, usernames);
+	for (const p of profiles.values()) {
+		if (!p.permissions.telegram) continue;
 		for (const w of p.websites || []) {
 			const site = String(w || "").trim().toUpperCase();
 			if (site) set[site] = true;
@@ -114,9 +117,10 @@ async function autoPostWebsites(env: Env, usernames: string[]): Promise<string[]
 	// PENTING: hanya sertakan website yang PUNYA Telegram Prediksi (tg_pred_*).
 	// Website tanpa config (mis. HELEN) kalau ikut -> selalu GAGAL -> guard slot
 	// tidak pernah terkunci -> router retry tiap menit sepanjang window (boros).
+	const accounts = await getSiteAccounts(env, Object.keys(set));
 	const eligible: string[] = [];
 	for (const site of Object.keys(set)) {
-		const acc = await getSiteAccount(env, site);
+		const acc = accounts.get(site);
 		if (acc && acc.telegramPred.token && acc.telegramPred.chatId) eligible.push(site);
 	}
 	return eligible;

@@ -77,11 +77,21 @@ export async function ensureNewsCategoryColumns(env: Env): Promise<void> {
 		// diklaim) dari yang NYANGKUT permanen (klaim lama tapi tidak pernah
 		// selesai/gagal dengan benar, mis. proses mati mendadak di tengah jalan).
 		`ALTER TABLE news_article ADD COLUMN claimed_at TEXT NOT NULL DEFAULT ''`,
+		// Index untuk query SITUS PUBLIK (Berita Terkini): semuanya menyaring
+		// `site_posted_at != ''` lalu mengurutkan `site_posted_at DESC, id DESC`,
+		// dan versi per-kategori menambah `category=?`. Tanpa index ini tiap
+		// pembukaan halaman memindai + mengurutkan SELURUH tabel news_article --
+		// dan tabel itu tidak pernah dipangkas (artikel yang sudah tayang sengaja
+		// disimpan sbg arsip), jadi halaman publik makin lambat seiring waktu.
+		// Ditaruh di sini (bukan file migrasi terpisah) supaya ikut jalan sendiri
+		// sekali per cold-start, sama seperti ALTER TABLE di atas.
+		`CREATE INDEX IF NOT EXISTS ix_news_public ON news_article(site_posted_at, id)`,
+		`CREATE INDEX IF NOT EXISTS ix_news_public_cat ON news_article(category, site_posted_at, id)`,
 	]) {
 		try {
 			await getTurso(env).prepare(stmt).run();
 		} catch {
-			/* kolom sudah ada -> abaikan */
+			/* kolom/index sudah ada -> abaikan */
 		}
 	}
 	// PEMBALIKAN backfill lama: sempat ada migrasi sementara yang mengisi
@@ -1695,18 +1705,20 @@ export async function publicNewsList(env: Env, category: string, page: number, p
 	const cat = category && (NEWS_CATEGORIES as readonly string[]).includes(category) ? category : "";
 	const where = cat ? `WHERE site_posted_at != '' AND category=?` : `WHERE site_posted_at != ''`;
 	const args = cat ? [cat] : [];
-	const rows =
-		(
-			await getTurso(env)
-				.prepare(
-					`SELECT id, title, excerpt, image_url, category, source, site_posted_at AS posted_at FROM news_article ${where} ORDER BY site_posted_at DESC, id DESC LIMIT ? OFFSET ?`,
-				)
-				.bind(...args, size, offset)
-				.all<{ id: number; title: string; excerpt: string; image_url: string; category: string; source: string; posted_at: string }>()
-		).results ?? [];
-	const total = Number(
-		(await getTurso(env).prepare(`SELECT COUNT(*) AS c FROM news_article ${where}`).bind(...args).first<{ c: number }>())?.c ?? 0,
-	);
+	// Daftar artikel & hitungan totalnya tidak saling bergantung -> barengan,
+	// bukan berurutan (halaman ini dibuka pengunjung situs, jadi tiap jeda
+	// round-trip Turso langsung terasa di waktu muat halaman).
+	const [rowsRes, totalRow] = await Promise.all([
+		getTurso(env)
+			.prepare(
+				`SELECT id, title, excerpt, image_url, category, source, site_posted_at AS posted_at FROM news_article ${where} ORDER BY site_posted_at DESC, id DESC LIMIT ? OFFSET ?`,
+			)
+			.bind(...args, size, offset)
+			.all<{ id: number; title: string; excerpt: string; image_url: string; category: string; source: string; posted_at: string }>(),
+		getTurso(env).prepare(`SELECT COUNT(*) AS c FROM news_article ${where}`).bind(...args).first<{ c: number }>(),
+	]);
+	const rows = rowsRes.results ?? [];
+	const total = Number(totalRow?.c ?? 0);
 	return { success: true, articles: rows, total, page: Math.max(1, page || 1), pageSize: size, categories: NEWS_CATEGORIES };
 }
 

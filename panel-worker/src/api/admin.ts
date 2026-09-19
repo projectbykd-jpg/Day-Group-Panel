@@ -4,7 +4,7 @@
 import { requireSession } from "./auth";
 import { hashPassword } from "../lib/crypto";
 import { logActivity } from "../lib/activity";
-import { getUserProfile } from "../lib/db";
+import { getUserProfiles } from "../lib/db";
 import { listActiveSessions, migrateKvSessionsOnce } from "../lib/session";
 import { tsNow } from "../lib/time";
 
@@ -236,9 +236,12 @@ export async function adminListActiveSessions(env: Env, token: string) {
 	// Dibaca dari D1 (bukan SESS.list) — kuota KV list Free cuma 1000/hari.
 	const groups = await listActiveSessions(env);
 
+	// Profil semua user diambil dalam SATU query (dulu: 1 query per user aktif).
+	const profiles = await getUserProfiles(env, groups.map((g) => g.username));
+
 	const sessions = [];
 	for (const g of groups) {
-		const p = await getUserProfile(env, g.username);
+		const p = profiles.get(g.username.toLowerCase()) ?? null;
 		const websites = p ? p.websites : [];
 		const telegramOn = !!(p && p.permissions.telegram);
 		sessions.push({
@@ -294,7 +297,9 @@ export async function adminPruneActivityLog(env: Env, token: string) {
 	const s = await requireSession(env, token, { admin: true });
 	const cutoff = new Date(Date.now() + OFFSET_MS - LOG_RETENTION_DAYS * 864e5).toISOString().slice(0, 10);
 	const before = await env.DB.prepare(`SELECT COUNT(*) n FROM activity_log`).first<{ n: number }>();
-	await env.DB.prepare(`DELETE FROM activity_log WHERE substr(ts,1,10) < ?`).bind(cutoff).run();
+	// `ts < cutoff` (bukan substr(ts,1,10) < cutoff) supaya index ix_activity_ts
+	// kepakai -- hasilnya sama persis karena ts selalu "yyyy-MM-dd HH:mm:ss".
+	await env.DB.prepare(`DELETE FROM activity_log WHERE ts < ?`).bind(cutoff).run();
 	const after = await env.DB.prepare(`SELECT COUNT(*) n FROM activity_log`).first<{ n: number }>();
 	const removed = Number(before?.n ?? 0) - Number(after?.n ?? 0);
 	await setSetting(env, "log_pruned_at", tsNow());
@@ -330,7 +335,7 @@ export async function adminSetLogRetention(env: Env, token: string) {
 export async function pruneActivityLogCron(env: Env): Promise<number> {
 	if (String(await getSetting(env, "log_retention_enabled") || "TRUE").toUpperCase() === "FALSE") return 0;
 	const cutoff = new Date(Date.now() + OFFSET_MS - LOG_RETENTION_DAYS * 864e5).toISOString().slice(0, 10);
-	const res = await env.DB.prepare(`DELETE FROM activity_log WHERE substr(ts,1,10) < ?`).bind(cutoff).run();
+	const res = await env.DB.prepare(`DELETE FROM activity_log WHERE ts < ?`).bind(cutoff).run();
 	await setSetting(env, "log_pruned_at", tsNow());
 	return res.meta?.changes ?? 0;
 }

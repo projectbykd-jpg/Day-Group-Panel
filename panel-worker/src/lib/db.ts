@@ -13,19 +13,11 @@ export interface UserProfile {
 	lockedUntil: string | null; // "yyyy-MM-dd HH:mm:ss" GMT+7 atau null
 }
 
-export async function getUserProfile(env: Env, username: string): Promise<UserProfile | null> {
-	const lc = String(username ?? "").trim().toLowerCase();
-	if (!lc) return null;
-	const row = await env.DB.prepare(
-		`SELECT id, username, password_hash, websites,
-		        perm_telegram, perm_linktree, perm_panelz,
-		        role, status, display_name, failed_login, locked_until
-		 FROM users WHERE username_lc = ?`,
-	)
-		.bind(lc)
-		.first<Record<string, unknown>>();
-	if (!row) return null;
+const USER_PROFILE_COLUMNS = `id, username, password_hash, websites,
+	        perm_telegram, perm_linktree, perm_panelz,
+	        role, status, display_name, failed_login, locked_until`;
 
+function rowToProfile(row: Record<string, unknown>): UserProfile {
 	let sites: string[] = [];
 	try {
 		sites = JSON.parse(String(row.websites ?? "[]"));
@@ -52,6 +44,69 @@ export async function getUserProfile(env: Env, username: string): Promise<UserPr
 		failedLogin: Number(row.failed_login ?? 0),
 		lockedUntil: (row.locked_until as string) || null,
 	};
+}
+
+export async function getUserProfile(env: Env, username: string): Promise<UserProfile | null> {
+	const lc = String(username ?? "").trim().toLowerCase();
+	if (!lc) return null;
+	const row = await env.DB.prepare(`SELECT ${USER_PROFILE_COLUMNS} FROM users WHERE username_lc = ?`)
+		.bind(lc)
+		.first<Record<string, unknown>>();
+	return row ? rowToProfile(row) : null;
+}
+
+/**
+ * Versi BANYAK-SEKALIGUS dari getUserProfile — satu query `IN (...)` untuk
+ * semua username, bukan 1 query per username. Dipakai di tempat yang dulu
+ * meloop `await getUserProfile()` (N+1): autoPostWebsites (jalan tiap menit
+ * lewat cron) & adminListActiveSessions. Hasilnya di-key pakai username
+ * huruf kecil, sama seperti kolom `username_lc` yang dicocokkan.
+ */
+export async function getUserProfiles(env: Env, usernames: string[]): Promise<Map<string, UserProfile>> {
+	const out = new Map<string, UserProfile>();
+	const lcs = [...new Set(usernames.map((u) => String(u ?? "").trim().toLowerCase()).filter(Boolean))];
+	if (!lcs.length) return out;
+	// SQLite membatasi jumlah variabel per statement -> pecah agar tetap aman
+	// walau daftar usernya panjang (batas D1/SQLite default 100 variabel).
+	for (let i = 0; i < lcs.length; i += 50) {
+		const chunk = lcs.slice(i, i + 50);
+		const res = await env.DB.prepare(
+			`SELECT ${USER_PROFILE_COLUMNS} FROM users WHERE username_lc IN (${chunk.map(() => "?").join(",")})`,
+		)
+			.bind(...chunk)
+			.all<Record<string, unknown>>();
+		for (const row of res.results ?? []) {
+			const p = rowToProfile(row);
+			out.set(p.username.toLowerCase(), p);
+		}
+	}
+	return out;
+}
+
+// Index tambahan yang baru ditambahkan BELAKANGAN (migration/001_init.sql &
+// 004_sessions_fallback.sql sudah terlanjur jalan di database produksi).
+// Dipanggil dari cron (lihat scheduled() di index.ts), bukan dari request user,
+// dan dijaga flag per-isolate -> tidak ada biaya tambahan di jalur request.
+// CREATE INDEX IF NOT EXISTS aman dipanggil berkali-kali.
+let perfIndexesEnsured = false;
+export async function ensurePerfIndexes(env: Env): Promise<void> {
+	if (perfIndexesEnsured) return;
+	for (const stmt of [
+		// Dashboard & halaman Aktivitas untuk non-admin SELALU menyaring
+		// "username = ? AND ts (hari ini)" -- index gabungan ini melayani kedua
+		// syarat sekaligus, sedangkan ix_activity_user lama hanya bisa username
+		// (tanggalnya tetap harus dipindai satu per satu).
+		`CREATE INDEX IF NOT EXISTS ix_activity_user_ts ON activity_log(username, ts)`,
+		// capUserSessions() jalan TIAP LOGIN: "WHERE username = ? ORDER BY created_at DESC".
+		`CREATE INDEX IF NOT EXISTS ix_sessions_username ON sessions(username, created_at)`,
+	]) {
+		try {
+			await env.DB.prepare(stmt).run();
+		} catch {
+			/* index sudah ada / tabel belum dibuat -> abaikan */
+		}
+	}
+	perfIndexesEnsured = true;
 }
 
 export interface Maintenance {
