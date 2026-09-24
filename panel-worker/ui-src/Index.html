@@ -95,6 +95,9 @@
               <button onclick="switchPage('home')" id="nav-home" class="sidebar-nav nav-active w-full flex items-center justify-start gap-3 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer">
                 <i class="fa-solid fa-gauge-high text-cyan-400 text-sm shrink-0"></i><span class="tracking-wider">Dashboard</span>
               </button>
+              <button onclick="switchPage('result')" id="nav-result" class="nav-extra sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer">
+                <i class="fa-solid fa-trophy text-amber-400 text-sm shrink-0"></i><span class="tracking-wider">Result</span>
+              </button>
             </div>
           </div>
 
@@ -241,8 +244,131 @@
         </div>
       </div>
 
-      <!-- VIEW 1: MAIN PANEL (BERANDA) -->
+      <!-- VIEW 1: DASHBOARD — OVERVIEW OPERASIONAL -->
       <div id="main-panel" class="flex flex-col gap-5 fade-in">
+        <section class="dashboard-hero glass-card rounded-[2rem] p-5 sm:p-7 relative overflow-hidden">
+          <div class="dashboard-hero-glow dashboard-hero-glow-a"></div>
+          <div class="dashboard-hero-glow dashboard-hero-glow-b"></div>
+          <div class="relative z-10 flex flex-col xl:flex-row xl:items-end justify-between gap-6">
+            <div class="min-w-0">
+              <div class="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1.5 text-[9px] font-extrabold tracking-[.18em] text-cyan-300">
+                <span class="dashboard-live-dot"></span> OPERATIONAL CONSOLE
+              </div>
+              <h1 class="mt-4 text-2xl sm:text-3xl lg:text-[2.1rem] font-black tracking-tight text-white">
+                Dashboard <span class="text-cyan-300">KD-GROUP</span>
+              </h1>
+              <p class="mt-2 max-w-2xl text-xs sm:text-sm leading-6 text-slate-400">
+                Ringkasan aktivitas panel, status pengiriman, dan akses cepat ke modul operasional.
+                Pantau kondisi sistem di satu layar sebelum masuk ke pekerjaan utama.
+              </p>
+              <div class="mt-5 flex flex-wrap items-center gap-2.5">
+                <span id="homeDashboardUser" class="dashboard-chip"><i class="fa-solid fa-user"></i>Memuat user…</span>
+                <span class="dashboard-chip"><i class="fa-solid fa-calendar-day"></i>Hari ini</span>
+                <span id="homeDashboardSync" class="dashboard-chip"><i class="fa-solid fa-rotate"></i>Sinkronisasi…</span>
+              </div>
+            </div>
+            <div class="dashboard-hero-side glass-inner rounded-2xl p-4 min-w-0 xl:min-w-[260px]">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <div class="text-[9px] font-extrabold tracking-[.18em] text-slate-500">SYSTEM STATUS</div>
+                  <div class="mt-1 text-sm font-extrabold text-white">Panel Online</div>
+                </div>
+                <span class="dashboard-status-pill"><span class="dashboard-live-dot"></span>AKTIF</span>
+              </div>
+              <div class="mt-4 grid grid-cols-2 gap-2.5">
+                <div class="dashboard-mini-stat">
+                  <span>Pengiriman</span><b id="homeMiniSends">0</b>
+                </div>
+                <div class="dashboard-mini-stat">
+                  <span>Aktivitas</span><b id="homeMiniToday">0</b>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="homeDashboardStats" class="grid grid-cols-2 xl:grid-cols-4 gap-3.5">
+          <div class="home-stat-card glass-card rounded-2xl p-4">
+            <div class="home-stat-icon success"><i class="fa-solid fa-circle-check"></i></div>
+            <div class="min-w-0">
+              <div class="home-stat-label">BERHASIL</div>
+              <div id="homeStatSuccess" class="home-stat-value" data-fx-count="0">0</div>
+              <div class="home-stat-sub"><span class="dashboard-live-dot"></span>Pengiriman sukses</div>
+            </div>
+          </div>
+          <div class="home-stat-card glass-card rounded-2xl p-4">
+            <div class="home-stat-icon danger"><i class="fa-solid fa-triangle-exclamation"></i></div>
+            <div class="min-w-0">
+              <div class="home-stat-label">GAGAL</div>
+              <div id="homeStatFailed" class="home-stat-value" data-fx-count="0">0</div>
+              <div class="home-stat-sub">Perlu diperiksa</div>
+            </div>
+          </div>
+          <div class="home-stat-card glass-card rounded-2xl p-4">
+            <div class="home-stat-icon info"><i class="fa-solid fa-paper-plane"></i></div>
+            <div class="min-w-0">
+              <div class="home-stat-label">PENGIRIMAN</div>
+              <div id="homeStatSends" class="home-stat-value" data-fx-count="0">0</div>
+              <div class="home-stat-sub">Total proses kirim</div>
+            </div>
+          </div>
+          <div class="home-stat-card glass-card rounded-2xl p-4">
+            <div class="home-stat-icon accent"><i class="fa-solid fa-chart-line"></i></div>
+            <div class="min-w-0">
+              <div class="home-stat-label">AKTIVITAS</div>
+              <div id="homeStatToday" class="home-stat-value" data-fx-count="0">0</div>
+              <div class="home-stat-sub">Aktivitas hari ini</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="grid grid-cols-1 xl:grid-cols-12 gap-5">
+          <div class="glass-card rounded-[1.8rem] p-5 xl:col-span-8">
+            <div class="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <div class="text-[9px] font-extrabold tracking-[.18em] text-cyan-400">RECENT ACTIVITY</div>
+                <h2 class="mt-1 text-base sm:text-lg font-extrabold text-white">Aktivitas Terbaru</h2>
+              </div>
+              <button onclick="switchPage('activity')" class="dashboard-link-btn">
+                Lihat semua <i class="fa-solid fa-arrow-right"></i>
+              </button>
+            </div>
+            <div id="homeActivityList" class="home-activity-list">
+              <div class="home-activity-empty"><i class="fa-solid fa-spinner fa-spin"></i> Memuat aktivitas…</div>
+            </div>
+          </div>
+
+          <div class="glass-card rounded-[1.8rem] p-5 xl:col-span-4">
+            <div class="text-[9px] font-extrabold tracking-[.18em] text-fuchsia-300">QUICK ACCESS</div>
+            <h2 class="mt-1 text-base sm:text-lg font-extrabold text-white">Akses Cepat</h2>
+            <div class="mt-4 grid gap-2.5">
+              <button onclick="switchPage('result')" class="dashboard-action">
+                <span class="dashboard-action-icon result"><i class="fa-solid fa-trophy"></i></span>
+                <span><b>Result</b><small>Input & kirim result</small></span>
+                <i class="fa-solid fa-chevron-right ml-auto text-slate-600"></i>
+              </button>
+              <button onclick="switchPage('prediction')" class="dashboard-action">
+                <span class="dashboard-action-icon prediction"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
+                <span><b>Prediksi</b><small>Jadwal & kata penutup</small></span>
+                <i class="fa-solid fa-chevron-right ml-auto text-slate-600"></i>
+              </button>
+              <button onclick="switchPage('invest')" class="dashboard-action nav-extra">
+                <span class="dashboard-action-icon invest"><i class="fa-solid fa-magnifying-glass-dollar"></i></span>
+                <span><b>AutoCheck Invest</b><small>Pemeriksaan otomatis</small></span>
+                <i class="fa-solid fa-chevron-right ml-auto text-slate-600"></i>
+              </button>
+              <button onclick="switchPage('activity')" class="dashboard-action">
+                <span class="dashboard-action-icon activity"><i class="fa-solid fa-clock-rotate-left"></i></span>
+                <span><b>Aktivitas</b><small>Riwayat pekerjaan akun</small></span>
+                <i class="fa-solid fa-chevron-right ml-auto text-slate-600"></i>
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- VIEW 2: RESULT — OPERASIONAL PENGIRIMAN -->
+      <div id="result-page" class="flex flex-col gap-5 fade-in">
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
           
           <!-- Kolom Kiri: Input Data -->
