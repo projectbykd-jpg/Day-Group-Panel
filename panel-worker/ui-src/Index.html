@@ -104,6 +104,22 @@
             </div>
           </div>
 
+          <!-- GRUP 2: AUTOMATION — selalu tampil untuk user non-BOT -->
+          <div class="nav-group" data-group="automation">
+            <button type="button" class="nav-group-head" onclick="toggleNavGroup('automation')">
+              <span><i class="fa-solid fa-bolt mr-2 text-cyan-400"></i>Automation</span>
+              <i class="fa-solid fa-chevron-down nav-chev"></i>
+            </button>
+            <div class="nav-group-body">
+              <button onclick="switchPage('prediction')" id="nav-automation-prediction" class="nav-extra sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer">
+                <i class="fa-solid fa-wand-magic-sparkles text-fuchsia-400 text-sm shrink-0"></i><span class="tracking-wider">Prediksi</span>
+              </button>
+              <button onclick="switchPage('invest')" id="nav-automation-invest" class="nav-extra sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer">
+                <i class="fa-solid fa-magnifying-glass-dollar text-emerald-400 text-sm shrink-0"></i><span class="tracking-wider">AutoCheck Invest</span>
+              </button>
+            </div>
+          </div>
+
           <!-- GRUP 2: LAPORAN HARIAN -->
           <div class="nav-group" data-group="lapor">
             <button type="button" class="nav-group-head" onclick="toggleNavGroup('lapor')">
