@@ -1319,14 +1319,17 @@
         + "    });\n"
         + "    return found;\n"
         + "  }\n"
+        + "  let lastSentSig='',lastSentAt=0; const HEARTBEAT_MS=10000;\n"
         + "  async function tick(){\n"
         + "    try{\n"
         + "      const rows=scan();\n"
         + "      document.title='['+rows.length+' PGA Pending] MOTION';\n"
-        // console.table setiap tick -- kalau masih ada kolom yg salah/kosong,
-        // KELIHATAN LANGSUNG di Console tanpa perlu diagnosa terpisah lagi.
+        + "      const sig=JSON.stringify(rows), now=Date.now();\n"
+        + "      if(sig===lastSentSig && now-lastSentAt<HEARTBEAT_MS)return;\n"
         + "      if(rows.length)console.table(rows);\n"
-        + "      await fetch(PANEL+'/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'pgaPendingSync',token:TOKEN,rows:rows})});\n"
+        + "      const r=await fetch(PANEL+'/api',{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.timeout(8000),body:JSON.stringify({action:'pgaPendingSync',token:TOKEN,rows:rows})});\n"
+        + "      if(!r.ok)throw new Error('HTTP '+r.status);\n"
+        + "      lastSentSig=sig; lastSentAt=now;\n"
         + "    }catch(e){console.log('PGA Pending: sync gagal -- ',(e&&e.message)||e);}\n"
         + "  }\n"
         + "  console.log('%cPGA Pending: mulai sinkron tiap 2 detik. Biarkan tab ini TETAP TERBUKA di halaman WD Request.','color:#0f0;font-weight:bold');\n"
@@ -1363,24 +1366,46 @@
       });
     }
 
+    let pgaPendingPollInFlight = false;
+    let pgaPendingPollFailStreak = 0;
+    let pgaPendingServerVersion = 0;
+
     function stopPgaPendingPolling() {
-      if (pgaPendingTimer) { clearInterval(pgaPendingTimer); pgaPendingTimer = null; }
+      if (pgaPendingTimer) { clearTimeout(pgaPendingTimer); pgaPendingTimer = null; }
+      pgaPendingPollInFlight = false;
+    }
+    function schedulePgaPendingPoll(delay) {
+      if (currentPage !== 'pga-pending') return;
+      clearTimeout(pgaPendingTimer);
+      pgaPendingTimer = setTimeout(pollPgaPendingStatus, Math.max(0, delay || 0));
     }
     function startPgaPendingPolling() {
       stopPgaPendingPolling();
-      pollPgaPendingStatus();
-      pgaPendingTimer = setInterval(pollPgaPendingStatus, 2000);
+      schedulePgaPendingPoll(0);
     }
     function pollPgaPendingStatus() {
+      if (pgaPendingPollInFlight || currentPage !== 'pga-pending') return;
+      pgaPendingPollInFlight = true;
       google.script.run.withSuccessHandler(res => {
-        if (!res || !res.success) return;
-        pgaPendingRows = res.rows || [];
-        pgaPendingUpdatedAt = res.updatedAt || 0;
-        pgaPendingRepaint();
-      }).withFailureHandler(() => {}).pgaPendingStatus(currentSessionToken);
+        pgaPendingPollInFlight = false;
+        pgaPendingPollFailStreak = 0;
+        if (res && res.success) {
+          const nextUpdatedAt = Number(res.updatedAt || 0);
+          const changed = nextUpdatedAt !== pgaPendingServerVersion;
+          pgaPendingRows = res.rows || [];
+          pgaPendingUpdatedAt = nextUpdatedAt;
+          if (changed) pgaPendingServerVersion = nextUpdatedAt;
+          pgaPendingRepaint(changed);
+        }
+        schedulePgaPendingPoll(3000);
+      }).withFailureHandler(() => {
+        pgaPendingPollInFlight = false;
+        pgaPendingPollFailStreak = Math.min(pgaPendingPollFailStreak + 1, 3);
+        schedulePgaPendingPoll(Math.min(12000, 3000 * Math.pow(2, pgaPendingPollFailStreak - 1)));
+      }).pgaPendingStatus(currentSessionToken);
     }
-    function pgaPendingRepaint() {
-      if (lapTblState['pga_pending']) { lapTblState['pga_pending'].rows = pgaPendingRows; lapTblRepaint('pga_pending'); }
+    function pgaPendingRepaint(forceTable) {
+      if (forceTable && lapTblState['pga_pending']) { lapTblState['pga_pending'].rows = pgaPendingRows; lapTblRepaint('pga_pending'); }
       const cnt = document.getElementById('pgaPendingLiveCount');
       if (cnt) cnt.textContent = pgaPendingRows.length;
       const upd = document.getElementById('pgaPendingUpdatedAt');
