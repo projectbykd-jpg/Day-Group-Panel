@@ -29,14 +29,13 @@ jobs:
           marker = '/* KD GROUP REDESIGN V1 */'
           if marker in base:
               start = base.index(marker)
-              open_style = base.rfind('<style', 0, start)
               end = base.find('</style>', start)
-              if open_style >= 0 and end >= 0:
-                  base = base[:open_style] + base[end + len('</style>'):]
+              if end >= 0:
+                  base = base[:start] + base[end:]
           css = addon
           if css.startswith('<style>') and css.endswith('</style>'):
               css = css[7:-8].strip()
-          block = '\n\n/* KD GROUP REDESIGN V1 */\n<style>\n' + css + '\n</style>\n'
+          block = '\n\n' + marker + '\n' + css + '\n'
           pos = base.rfind('</style>')
           if pos < 0:
               raise SystemExit('Styles.html has no closing </style>')
