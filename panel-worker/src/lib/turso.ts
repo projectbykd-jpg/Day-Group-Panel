@@ -26,6 +26,29 @@ function client(env: Env): Client {
 
 const clean = (args: unknown[]): InArgs => args.map((a) => (a === undefined ? null : a)) as InArgs;
 
+async function withTransientRetry<T>(fn: () => Promise<T>): Promise<T> {
+	let last: unknown;
+	for (let attempt = 0; attempt < 3; attempt++) {
+		try {
+			return await fn();
+		} catch (e) {
+			last = e;
+			const msg = String(e instanceof Error ? e.message : e).toLowerCase();
+			const retryable =
+				msg.includes("capacity temporarily exceeded") ||
+				msg.includes("sqlite_busy") ||
+				msg.includes("sqlite_locked") ||
+				msg.includes("too many requests") ||
+				msg.includes("rate limit") ||
+				msg.includes("http status 429") ||
+				msg.includes("http status 503");
+			if (!retryable || attempt === 2) throw e;
+			await new Promise((resolve) => setTimeout(resolve, [150, 400, 900][attempt]));
+		}
+	}
+	throw last instanceof Error ? last : new Error(String(last));
+}
+
 class TStmt {
 	constructor(
 		readonly c: Client,
@@ -36,11 +59,11 @@ class TStmt {
 		return new TStmt(this.c, this.sql, args);
 	}
 	async run(): Promise<{ success: true; meta: { changes: number; last_row_id: number; duration: number } }> {
-		const rs = await this.c.execute({ sql: this.sql, args: clean(this.args) });
+		const rs = await withTransientRetry(() => this.c.execute({ sql: this.sql, args: clean(this.args) }));
 		return { success: true, meta: { changes: rs.rowsAffected ?? 0, last_row_id: Number(rs.lastInsertRowid ?? 0), duration: 0 } };
 	}
 	async all<T = Record<string, unknown>>(): Promise<{ results: T[]; success: true; meta: Record<string, unknown> }> {
-		const rs = await this.c.execute({ sql: this.sql, args: clean(this.args) });
+		const rs = await withTransientRetry(() => this.c.execute({ sql: this.sql, args: clean(this.args) }));
 		return { results: rs.rows as unknown as T[], success: true, meta: {} };
 	}
 	async first<T = Record<string, unknown>>(): Promise<T | null> {
@@ -55,9 +78,11 @@ class TDB {
 		return new TStmt(this.c, sql);
 	}
 	async batch(stmts: TStmt[]): Promise<{ success: true; meta: { changes: number; last_row_id: number } }[]> {
-		const rs = await this.c.batch(
-			stmts.map((s) => ({ sql: s.sql, args: clean(s.args) })),
-			"write",
+		const rs = await withTransientRetry(() =>
+			this.c.batch(
+				stmts.map((s) => ({ sql: s.sql, args: clean(s.args) })),
+				"write",
+			),
 		);
 		return rs.map((r) => ({ success: true as const, meta: { changes: r.rowsAffected ?? 0, last_row_id: Number(r.lastInsertRowid ?? 0) } }));
 	}
