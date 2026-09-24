@@ -10,6 +10,7 @@ import {
 	extractPureUsername,
 	lapLoadCreds,
 	lapLoadResults,
+	lapLoadResultsModules,
 	lapSaveCreds,
 	lapSaveResults,
 	num,
@@ -32,13 +33,16 @@ function credsForClient(c: LapCreds) {
 
 export async function lapGetConfig(env: Env, token: string) {
 	const s = await requireSession(env, token, { ignoreMaintenance: true });
-	// Dua query Turso independen -> barengan, bukan berurutan.
-	const [creds, results] = await Promise.all([lapLoadCreds(env, s.username), lapLoadResults(env, s.username)]);
-	return {
-		success: true,
-		config: credsForClient(creds),
-		results,
-	};
+	// Konfigurasi dipisah dari hasil. Snapshot laporan bisa besar; jangan ikut
+	// ditarik setiap kali operator membuka/pindah menu.
+	const creds = await lapLoadCreds(env, s.username);
+	return { success: true, config: credsForClient(creds) };
+}
+
+export async function lapGetResults(env: Env, token: string, modules: unknown) {
+	const s = await requireSession(env, token, { ignoreMaintenance: true });
+	const wanted = Array.isArray(modules) ? modules.map(String) : [];
+	return { success: true, results: await lapLoadResultsModules(env, s.username, wanted) };
 }
 
 export async function lapSaveConfig(env: Env, token: string, data: Record<string, unknown>) {
@@ -507,7 +511,21 @@ export async function lapMozartImport(
 // =========================================================================
 const GH_API = "https://api.github.com";
 
-async function dispatchScrapeJob(env: Env, username: string, kind: "admin" | "mozart", startDate: string, endDate: string) {
+function queueKeyFor(kind: "admin" | "mozart", sourceUrl: string): string {
+	const raw = String(sourceUrl || "").trim();
+	const m = raw.match(/^https?:\/\/([^/\s?#]+)/i);
+	const host = (m ? m[1] : raw).toLowerCase();
+	return (kind + "-" + host).replace(/[^a-z0-9_.-]+/g, "-").slice(0, 120) || kind;
+}
+
+async function dispatchScrapeJob(
+	env: Env,
+	username: string,
+	kind: "admin" | "mozart",
+	startDate: string,
+	endDate: string,
+	sourceUrl: string,
+) {
 	if (!env.GH_TOKEN || !env.GH_REPO) {
 		return { success: false as const, message: "GitHub Actions belum dikonfigurasi (GH_TOKEN/GH_REPO). Hubungi admin." };
 	}
@@ -538,7 +556,16 @@ async function dispatchScrapeJob(env: Env, username: string, kind: "admin" | "mo
 			"User-Agent": "daygroup-panel",
 			"X-GitHub-Api-Version": "2022-11-28",
 		},
-		body: JSON.stringify({ ref: "main", inputs: { job_id: jobId, callback, key, kind } }),
+		body: JSON.stringify({
+			ref: "main",
+			inputs: {
+				job_id: jobId,
+				callback,
+				key,
+				kind,
+				queue_key: queueKeyFor(kind, sourceUrl),
+			},
+		}),
 	});
 	if (resp.status !== 204) {
 		const body = await resp.text();
@@ -564,7 +591,7 @@ export async function lapRunAdmin(env: Env, token: string, startDate: string, en
 	const s = await requireSession(env, token, { ignoreMaintenance: true });
 	const c = await lapLoadCreds(env, s.username);
 	if (!c.linkAdmin || !c.cookieAdmin) return { success: false, message: "Link & Cookie Admin belum diisi di menu Setting!" };
-	const r = await dispatchScrapeJob(env, s.username, "admin", startDate, endDate);
+	const r = await dispatchScrapeJob(env, s.username, "admin", startDate, endDate, c.linkAdmin);
 	if (r.success && !("reused" in r)) {
 		await logActivity(env, s.username, "LAP ADMIN", `Scan ${startDate}..${endDate} dipicu`, "INFO", "");
 	}
