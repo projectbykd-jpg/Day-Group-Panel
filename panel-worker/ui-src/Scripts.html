@@ -689,12 +689,11 @@
       }).lapGetResults(currentSessionToken, modules);
     }
 
-    // Paksa ambil ulang hasil modul yang relevan saja (mis. setelah import Motion/Mozart).
+    // Paksa render ulang dari server. renderLapPage() sendiri sudah melakukan
+    // satu kali lazy-load modul; jangan fetch dua kali.
     function lapRefresh(page) {
-      lapLoadPageResults(page, ok => {
-        renderLapPage(page);
-        toast(ok ? 'Data diperbarui' : 'Gagal memuat ulang');
-      });
+      renderLapPage(page);
+      toast('Memuat data terbaru...');
     }
 
     function renderLapPage(page) {
@@ -703,7 +702,7 @@
       const seq = ++lapRenderSeq;
       lapEnsureConfig(() => {
         lapLoadPageResults(page, ok => {
-          if (seq !== lapRenderSeq || currentPage === undefined) return;
+          if (seq !== lapRenderSeq) return;
           Object.keys(lapTblState).forEach(k => delete lapTblState[k]);
           if (page === 'lap-setting') lapRenderSetting(host);
           else if (page === 'lap-motion') lapRenderMotion(host);
