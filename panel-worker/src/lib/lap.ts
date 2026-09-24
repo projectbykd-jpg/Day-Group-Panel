@@ -132,8 +132,19 @@ export async function lapLoadResults(env: Env, username: string): Promise<Record
 	const res = await getTurso(env).prepare(`SELECT module, data, updated_at FROM lap_result WHERE username = ?`)
 		.bind(username)
 		.all<{ module: string; data: string; updated_at: string }>();
+	return parseLapResults(res.results ?? []);
+}
+
+const LAP_MODULES = new Set([
+	"register", "registerMeta", "reportAgent", "reportAgentMeta",
+	"checkCoin", "checkCoinMeta", "idSelisih", "withdrawPgaIdf",
+	"_motionMeta", "motionDpPga", "motionPendingError", "motionWd",
+	"_mozartMeta", "mozartDepo", "mozartWd",
+]);
+
+function parseLapResults(rows: { module: string; data: string }[]): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
-	for (const r of res.results ?? []) {
+	for (const r of rows) {
 		try {
 			out[r.module] = JSON.parse(r.data);
 		} catch {
@@ -141,6 +152,16 @@ export async function lapLoadResults(env: Env, username: string): Promise<Record
 		}
 	}
 	return out;
+}
+
+export async function lapLoadResultsModules(env: Env, username: string, modules: string[]): Promise<Record<string, unknown>> {
+	const wanted = [...new Set(modules.map((m) => String(m || "").trim()).filter((m) => LAP_MODULES.has(m)))];
+	if (!wanted.length) return {};
+	const res = await getTurso(env)
+		.prepare(`SELECT module, data FROM lap_result WHERE username = ? AND module IN (${wanted.map(() => "?").join(",")})`)
+		.bind(username, ...wanted)
+		.all<{ module: string; data: string }>();
+	return parseLapResults(res.results ?? []);
 }
 
 // -------------------------------------------------------------------------
