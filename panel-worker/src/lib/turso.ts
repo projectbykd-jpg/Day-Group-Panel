@@ -67,7 +67,7 @@ class TStmt {
 		return { results: rs.rows as unknown as T[], success: true, meta: {} };
 	}
 	async first<T = Record<string, unknown>>(): Promise<T | null> {
-		const rs = await this.c.execute({ sql: this.sql, args: clean(this.args) });
+		const rs = await withTransientRetry(() => this.c.execute({ sql: this.sql, args: clean(this.args) }));
 		return (rs.rows[0] as unknown as T) ?? null;
 	}
 }
