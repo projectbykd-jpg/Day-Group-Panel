@@ -1,0 +1,200 @@
+/*
+ * KD GROUP — Professional Agent Operations UI
+ * Visual-only layer. No business logic, API or event handlers are changed.
+ * Applied after the existing Styles.html + compiled Tailwind.
+ */
+:root {
+  --ui-bg: #070b14;
+  --ui-surface: #0d1422;
+  --ui-surface-2: #111a2b;
+  --ui-surface-3: #162238;
+  --ui-line: rgba(148,163,184,.13);
+  --ui-line-strong: rgba(148,163,184,.22);
+  --ui-text: #f8fafc;
+  --ui-muted: #94a3b8;
+  --ui-cyan: #22d3ee;
+  --ui-blue: #3b82f6;
+  --ui-green: #34d399;
+  --ui-amber: #fbbf24;
+  --ui-red: #fb7185;
+  --ui-radius: 16px;
+}
+
+/* ---------- global shell ---------- */
+html, body { background: var(--ui-bg) !important; }
+body {
+  background-image:
+    radial-gradient(900px circle at 12% -10%, rgba(34,211,238,.075), transparent 52%),
+    radial-gradient(850px circle at 95% 100%, rgba(59,130,246,.055), transparent 52%) !important;
+}
+#app-container { gap: 18px !important; max-width: 1760px !important; }
+
+/* ---------- sidebar: compact professional agent console ---------- */
+#app-container > .sidebar-frozen {
+  width: 250px !important;
+  padding: 14px !important;
+  background: linear-gradient(180deg, rgba(14,22,37,.98), rgba(9,15,27,.98)) !important;
+  border: 1px solid var(--ui-line) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 20px 55px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.035) !important;
+}
+#app-container > .sidebar-frozen .nav-groups { gap: 4px !important; }
+.nav-group-head {
+  min-height: 38px !important;
+  padding: 8px 10px !important;
+  border-radius: 10px !important;
+  color: #aebbd0 !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  letter-spacing: .095em !important;
+  text-transform: uppercase !important;
+}
+.nav-group-head:hover { background: rgba(255,255,255,.045) !important; color: #f8fafc !important; }
+.nav-group-body { padding: 2px 0 5px !important; }
+.sidebar-nav {
+  min-height: 38px !important;
+  padding: 9px 11px !important;
+  border: 1px solid transparent !important;
+  color: #a8b5c9 !important;
+  border-radius: 10px !important;
+  font-size: 11px !important;
+  letter-spacing: .025em !important;
+}
+.sidebar-nav:hover { background: rgba(34,211,238,.055) !important; color: #eef6ff !important; border-color: rgba(34,211,238,.08) !important; }
+.sidebar-nav.nav-active {
+  color: #eafcff !important;
+  background: linear-gradient(90deg, rgba(34,211,238,.13), rgba(59,130,246,.07)) !important;
+  border-color: rgba(34,211,238,.16) !important;
+  box-shadow: inset 3px 0 0 var(--ui-cyan), 0 7px 18px rgba(0,0,0,.12) !important;
+}
+.sidebar-nav i { width: 17px !important; text-align: center !important; }
+
+/* Keep Automation immediately after the main/dashboard area when present.
+   Existing markup is preserved; CSS order only changes visual grouping. */
+.nav-groups { display: flex !important; flex-direction: column !important; }
+.nav-groups > .nav-group[data-group="utama"] { order: 10; }
+.nav-groups > .nav-group[data-group="automation"] { order: 20; }
+.nav-groups > .nav-group[data-group="lapor"] { order: 30; }
+.nav-groups > .nav-solo { order: 40; }
+.nav-groups > .nav-group[data-group="bot"] { order: 50; }
+.nav-groups > .nav-group[data-group="livechat"] { order: 60; }
+.nav-groups > .admin-only { order: 70; }
+
+/* ---------- content area ---------- */
+#app-container > .flex-1,
+#app-container > main,
+#app-container > div:not(.sidebar-frozen) { min-width: 0; }
+.glass-card {
+  border-color: var(--ui-line) !important;
+  box-shadow: 0 14px 35px rgba(0,0,0,.20), inset 0 1px 0 rgba(255,255,255,.025) !important;
+}
+.glass-card:hover { box-shadow: 0 16px 42px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.03) !important; }
+.glass-inner {
+  background: linear-gradient(145deg, rgba(20,31,50,.78), rgba(13,21,36,.9)) !important;
+  border-color: rgba(148,163,184,.11) !important;
+}
+
+/* ---------- page headers ---------- */
+.panel-section-title { font-size: 10px !important; letter-spacing: .12em !important; color: #94a3b8 !important; }
+h1, h2, h3 { letter-spacing: -.02em; }
+
+/* ---------- cards / metrics ---------- */
+.header-stat, .summary-pill, .mini-chip, .lap-chip, .status-legend {
+  border-color: rgba(148,163,184,.14) !important;
+  background: rgba(255,255,255,.025) !important;
+}
+
+/* ---------- tables: agent-console density ---------- */
+table { border-collapse: separate !important; border-spacing: 0 !important; }
+thead th {
+  background: #101a2b !important;
+  color: #91a3bb !important;
+  font-size: 9px !important;
+  font-weight: 800 !important;
+  letter-spacing: .08em !important;
+  text-transform: uppercase !important;
+  border-bottom: 1px solid var(--ui-line) !important;
+  white-space: nowrap !important;
+}
+tbody td { border-bottom-color: rgba(148,163,184,.075) !important; }
+tbody tr:hover td { background: rgba(34,211,238,.025) !important; }
+
+/* ---------- controls ---------- */
+input, select, textarea {
+  border-color: rgba(148,163,184,.16) !important;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: rgba(34,211,238,.45) !important;
+  box-shadow: 0 0 0 3px rgba(34,211,238,.07) !important;
+}
+.btn-primary, button.bg-gradient-to-r {
+  border: 1px solid rgba(255,255,255,.10) !important;
+  border-radius: 10px !important;
+}
+
+/* ---------- BOT / USER BOT visual system ----------
+   The existing bot IDs/classes are retained. This layer turns the Bot area into
+   a clean content-operations console: source cards, posting stats, history tables,
+   FB templates and settings all share one visual language. */
+[id*="bot-"] .glass-card,
+[id*="bot-"] .glass-inner,
+.bot-only + * .glass-card {
+  border-radius: 16px !important;
+}
+[id*="bot-"] .glass-card {
+  background: linear-gradient(145deg, rgba(15,25,42,.98), rgba(9,16,29,.98)) !important;
+}
+[id*="bot-"] table thead th { background: #0e1929 !important; }
+[id*="bot-"] button { border-radius: 10px !important; }
+[id*="bot-"] input, [id*="bot-"] select, [id*="bot-"] textarea { border-radius: 10px !important; }
+
+/* Bot status emphasis */
+[id*="bot-"] .text-emerald-400 { color: #34d399 !important; }
+[id*="bot-"] .text-cyan-400 { color: #22d3ee !important; }
+[id*="bot-"] .text-rose-400 { color: #fb7185 !important; }
+[id*="bot-"] .text-amber-400 { color: #fbbf24 !important; }
+
+/* Bot cards become a consistent 12-column dashboard where the existing layout allows it. */
+[id*="bot-dashboard"] .grid { align-items: stretch; }
+[id*="bot-dashboard"] .grid > * { min-width: 0; }
+
+/* ---------- toasts / modals ---------- */
+.floating-toast {
+  border: 1px solid rgba(148,163,184,.16) !important;
+  background: rgba(10,17,29,.97) !important;
+  box-shadow: 0 18px 50px rgba(0,0,0,.38) !important;
+}
+
+/* ---------- responsive ---------- */
+@media (max-width: 1023px) {
+  #app-container { gap: 10px !important; }
+  #app-container > .sidebar-frozen {
+    width: 100% !important;
+    border-radius: 14px !important;
+    position: relative !important;
+    top: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  #app-container > .sidebar-frozen .nav-groups {
+    display: flex !important;
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    gap: 5px !important;
+    padding-bottom: 2px !important;
+  }
+  #app-container > .sidebar-frozen .nav-group { flex: 0 0 auto !important; }
+  .nav-group-head { white-space: nowrap !important; }
+  .nav-group-body { min-width: 190px !important; }
+}
+@media (max-width: 640px) {
+  body { padding: 8px !important; }
+  .sidebar-nav { min-height: 36px !important; }
+  table { font-size: 10px !important; }
+  thead th { font-size: 8px !important; }
+}
+
+/* Respect reduced-motion preferences for a calmer professional console. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
+}
