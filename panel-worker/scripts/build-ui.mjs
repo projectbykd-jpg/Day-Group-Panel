@@ -16,6 +16,7 @@ const src = (name) => readFileSync(resolve(root, "ui-src", name), "utf8");
 const indexHtml = src("Index.html");
 const stylesHtml = src("Styles.html");
 const scriptsHtml = src("Scripts.html");
+const redesignCss = src("Redesign.css");
 
 // Positional-arg -> /api body-field mapping, keyed by function name.
 const ARG_MAP = {
@@ -40,7 +41,6 @@ const ARG_MAP = {
 	adminListSites: ["token"],
 	adminSaveSite: ["token", "data"],
 	adminDeleteSite: ["token", "website"],
-	// --- belum di-port ke Worker (prediksi & invest) — dipetakan supaya siap dipakai nanti
 	getPredictionStatusData: ["token"],
 	generateClosingPredictionCopy: ["token", "slot"],
 	sendClosingPredictionAuto: ["token", "websites", "slot"],
@@ -143,10 +143,6 @@ const shim = `<script>
 })();
 </script>`;
 
-// --- Tailwind: compile sekali di sini -> CSS statis di-inline.
-// Play CDN (cdn.tailwindcss.com) meng-compile ulang di browser tiap kali DOM
-// berubah (panel ini sering rebuild innerHTML) -> berat & lag. Versi statis
-// tidak punya MutationObserver / runtime compiler.
 function buildTailwind() {
 	const cli = resolve(root, "node_modules", "tailwindcss", "lib", "cli.js");
 	if (!existsSync(cli)) {
@@ -166,23 +162,19 @@ const tailwindCss = buildTailwind();
 
 let out = indexHtml;
 if (tailwindCss) {
-	// buang Play CDN + preconnect-nya, ganti dengan <style> hasil compile
 	out = out.replace(/\s*<link rel="preconnect" href="https:\/\/cdn\.tailwindcss\.com">/, "");
 	out = out.replace(/\s*<script src="https:\/\/cdn\.tailwindcss\.com"><\/script>/, "");
-	// PENTING: Tailwind di-inline SESUDAH Styles.html (custom CSS), meniru urutan
-	// Play CDN yang meng-inject <style>-nya paling akhir. Kalau ditaruh sebelum
-	// Styles.html, rule custom dengan specificity sama menang atas utility Tailwind
-	// -> layout header/dll berantakan.
 	out = out.replace(
 		/<\?!?=?\s*include\(\s*['"]Styles['"]\s*\)\s*;?\s*\?>/,
-		stylesHtml + `\n<style id="tw-base">\n${tailwindCss}\n</style>`,
+		stylesHtml + `\n<style id="tw-base">\n${tailwindCss}\n</style>\n<style id="kd-professional-redesign">\n${redesignCss}\n</style>`,
 	);
 } else {
-	out = out.replace(/<\?!?=?\s*include\(\s*['"]Styles['"]\s*\)\s*;?\s*\?>/, stylesHtml);
+	out = out.replace(
+		/<\?!?=?\s*include\(\s*['"]Styles['"]\s*\)\s*;?\s*\?>/,
+		stylesHtml + `\n<style id="kd-professional-redesign">\n${redesignCss}\n</style>`,
+	);
 }
 out = out.replace(/<\?!?=?\s*include\(\s*['"]Scripts['"]\s*\)\s*;?\s*\?>/, shim + "\n" + scriptsHtml);
-
-// safety: buang scriptlet Apps Script lain kalau ada
 out = out.replace(/<\?!?=?[\s\S]*?\?>/g, "");
 
 if (/<\?/.test(out) || /include\(/.test(out)) {
