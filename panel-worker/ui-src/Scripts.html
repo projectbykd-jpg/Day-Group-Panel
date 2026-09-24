@@ -1904,9 +1904,10 @@
         if (prog) prog.textContent = ({pending:'⏳ Antre di GitHub Actions...', running:'⚙️ Scraping berjalan...', done:'✅ Selesai', error:'❌ '+res.message}[res.status]) || res.status;
         if (res.status === 'done') {
           lapBusy('lapAdmin', false, '');
+          lapPageCache['lap-admin'] = null;
           lapResults = res.results || lapResults;
           lapAdminJobId = null;
-          renderLapPage('lap-admin');
+          renderLapPage('lap-admin', true);
           toast('Lap Admin selesai — ' + (lapResults.register||[]).length + ' akun register');
           return;
         }
