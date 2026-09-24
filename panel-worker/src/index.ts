@@ -51,6 +51,7 @@ import { wdListedCheck, wdListedGetList, wdListedRemove, wdListedSync } from "./
 import {
 	lapAdminStatus,
 	lapGetConfig,
+	lapGetResults,
 	lapJobResult,
 	lapJobStart,
 	lapMotionImport,
@@ -209,6 +210,7 @@ const ROUTES: Record<string, Handler> = {
 			b.panelsRaw ?? [],
 		),
 	lapAdminStatus: (env, b) => lapAdminStatus(env, s(b.token), s(b.jobId)),
+	lapGetResults: (env, b) => lapGetResults(env, s(b.token), b.modules ?? []),
 
 	// role BOT — modul NEWS
 	botNewsStatus: (env, b) => botNewsStatus(env, s(b.token)),

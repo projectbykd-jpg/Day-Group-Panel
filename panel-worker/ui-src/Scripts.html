@@ -651,43 +651,79 @@
     // ================= LAPORAN HARIAN (port PANEL AUTO) =================
     let lapConfig = null;
     let lapResults = {};
+    let lapRenderSeq = 0;
+    const lapPageCache = Object.create(null);
+    const LAP_CACHE_MS = 8000;
     const lapFmt = n => Number(n || 0).toLocaleString('en-US');
     function lapToday() { return new Date(Date.now() + 7*3600*1000).toISOString().slice(0,10); }
+
+    // Hasil laporan dimuat SESUAI menu yang sedang dibuka. Sebelumnya
+    // lapGetConfig() ikut menarik SEMUA blob lap_result, termasuk snapshot
+    // Mozart debug yang besar, setiap operator membuka menu Laporan Harian.
+    const LAP_PAGE_MODULES = {
+      'lap-admin': ['register','registerMeta','reportAgent','reportAgentMeta','checkCoin','checkCoinMeta','idSelisih','withdrawPgaIdf'],
+      'lap-motion': ['_motionMeta','motionDpPga','motionPendingError','motionWd'],
+      'lap-mozart': ['_mozartMeta','mozartDepo','mozartWd'],
+      'lap-setting': []
+    };
 
     function lapEnsureConfig(cb) {
       if (lapConfig) { cb && cb(); return; }
       google.script.run.withSuccessHandler(res => {
-        if (res && res.success) { lapConfig = res.config || {}; lapResults = res.results || {}; }
+        if (res && res.success) lapConfig = res.config || {};
         cb && cb();
       }).withFailureHandler(() => cb && cb()).lapGetConfig(currentSessionToken);
     }
 
-    // Paksa ambil ulang hasil dari server (mis. setelah impor Mozart dari Console).
-    function lapRefresh(page) {
+    function lapLoadPageResults(page, cb, force) {
+      const modules = LAP_PAGE_MODULES[page] || LAP_PAGE_MODULES['lap-admin'];
+      if (!modules.length) {
+        lapResults = {};
+        cb && cb(true);
+        return;
+      }
+      const cached = lapPageCache[page];
+      if (!force && cached && Date.now() - cached.at < LAP_CACHE_MS) {
+        lapResults = cached.results;
+        cb && cb(true);
+        return;
+      }
       google.script.run.withSuccessHandler(res => {
-        if (res && res.success) { lapConfig = res.config || {}; lapResults = res.results || {}; }
-        renderLapPage(page);
-        toast('Data diperbarui');
-      }).withFailureHandler(() => { renderLapPage(page); toast('Gagal memuat ulang'); })
-        .lapGetConfig(currentSessionToken);
+        const ok = !!(res && res.success);
+        lapResults = ok && res.results ? res.results : {};
+        if (ok) lapPageCache[page] = { at: Date.now(), results: lapResults };
+        cb && cb(ok);
+      }).withFailureHandler(() => {
+        lapResults = {};
+        cb && cb(false);
+      }).lapGetResults(currentSessionToken, modules);
     }
 
-    function renderLapPage(page) {
+    function lapRefresh(page) {
+      renderLapPage(page, true);
+      toast('Memuat data terbaru...');
+    }
+
+    function renderLapPage(page, force) {
       const host = document.getElementById('lap-page');
       if (!host) return;
+      const seq = ++lapRenderSeq;
       lapEnsureConfig(() => {
-        Object.keys(lapTblState).forEach(k => delete lapTblState[k]);
-        if (page === 'lap-setting') lapRenderSetting(host);
-        else if (page === 'lap-motion') lapRenderMotion(host);
-        else if (page === 'lap-mozart') lapRenderMozart(host);
-        else lapRenderAdmin(host);
-        lapTblMountAll();
-        const card = host.querySelector('.glass-card');
-        if (card) {
-          FX.reveal(card.querySelectorAll(':scope > .grid > .glass-inner, :scope > .grid > div'), { y: 12, step: 34 });
-          FX.reveal(card.querySelectorAll('.lap-tbl'), { y: 14, step: 40, start: 120 });
-        }
-        FX.countUp(host);
+        lapLoadPageResults(page, ok => {
+          if (seq !== lapRenderSeq) return;
+          Object.keys(lapTblState).forEach(k => delete lapTblState[k]);
+          if (page === 'lap-setting') lapRenderSetting(host);
+          else if (page === 'lap-motion') lapRenderMotion(host);
+          else if (page === 'lap-mozart') lapRenderMozart(host);
+          else lapRenderAdmin(host);
+          lapTblMountAll();
+          const card = host.querySelector('.glass-card');
+          if (card) {
+            FX.reveal(card.querySelectorAll(':scope > .grid > .glass-inner, :scope > .grid > div'), { y: 12, step: 34 });
+            FX.reveal(card.querySelectorAll('.lap-tbl'), { y: 14, step: 40, start: 120 });
+          }
+          FX.countUp(host);
+        }, force);
       });
     }
 
@@ -1290,14 +1326,17 @@
         + "    });\n"
         + "    return found;\n"
         + "  }\n"
+        + "  let lastSentSig='',lastSentAt=0; const HEARTBEAT_MS=10000;\n"
         + "  async function tick(){\n"
         + "    try{\n"
         + "      const rows=scan();\n"
         + "      document.title='['+rows.length+' PGA Pending] MOTION';\n"
-        // console.table setiap tick -- kalau masih ada kolom yg salah/kosong,
-        // KELIHATAN LANGSUNG di Console tanpa perlu diagnosa terpisah lagi.
+        + "      const sig=JSON.stringify(rows), now=Date.now();\n"
+        + "      if(sig===lastSentSig && now-lastSentAt<HEARTBEAT_MS)return;\n"
         + "      if(rows.length)console.table(rows);\n"
-        + "      await fetch(PANEL+'/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'pgaPendingSync',token:TOKEN,rows:rows})});\n"
+        + "      const r=await fetch(PANEL+'/api',{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.timeout(8000),body:JSON.stringify({action:'pgaPendingSync',token:TOKEN,rows:rows})});\n"
+        + "      if(!r.ok)throw new Error('HTTP '+r.status);\n"
+        + "      lastSentSig=sig; lastSentAt=now;\n"
         + "    }catch(e){console.log('PGA Pending: sync gagal -- ',(e&&e.message)||e);}\n"
         + "  }\n"
         + "  console.log('%cPGA Pending: mulai sinkron tiap 2 detik. Biarkan tab ini TETAP TERBUKA di halaman WD Request.','color:#0f0;font-weight:bold');\n"
@@ -1334,24 +1373,46 @@
       });
     }
 
+    let pgaPendingPollInFlight = false;
+    let pgaPendingPollFailStreak = 0;
+    let pgaPendingServerVersion = 0;
+
     function stopPgaPendingPolling() {
-      if (pgaPendingTimer) { clearInterval(pgaPendingTimer); pgaPendingTimer = null; }
+      if (pgaPendingTimer) { clearTimeout(pgaPendingTimer); pgaPendingTimer = null; }
+      pgaPendingPollInFlight = false;
+    }
+    function schedulePgaPendingPoll(delay) {
+      if (currentPage !== 'pga-pending') return;
+      clearTimeout(pgaPendingTimer);
+      pgaPendingTimer = setTimeout(pollPgaPendingStatus, Math.max(0, delay || 0));
     }
     function startPgaPendingPolling() {
       stopPgaPendingPolling();
-      pollPgaPendingStatus();
-      pgaPendingTimer = setInterval(pollPgaPendingStatus, 2000);
+      schedulePgaPendingPoll(0);
     }
     function pollPgaPendingStatus() {
+      if (pgaPendingPollInFlight || currentPage !== 'pga-pending') return;
+      pgaPendingPollInFlight = true;
       google.script.run.withSuccessHandler(res => {
-        if (!res || !res.success) return;
-        pgaPendingRows = res.rows || [];
-        pgaPendingUpdatedAt = res.updatedAt || 0;
-        pgaPendingRepaint();
-      }).withFailureHandler(() => {}).pgaPendingStatus(currentSessionToken);
+        pgaPendingPollInFlight = false;
+        pgaPendingPollFailStreak = 0;
+        if (res && res.success) {
+          const nextUpdatedAt = Number(res.updatedAt || 0);
+          const changed = nextUpdatedAt !== pgaPendingServerVersion;
+          pgaPendingRows = res.rows || [];
+          pgaPendingUpdatedAt = nextUpdatedAt;
+          if (changed) pgaPendingServerVersion = nextUpdatedAt;
+          pgaPendingRepaint(changed);
+        }
+        schedulePgaPendingPoll(3000);
+      }).withFailureHandler(() => {
+        pgaPendingPollInFlight = false;
+        pgaPendingPollFailStreak = Math.min(pgaPendingPollFailStreak + 1, 3);
+        schedulePgaPendingPoll(Math.min(12000, 3000 * Math.pow(2, pgaPendingPollFailStreak - 1)));
+      }).pgaPendingStatus(currentSessionToken);
     }
-    function pgaPendingRepaint() {
-      if (lapTblState['pga_pending']) { lapTblState['pga_pending'].rows = pgaPendingRows; lapTblRepaint('pga_pending'); }
+    function pgaPendingRepaint(forceTable) {
+      if (forceTable && lapTblState['pga_pending']) { lapTblState['pga_pending'].rows = pgaPendingRows; lapTblRepaint('pga_pending'); }
       const cnt = document.getElementById('pgaPendingLiveCount');
       if (cnt) cnt.textContent = pgaPendingRows.length;
       const upd = document.getElementById('pgaPendingUpdatedAt');
@@ -1843,9 +1904,10 @@
         if (prog) prog.textContent = ({pending:'⏳ Antre di GitHub Actions...', running:'⚙️ Scraping berjalan...', done:'✅ Selesai', error:'❌ '+res.message}[res.status]) || res.status;
         if (res.status === 'done') {
           lapBusy('lapAdmin', false, '');
+          lapPageCache['lap-admin'] = null;
           lapResults = res.results || lapResults;
           lapAdminJobId = null;
-          renderLapPage('lap-admin');
+          renderLapPage('lap-admin', true);
           toast('Lap Admin selesai — ' + (lapResults.register||[]).length + ' akun register');
           return;
         }

@@ -34,6 +34,7 @@ const MAX_ROWS = 200;
 // tiap 2 detik. Lima detik cukup realtime untuk daftar pending dan jauh lebih
 // aman ketika 17+ operator membuka panel bersamaan.
 const MIN_WRITE_MS = 5000;
+const HEARTBEAT_MS = 10000;
 const STALE_MS = 20000;
 
 function cleanRow(r: Record<string, unknown>): PgaPendingRow {
@@ -65,21 +66,29 @@ async function ensureTable(env: Env): Promise<void> {
 }
 
 // Per-isolate debounce. Cloudflare Workers may have multiple isolates, so this
-// is intentionally only an extra protection; the UI remains correct because
-// the next allowed write refreshes the durable snapshot.
+// is intentionally only an extra protection; browser-side change detection
+// removes most no-op writes before they reach the Worker.
 const lastWriteAt = new Map<string, number>();
+const lastPayloadByUser = new Map<string, string>();
 
 export async function pgaPendingSave(env: Env, user: string, rows: Record<string, unknown>[]): Promise<PgaPendingSnapshot> {
 	await ensureTable(env);
 	const clean = rows.slice(0, MAX_ROWS).map(cleanRow);
 	const now = Date.now();
+	const payload = JSON.stringify(clean);
 	const previousWrite = lastWriteAt.get(user) || 0;
+	const previousPayload = lastPayloadByUser.get(user);
 
-	// If this isolate just wrote the same user's snapshot, avoid hammering
-	// Turso. Return the in-memory snapshot timestamp so the caller still sees
-	// the sync as alive; the durable row is refreshed on the next allowed write.
+	// Tidak ada perubahan data dan heartbeat belum jatuh tempo -> tidak perlu
+	// menulis Turso sama sekali.
+	if (previousPayload === payload && now - previousWrite < HEARTBEAT_MS) {
+		return { rows: clean, updatedAt: previousWrite || now };
+	}
+
+	// Perubahan boleh ditulis maksimal sekali per 5 detik per isolate.
+	// Burst dari browser tetap terasa live tanpa write storm.
 	if (now - previousWrite < MIN_WRITE_MS) {
-		return { rows: clean, updatedAt: now };
+		return { rows: clean, updatedAt: previousWrite || now };
 	}
 
 	const snap: PgaPendingSnapshot = { rows: clean, updatedAt: now };
@@ -88,9 +97,10 @@ export async function pgaPendingSave(env: Env, user: string, rows: Record<string
 			`INSERT INTO pga_pending_state (username, rows_json, updated_at) VALUES (?, ?, ?)
 			 ON CONFLICT(username) DO UPDATE SET rows_json = excluded.rows_json, updated_at = excluded.updated_at`,
 		)
-		.bind(user, JSON.stringify(clean), snap.updatedAt)
+		.bind(user, payload, snap.updatedAt)
 		.run();
 	lastWriteAt.set(user, now);
+	lastPayloadByUser.set(user, payload);
 	return snap;
 }
 
