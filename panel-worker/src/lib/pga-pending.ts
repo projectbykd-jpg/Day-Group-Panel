@@ -5,19 +5,12 @@
 // halamannya sendiri, jadi datanya didorong DARI browser asli, bukan ditarik
 // server -- lihat pgaPendingConsoleScript di Scripts.html).
 //
-// PERNAH disimpan di KV (env.SESS) -- SALAH, jangan diulang: sync tiap 2
-// detik = ribuan tulisan/jam, jauh melebihi jatah gratis Cloudflare KV
-// (1000 put()/hari PER AKUN, bukan per fitur), jadi bukan cuma PGA Pending
-// yang berhenti tapi SEMUA fitur lain yang nulis KV ikut error "limit
-// exceeded" (sesi login dll, sama-sama pakai env.SESS). Pindah ke Turso
-// (satu baris per user, di-UPSERT) -- jatah tulisnya jauh lebih longgar dan
-// memang sudah dipakai fitur lain yang sering ditulis (invest_state dll).
+// PERNAH disimpan di KV -- SALAH, jangan diulang: sync tiap 2 detik = ribuan
+// tulisan/jam. Sekarang Turso dipakai sebagai snapshot per user, tetapi write
+// tetap di-throttle supaya 17+ operator tidak menghasilkan write storm.
 //
-// "Hilang dalam hitungan detik" begitu skrip/tab berhenti TETAP terpenuhi
-// tanpa TTL: pgaPendingLoad menganggap baris BASI (balas kosong) kalau
-// updated_at sudah lebih tua dari STALE_MS, walau baris di database-nya
-// sendiri belum dihapus (baris lama ditimpa otomatis oleh sync berikutnya
-// kalau skrip jalan lagi, jadi tidak perlu job pembersih terpisah).
+// "Hilang dalam hitungan detik" tetap terpenuhi lewat STALE_MS: kalau tab Motion
+// berhenti mengirim snapshot, snapshot dianggap basi dan UI kembali kosong.
 import { getTurso } from "./turso";
 
 export interface PgaPendingRow {
@@ -36,10 +29,11 @@ export interface PgaPendingSnapshot {
 	updatedAt: number;
 }
 
-const MAX_ROWS = 200; // batas wajar -- skrip yang bertingkah tidak boleh menulis blob raksasa
-// Interval sinkron skrip Console = 2 detik. Basi kalau sudah 10x lipat itu
-// tanpa sync baru (tab ditutup/di-pause) -- cukup toleran thd 1-2 sinkron yg
-// telat (jaringan admin sendat) tanpa List berkedip kosong.
+const MAX_ROWS = 200;
+// Client masih boleh mengirim tiap 2 detik, tetapi DB tidak perlu ditulis
+// tiap 2 detik. Lima detik cukup realtime untuk daftar pending dan jauh lebih
+// aman ketika 17+ operator membuka panel bersamaan.
+const MIN_WRITE_MS = 5000;
 const STALE_MS = 20000;
 
 function cleanRow(r: Record<string, unknown>): PgaPendingRow {
@@ -70,10 +64,25 @@ async function ensureTable(env: Env): Promise<void> {
 	ensured = true;
 }
 
+// Per-isolate debounce. Cloudflare Workers may have multiple isolates, so this
+// is intentionally only an extra protection; the UI remains correct because
+// the next allowed write refreshes the durable snapshot.
+const lastWriteAt = new Map<string, number>();
+
 export async function pgaPendingSave(env: Env, user: string, rows: Record<string, unknown>[]): Promise<PgaPendingSnapshot> {
 	await ensureTable(env);
 	const clean = rows.slice(0, MAX_ROWS).map(cleanRow);
-	const snap: PgaPendingSnapshot = { rows: clean, updatedAt: Date.now() };
+	const now = Date.now();
+	const previousWrite = lastWriteAt.get(user) || 0;
+
+	// If this isolate just wrote the same user's snapshot, avoid hammering
+	// Turso. Return the in-memory snapshot timestamp so the caller still sees
+	// the sync as alive; the durable row is refreshed on the next allowed write.
+	if (now - previousWrite < MIN_WRITE_MS) {
+		return { rows: clean, updatedAt: now };
+	}
+
+	const snap: PgaPendingSnapshot = { rows: clean, updatedAt: now };
 	await getTurso(env)
 		.prepare(
 			`INSERT INTO pga_pending_state (username, rows_json, updated_at) VALUES (?, ?, ?)
@@ -81,6 +90,7 @@ export async function pgaPendingSave(env: Env, user: string, rows: Record<string
 		)
 		.bind(user, JSON.stringify(clean), snap.updatedAt)
 		.run();
+	lastWriteAt.set(user, now);
 	return snap;
 }
 
