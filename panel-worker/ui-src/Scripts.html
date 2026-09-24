@@ -652,6 +652,8 @@
     let lapConfig = null;
     let lapResults = {};
     let lapRenderSeq = 0;
+    const lapPageCache = Object.create(null);
+    const LAP_CACHE_MS = 8000;
     const lapFmt = n => Number(n || 0).toLocaleString('en-US');
     function lapToday() { return new Date(Date.now() + 7*3600*1000).toISOString().slice(0,10); }
 
@@ -673,30 +675,36 @@
       }).withFailureHandler(() => cb && cb()).lapGetConfig(currentSessionToken);
     }
 
-    function lapLoadPageResults(page, cb) {
+    function lapLoadPageResults(page, cb, force) {
       const modules = LAP_PAGE_MODULES[page] || LAP_PAGE_MODULES['lap-admin'];
       if (!modules.length) {
         lapResults = {};
         cb && cb(true);
         return;
       }
+      const cached = lapPageCache[page];
+      if (!force && cached && Date.now() - cached.at < LAP_CACHE_MS) {
+        lapResults = cached.results;
+        cb && cb(true);
+        return;
+      }
       google.script.run.withSuccessHandler(res => {
-        lapResults = (res && res.success && res.results) ? res.results : {};
-        cb && cb(!!(res && res.success));
+        const ok = !!(res && res.success);
+        lapResults = ok && res.results ? res.results : {};
+        if (ok) lapPageCache[page] = { at: Date.now(), results: lapResults };
+        cb && cb(ok);
       }).withFailureHandler(() => {
         lapResults = {};
         cb && cb(false);
       }).lapGetResults(currentSessionToken, modules);
     }
 
-    // Paksa render ulang dari server. renderLapPage() sendiri sudah melakukan
-    // satu kali lazy-load modul; jangan fetch dua kali.
     function lapRefresh(page) {
-      renderLapPage(page);
+      renderLapPage(page, true);
       toast('Memuat data terbaru...');
     }
 
-    function renderLapPage(page) {
+    function renderLapPage(page, force) {
       const host = document.getElementById('lap-page');
       if (!host) return;
       const seq = ++lapRenderSeq;
@@ -715,7 +723,7 @@
             FX.reveal(card.querySelectorAll('.lap-tbl'), { y: 14, step: 40, start: 120 });
           }
           FX.countUp(host);
-        });
+        }, force);
       });
     }
 
