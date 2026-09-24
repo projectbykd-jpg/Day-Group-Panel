@@ -1871,3 +1871,166 @@ body{overflow-x:hidden;overflow-y:auto;scrollbar-gutter:stable;}
  #app-container>div.flex-1.flex.flex-col.gap-5>.glass-card:first-of-type{padding:13px!important;border-radius:18px}
 }
 .kd-nav-item:focus-visible{outline:2px solid rgba(34,211,238,.55);outline-offset:2px;}
+
+
+/* =========================================================
+   KD STATUS HEADER — PRODUCTION SESSION BAR
+   ========================================================= */
+.kd-status-header{
+  border:1px solid rgba(148,163,184,.10);
+  box-shadow:0 18px 55px rgba(0,0,0,.22);
+}
+.kd-status-layout{
+  display:grid;
+  grid-template-columns:minmax(150px, .7fr) minmax(300px, 1.5fr) auto;
+  align-items:center;
+  gap:18px;
+  min-height:78px;
+}
+.kd-status-block{
+  min-width:0;
+  padding-right:18px;
+  border-right:1px solid rgba(148,163,184,.10);
+}
+.kd-status-kicker{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color:#94a3b8;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+}
+.kd-status-kicker .status-dot{
+  width:7px;
+  height:7px;
+  flex:0 0 7px;
+  background:#34d399;
+  box-shadow:0 0 10px rgba(52,211,153,.75);
+}
+.kd-status-admin{
+  margin-top:7px;
+  color:#f8fafc;
+  font-size:18px;
+  line-height:1;
+  font-weight:900;
+  letter-spacing:.04em;
+}
+.kd-status-sites{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:9px;
+}
+.kd-status-sites-title{
+  color:#e2e8f0;
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  text-align:center;
+}
+.kd-status-logos{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+}
+.kd-status-logo{
+  width:46px;
+  height:34px;
+  padding:5px 8px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:11px;
+  background:rgba(15,23,42,.68);
+  border:1px solid rgba(148,163,184,.12);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 8px 20px rgba(0,0,0,.16);
+}
+.kd-status-logo img{
+  width:100%;
+  height:100%;
+  object-fit:contain;
+  display:block;
+}
+.kd-status-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:10px;
+}
+.kd-live-time{
+  min-width:128px;
+  padding:9px 12px;
+  border:1px solid rgba(148,163,184,.10);
+  border-radius:14px;
+  background:rgba(15,23,42,.45);
+  text-align:right;
+}
+.kd-logout-btn{
+  height:48px;
+  padding:0 15px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  border-radius:14px;
+  border:1px solid rgba(244,63,94,.28);
+  background:rgba(244,63,94,.10);
+  color:#fb7185;
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:.04em;
+  transition:all .18s ease;
+  cursor:pointer;
+}
+.kd-logout-btn:hover{
+  background:rgba(244,63,94,.18);
+  border-color:rgba(244,63,94,.45);
+  transform:translateY(-1px);
+}
+.kd-header-compat,.kd-sidebar-compat{
+  position:absolute!important;
+  width:1px!important;
+  height:1px!important;
+  overflow:hidden!important;
+  clip:rect(0 0 0 0)!important;
+  clip-path:inset(50%)!important;
+  white-space:nowrap!important;
+  pointer-events:none!important;
+}
+.kd-sidebar-compat{position:absolute!important;}
+
+@media (max-width: 900px){
+  .kd-status-layout{
+    grid-template-columns:1fr 1fr;
+    gap:14px;
+  }
+  .kd-status-sites{
+    grid-column:1 / -1;
+    grid-row:1;
+    order:1;
+    padding-bottom:12px;
+    border-bottom:1px solid rgba(148,163,184,.08);
+  }
+  .kd-status-block{order:2;border-right:0;padding-right:0;}
+  .kd-status-actions{order:3;}
+  .kd-live-time{min-width:112px;}
+}
+@media (max-width: 560px){
+  .kd-status-layout{grid-template-columns:1fr;gap:12px;}
+  .kd-status-sites{grid-column:auto;grid-row:auto;}
+  .kd-status-block{
+    padding:0 0 10px;
+    border-bottom:1px solid rgba(148,163,184,.08);
+    text-align:center;
+  }
+  .kd-status-kicker{justify-content:center;}
+  .kd-status-actions{justify-content:center;}
+  .kd-live-time{text-align:center;min-width:126px;}
+  .kd-logout-btn{flex:1;max-width:120px;}
+}
