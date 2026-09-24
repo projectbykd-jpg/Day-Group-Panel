@@ -421,6 +421,87 @@
       FX.countUp(box);
     }
 
+    function renderHomeDashboard(data) {
+      const stats = (data && data.stats) || {};
+      const setCount = (id, value) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const n = Number(value || 0);
+        el.setAttribute('data-fx-count', String(n));
+        el.textContent = n.toLocaleString('en-US');
+      };
+
+      setCount('homeStatSuccess', stats.success);
+      setCount('homeStatFailed', stats.failed);
+      setCount('homeStatSends', stats.sends);
+      setCount('homeStatToday', stats.today);
+      setCount('homeMiniSends', stats.sends);
+      setCount('homeMiniToday', stats.today);
+
+      const userEl = document.getElementById('homeDashboardUser');
+      if (userEl) userEl.innerHTML = '<i class="fa-solid fa-user"></i>' + escapeHtml(currentUser || 'User');
+
+      const syncEl = document.getElementById('homeDashboardSync');
+      if (syncEl) {
+        const now = new Date();
+        syncEl.innerHTML = '<i class="fa-solid fa-rotate"></i>Sync ' + now.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+      }
+
+      const list = document.getElementById('homeActivityList');
+      if (!list) return;
+      const rows = Array.isArray(data && data.rows) ? data.rows.slice(0, 6) : [];
+      if (!rows.length) {
+        list.innerHTML = '<div class="home-activity-empty"><i class="fa-solid fa-inbox"></i> Belum ada aktivitas terbaru.</div>';
+        return;
+      }
+
+      list.innerHTML = rows.map(row => {
+        const rawTs = String(row[0] || '-');
+        const parts = rawTs.split(' ');
+        const time = parts.slice(1).join(' ') || parts[0] || '-';
+        const action = String(row[2] || 'Aktivitas');
+        const status = String(row[3] || 'INFO').toUpperCase();
+        const detail = String(row[4] || row[5] || 'Tidak ada keterangan');
+        const ok = /(BERHASIL|TERKIRIM|SUCCESS|SUKSES)/i.test(status);
+        const bad = /(GAGAL|ERROR|FAILED|FAIL)/i.test(status);
+        const icon = bad ? 'fa-triangle-exclamation' : ok ? 'fa-circle-check' : 'fa-bolt';
+        const tone = bad ? 'bad' : ok ? 'ok' : 'info';
+        return '<div class="home-activity-row">' +
+          '<span class="home-activity-icon ' + tone + '"><i class="fa-solid ' + icon + '"></i></span>' +
+          '<div class="min-w-0 flex-1">' +
+            '<div class="home-activity-top"><b>' + escapeHtml(action) + '</b><span>' + escapeHtml(time) + '</span></div>' +
+            '<div class="home-activity-detail">' + escapeHtml(compactLogPreview(detail, 120)) + '</div>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+
+      const nodes = list.querySelectorAll('.home-activity-row');
+      FX.reveal(nodes, { y: 8, step: 40, duration: 360, scale: 0.99 });
+      FX.countUp(document.getElementById('homeDashboardStats'));
+    }
+
+    function loadHomeDashboard(force) {
+      if (!currentUser) return;
+      const freshMs = 12000;
+      if (!force && window._homeDashboardLoadedAt && Date.now() - window._homeDashboardLoadedAt < freshMs) return;
+
+      const list = document.getElementById('homeActivityList');
+      const syncEl = document.getElementById('homeDashboardSync');
+      if (syncEl) syncEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>Memuat data…';
+
+      google.script.run
+        .withSuccessHandler(data => {
+          window._homeDashboardLoadedAt = Date.now();
+          renderHomeDashboard(data || {});
+        })
+        .withFailureHandler(() => {
+          const listEl = document.getElementById('homeActivityList');
+          if (listEl) listEl.innerHTML = '<div class="home-activity-empty text-rose-300"><i class="fa-solid fa-triangle-exclamation"></i> Gagal memuat aktivitas dashboard.</div>';
+          if (syncEl) syncEl.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i>Sync gagal';
+        })
+        .getDashboardData(currentSessionToken, { page: 1, pageSize: 6, facets: false });
+    }
+
     function loadHeaderSummary() {
       if (!currentUser) return;
       const box = document.getElementById('headerSummary');
@@ -520,9 +601,10 @@
     const LAP_PAGES = ['lap-admin','lap-motion','lap-mozart','lap-setting'];
     const BOT_PAGES = ['bot-dashboard','bot-sources','bot-history','bot-fbdirect','bot-config'];
     const LIVECHAT_PAGES = ['livechat-sessions','livechat-templates'];
-    const NAV_KEYS = ['home','prediction','activity','admin','invest','pga-pending'].concat(LAP_PAGES).concat(BOT_PAGES).concat(LIVECHAT_PAGES);
+    const NAV_KEYS = ['home','result','prediction','activity','admin','invest','pga-pending'].concat(LAP_PAGES).concat(BOT_PAGES).concat(LIVECHAT_PAGES);
     const HEADER_KICKER = {
-      home: 'KD-GROUP PANEL · RESULT HARI INI',
+      home: 'KD-GROUP PANEL · DASHBOARD OVERVIEW',
+      result: 'KD-GROUP PANEL · RESULT HARI INI',
       prediction: 'KD-GROUP PANEL · PREDIKSI & KATA PENUTUP',
       invest: 'KD-GROUP PANEL · AUTOCHECK INVEST',
       'pga-pending': 'LAPORAN HARIAN · PGA PENDING (LIVE)',
@@ -561,13 +643,13 @@
 
     function switchPage(page) {
       const pages = {
-        home:'main-panel', prediction:'prediction-page', activity:'activity-page',
+        home:'main-panel', result:'result-page', prediction:'prediction-page', activity:'activity-page',
         admin:'admin-page', invest:'invest-page', 'pga-pending':'pga-pending-page',
         'lap-admin':'lap-page', 'lap-motion':'lap-page', 'lap-mozart':'lap-page', 'lap-setting':'lap-page',
         'bot-dashboard':'bot-page', 'bot-sources':'bot-page', 'bot-history':'bot-page', 'bot-fbdirect':'bot-page', 'bot-config':'bot-page',
         'livechat-sessions':'livechat-page', 'livechat-templates':'livechat-page'
       };
-      ['main-panel','prediction-page','activity-page','admin-page','invest-page','pga-pending-page','bot-page','lap-page','livechat-page'].forEach(id => {
+      ['main-panel','result-page','prediction-page','activity-page','admin-page','invest-page','pga-pending-page','bot-page','lap-page','livechat-page'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
       });
@@ -577,7 +659,7 @@
       if (target) { target.style.display = 'flex'; if (page !== currentPage) FX.page(target); }
 
       const marketWrapper = document.getElementById('market-wrapper');
-      if (marketWrapper) marketWrapper.style.display = page === 'home' ? 'block' : 'none';
+      if (marketWrapper) marketWrapper.style.display = page === 'result' ? 'block' : 'none';
 
       NAV_KEYS.forEach(key => {
         const nav = document.getElementById('nav-' + key);
@@ -591,12 +673,14 @@
       if (BOT_PAGES.includes(page)) renderBotSubpage(page);
       if (LIVECHAT_PAGES.includes(page)) renderLivechatSubpage(page);
 
+      if (page === 'home') loadHomeDashboard(false);
+
       if (page !== 'invest') stopInvestPolling();
       if (page !== 'lap-admin') clearTimeout(lapAdminPollTimer);
       if (page !== 'pga-pending') { stopPgaPendingPolling(); if (wdListedTimer) { clearInterval(wdListedTimer); wdListedTimer = null; } }
       if (!LIVECHAT_PAGES.includes(page)) stopLivechatPolling();
 
-      // "home" adalah halaman paling sering diklik (default landing) -- skip log di sini
+      // "home" adalah dashboard default -- skip log di sini
       // biar tidak nambah beban lock/tulis sheet tiap kali orang balik ke Beranda.
       if (currentUser && page !== 'home') {
         google.script.run.withFailureHandler(() => {}).logClientActivity(
