@@ -1,0 +1,82 @@
+<style>
+/* KD GROUP — PROFESSIONAL AGENT CONSOLE V1 */
+:root{
+  --ui-bg:#070d19;--ui-panel:#0d1627;--ui-panel-2:#111d31;--ui-line:rgba(148,163,184,.13);
+  --ui-text:#f8fafc;--ui-muted:#94a3b8;--ui-accent:#38bdf8;--ui-accent-2:#6366f1;
+  --ui-ok:#34d399;--ui-warn:#fbbf24;--ui-danger:#fb7185;--ui-radius:18px;
+}
+html,body{background:#070d19!important;color:var(--ui-text)!important}
+body{background-image:radial-gradient(circle at 8% 8%,rgba(56,189,248,.075),transparent 30%),radial-gradient(circle at 92% 88%,rgba(99,102,241,.065),transparent 32%)!important}
+#app-container{max-width:1720px!important;gap:16px!important}
+/* Sidebar: compact SaaS/agent-console treatment */
+#app-container>.glass-card:first-child{width:250px!important;padding:14px!important;border-radius:20px!important;background:rgba(9,17,31,.94)!important;border:1px solid var(--ui-line)!important;box-shadow:0 20px 55px rgba(0,0,0,.28)!important}
+#app-container>.glass-card:first-child .sidebar-nav{min-height:42px;border-radius:12px!important;border-color:transparent!important;background:transparent!important;padding:0 11px!important}
+#app-container>.glass-card:first-child .sidebar-nav:hover{background:rgba(56,189,248,.075)!important;border-color:rgba(56,189,248,.13)!important;transform:none!important}
+#app-container>.glass-card:first-child .sidebar-nav.nav-active{background:linear-gradient(90deg,rgba(56,189,248,.16),rgba(99,102,241,.08))!important;border-color:rgba(56,189,248,.26)!important;color:#e0f2fe!important;box-shadow:inset 3px 0 0 #38bdf8!important}
+#app-container>.glass-card:first-child .nav-group{margin-top:10px!important}
+#app-container>.glass-card:first-child .nav-group>div:first-child{font-size:9px!important;color:#64748b!important;letter-spacing:.14em!important;margin:12px 8px 6px!important}
+/* Main workspace */
+#main-panel{width:100%;min-width:0}
+#main-panel>.glass-card,#prediction-page>.glass-card,#admin-page>.glass-card,#invest-page>.glass-card{border-radius:20px!important;background:linear-gradient(145deg,rgba(13,22,39,.96),rgba(7,13,25,.96))!important;border:1px solid var(--ui-line)!important;box-shadow:0 18px 50px rgba(0,0,0,.22)!important}
+#main-panel .glass-card:hover,#prediction-page .glass-card:hover,#admin-page .glass-card:hover,#invest-page .glass-card:hover{border-color:rgba(56,189,248,.16)!important;box-shadow:0 22px 60px rgba(0,0,0,.28)!important}
+/* Top chrome */
+.header-frozen{border-color:var(--ui-line)!important;background:rgba(9,17,31,.92)!important;box-shadow:0 12px 35px rgba(0,0,0,.2)!important}
+.header-stat{background:rgba(255,255,255,.035)!important;border-color:var(--ui-line)!important}
+/* Typography */
+h1,h2,h3,h4{letter-spacing:-.02em}
+.panel-section-title{font-size:11px!important;letter-spacing:.04em!important;color:#dbeafe!important}
+/* Controls */
+input,select,textarea{border-color:var(--ui-line)!important}
+button:not(:disabled){font-weight:750}
+.btn-primary,.action-btn.bg-gradient-to-r{box-shadow:0 8px 22px rgba(56,189,248,.16)!important}
+/* Tables become dense but readable */
+table{border-collapse:separate!important;border-spacing:0!important}
+thead th{background:#101b2e!important;color:#a9b6c8!important;font-size:10px!important;font-weight:800!important;letter-spacing:.055em!important;text-transform:uppercase!important;border-bottom:1px solid var(--ui-line)!important}
+tbody td{font-size:11px!important;color:#dbe4ef!important;border-bottom:1px solid rgba(148,163,184,.075)!important}
+tbody tr:hover td{background:rgba(56,189,248,.035)!important}
+/* Status language */
+.status-ok,.text-emerald-400,.text-green-400{color:#6ee7b7!important}.status-bad,.text-rose-400,.text-red-400{color:#fda4af!important}
+/* Dashboard stat cards */
+.monitor-stats>div{background:linear-gradient(145deg,rgba(17,29,49,.9),rgba(11,20,35,.82))!important;border:1px solid var(--ui-line)!important;border-radius:16px!important;box-shadow:none!important}
+/* Automation remains a first-class area directly after dashboard. */
+#automation-page,#autopost-page,#scheduler-page,#automation-panel{scroll-margin-top:18px}
+/* Agent/Automation cards */
+[id*="automation"] .glass-inner,[id*="autopost"] .glass-inner,[id*="scheduler"] .glass-inner{background:rgba(17,29,49,.72)!important;border-color:var(--ui-line)!important;border-radius:15px!important}
+/* USER BOT — complete visual treatment without changing its JS */
+#bot-page,#user-bot-page,#panel-user-bot,#news-bot-page,#bot-panel,#autopost-page{
+  background:transparent!important
+}
+#bot-page .glass-card,#user-bot-page .glass-card,#panel-user-bot .glass-card,#news-bot-page .glass-card,#bot-panel .glass-card,#autopost-page .glass-card{
+  background:linear-gradient(145deg,rgba(15,27,47,.95),rgba(8,16,29,.96))!important;border:1px solid var(--ui-line)!important;border-radius:18px!important;box-shadow:0 16px 40px rgba(0,0,0,.2)!important
+}
+#bot-page .glass-inner,#user-bot-page .glass-inner,#panel-user-bot .glass-inner,#news-bot-page .glass-inner,#bot-panel .glass-inner,#autopost-page .glass-inner{
+  background:rgba(7,15,28,.72)!important;border:1px solid rgba(148,163,184,.12)!important;border-radius:14px!important
+}
+#bot-page input,#bot-page select,#bot-page textarea,#user-bot-page input,#user-bot-page select,#user-bot-page textarea,#panel-user-bot input,#panel-user-bot select,#panel-user-bot textarea,#news-bot-page input,#news-bot-page select,#news-bot-page textarea,#autopost-page input,#autopost-page select,#autopost-page textarea{
+  min-height:42px!important;background:rgba(4,10,20,.72)!important;color:#e5edf7!important;border:1px solid rgba(148,163,184,.14)!important;border-radius:11px!important
+}
+#bot-page input:focus,#bot-page select:focus,#bot-page textarea:focus,#user-bot-page input:focus,#user-bot-page select:focus,#user-bot-page textarea:focus,#panel-user-bot input:focus,#panel-user-bot select:focus,#panel-user-bot textarea:focus,#news-bot-page input:focus,#news-bot-page select:focus,#news-bot-page textarea:focus,#autopost-page input:focus,#autopost-page select:focus,#autopost-page textarea:focus{
+  border-color:rgba(56,189,248,.48)!important;box-shadow:0 0 0 3px rgba(56,189,248,.065)!important
+}
+/* Bot cards: visual hierarchy */
+#bot-page .mini-card,#user-bot-page .mini-card,#panel-user-bot .mini-card,#news-bot-page .mini-card,#autopost-page .mini-card{border-radius:15px!important;background:rgba(15,27,47,.72)!important;border-color:var(--ui-line)!important}
+/* Bot action buttons */
+#bot-page button,#user-bot-page button,#panel-user-bot button,#news-bot-page button,#autopost-page button{border-radius:11px!important}
+/* Search/filter bars */
+.activity-filter-card{background:rgba(8,16,29,.74)!important;border-color:var(--ui-line)!important}
+/* Toasts and modal surfaces */
+.floating-toast{background:rgba(8,15,28,.97)!important;border-color:rgba(56,189,248,.16)!important;box-shadow:0 18px 45px rgba(0,0,0,.48)!important}
+.center-notice-card,.popup-card,.maintenance-card{background:linear-gradient(145deg,#101b2e,#08111f)!important;border-color:var(--ui-line)!important}
+/* Reduce visual noise */
+.neon-cyan,.neon-pink{text-shadow:0 0 16px rgba(56,189,248,.18)!important}
+/* Mobile */
+@media(max-width:1023px){
+ #app-container>.glass-card:first-child{width:auto!important;background:rgba(8,15,28,.97)!important}
+ #main-panel{padding-bottom:8px}
+}
+@media(max-width:640px){
+ #app-container>.glass-card:first-child{left:8px!important;right:8px!important;bottom:8px!important;border-radius:18px!important}
+ .glass-card{border-radius:17px!important}
+}
+@media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+</style>
