@@ -73,6 +73,7 @@ const ARG_MAP = {
 	lapMotionImport: ["token", "startDate", "endDate", "depoPaidRows", "depoCreateRows", "wdRows"],
 	lapMozartImport: ["token", "startDate", "endDate", "depositRows", "withdrawRows", "accountsRaw", "panelsRaw"],
 	lapAdminStatus: ["token", "jobId"],
+	lapGetResults: ["token", "modules"],
 	botNewsStatus: ["token"],
 	botNewsSaveConfig: ["token", "data"],
 	botNewsAddSource: ["token", "data"],
