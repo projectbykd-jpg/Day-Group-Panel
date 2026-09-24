@@ -129,11 +129,10 @@
           </div>
         </nav>
 
-        <div class="kd-sidebar-footer">
-          <div class="kd-session-row"><span class="status-dot"></span><div><span class="kd-session-label">STATUS SESI</span><strong id="sidebar-user">ONLINE</strong></div></div>
-          <div id="theme-sites" class="theme-site-chip" style="display:none"><i class="fa-solid fa-palette"></i><span id="theme-sites-label">DAY-GROUP</span></div>
-          <div id="sidebar-site-logos" class="site-logo-board" style="display:none"></div>
-          <div class="app-credit">DESIGN BY KD</div>
+        <div class="kd-sidebar-compat" aria-hidden="true">
+          <span id="sidebar-user">ONLINE</span>
+          <span id="theme-sites"><span id="theme-sites-label">DAY-GROUP</span></span>
+          <span id="sidebar-site-logos"></span>
         </div>
       </div>
     </aside>
@@ -151,35 +150,43 @@
       </div>
 
       <!-- HEADER CONTAINER -->
-      <div class="w-full glass-card rounded-3xl p-5 sm:p-6 flex flex-col xl:flex-row justify-between items-center gap-5 relative overflow-hidden">
-        <div class="absolute -top-16 -left-16 w-48 h-48 bg-cyan-500/10 blur-[60px] rounded-full pointer-events-none"></div>
-        
-        <div class="flex items-center gap-4 z-10 w-full xl:w-auto">
-          <div class="w-full">
-            <p class="text-[11px] text-cyan-400/80 font-bold tracking-widest mb-2">DAY-GROUP PANEL · RINGKASAN HARI INI</p>
-            <div id="headerSummary" class="header-stat-strip">
-              <span class="header-stat"><span class="skeleton-bar" style="width:74px"></span></span>
-              <span class="header-stat"><span class="skeleton-bar" style="width:62px"></span></span>
-              <span class="header-stat"><span class="skeleton-bar" style="width:88px"></span></span>
+      <div class="kd-status-header w-full glass-card rounded-3xl p-4 sm:p-5 relative overflow-hidden">
+        <div class="absolute -top-20 -left-20 w-56 h-56 bg-cyan-500/10 blur-[70px] rounded-full pointer-events-none"></div>
+        <div class="absolute -bottom-24 right-10 w-52 h-52 bg-blue-500/10 blur-[75px] rounded-full pointer-events-none"></div>
+
+        <div class="kd-status-layout relative z-10">
+          <div class="kd-status-block">
+            <div class="kd-status-kicker"><span class="status-dot"></span> STATUS SESI</div>
+            <div class="kd-status-admin" id="header-admin">ADMIN</div>
+          </div>
+
+          <div class="kd-status-sites" aria-label="Website aktif">
+            <div class="kd-status-sites-title">HUGOTOGEL + FOLATOTO</div>
+            <div class="kd-status-logos">
+              <div class="kd-status-logo" title="HUGOTOGEL">
+                <img src="https://i.ibb.co/DD78Pp4f/image.png" alt="HUGOTOGEL" loading="eager" decoding="async" referrerpolicy="no-referrer">
+              </div>
+              <div class="kd-status-logo" title="FOLATOTO">
+                <img src="https://i.ibb.co/21NSfyWh/image.png" alt="FOLATOTO" loading="eager" decoding="async" referrerpolicy="no-referrer">
+              </div>
             </div>
           </div>
-        </div>
 
-        <div id="market-wrapper" class="z-10 w-full xl:w-auto flex justify-center">
-          <div id="market-container" class="glass-inner px-8 py-3 rounded-2xl text-center border-cyan-500/30 shadow-xl min-w-[220px]">
-            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Pasaran Aktif</div>
-            <div id="market" class="text-base sm:text-lg font-extrabold text-white tracking-widest mt-0.5">-</div>
+          <div class="kd-status-actions">
+            <div class="kd-live-time">
+              <div id="live-clock" class="text-sm sm:text-base font-bold font-mono tracking-wider neon-pink">00:00:00</div>
+              <div id="live-date" class="text-[10px] text-slate-400 font-semibold mt-0.5">LOADING...</div>
+            </div>
+            <button onclick="handleLogout()" class="kd-logout-btn" title="Log Out">
+              <i class="fa-solid fa-power-off"></i><span>Logout</span>
+            </button>
           </div>
         </div>
 
-        <div class="flex items-center gap-3.5 z-10 w-full xl:w-auto justify-between xl:justify-end">
-          <div class="text-center xl:text-right glass-inner px-5 py-2.5 rounded-2xl border-white/5 min-w-[130px]">
-            <div id="live-clock" class="text-sm sm:text-base font-bold font-mono tracking-wider neon-pink">00:00:00</div>
-            <div id="live-date" class="text-[10px] text-slate-400 font-semibold mt-0.5">LOADING...</div>
-          </div>
-          <button onclick="handleLogout()" class="bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 font-bold text-xs px-4 py-3.5 rounded-2xl transition-all active:scale-95 shadow-md flex items-center gap-2 cursor-pointer" title="Log Out">
-            <i class="fa-solid fa-power-off"></i> <span class="hidden sm:inline">Keluar</span>
-          </button>
+        <!-- Compatibility hooks: retained for existing dashboard/theme JS, hidden from the UI. -->
+        <div class="kd-header-compat" aria-hidden="true">
+          <div id="headerSummary"></div>
+          <div id="market-wrapper"><div id="market-container"><div id="market">-</div></div></div>
         </div>
       </div>
 
