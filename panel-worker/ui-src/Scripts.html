@@ -651,43 +651,72 @@
     // ================= LAPORAN HARIAN (port PANEL AUTO) =================
     let lapConfig = null;
     let lapResults = {};
+    let lapRenderSeq = 0;
     const lapFmt = n => Number(n || 0).toLocaleString('en-US');
     function lapToday() { return new Date(Date.now() + 7*3600*1000).toISOString().slice(0,10); }
+
+    // Hasil laporan dimuat SESUAI menu yang sedang dibuka. Sebelumnya
+    // lapGetConfig() ikut menarik SEMUA blob lap_result, termasuk snapshot
+    // Mozart debug yang besar, setiap operator membuka menu Laporan Harian.
+    const LAP_PAGE_MODULES = {
+      'lap-admin': ['register','registerMeta','reportAgent','reportAgentMeta','checkCoin','checkCoinMeta','idSelisih','withdrawPgaIdf'],
+      'lap-motion': ['_motionMeta','motionDpPga','motionPendingError','motionWd'],
+      'lap-mozart': ['_mozartMeta','mozartDepo','mozartWd'],
+      'lap-setting': []
+    };
 
     function lapEnsureConfig(cb) {
       if (lapConfig) { cb && cb(); return; }
       google.script.run.withSuccessHandler(res => {
-        if (res && res.success) { lapConfig = res.config || {}; lapResults = res.results || {}; }
+        if (res && res.success) lapConfig = res.config || {};
         cb && cb();
       }).withFailureHandler(() => cb && cb()).lapGetConfig(currentSessionToken);
     }
 
-    // Paksa ambil ulang hasil dari server (mis. setelah impor Mozart dari Console).
-    function lapRefresh(page) {
+    function lapLoadPageResults(page, cb) {
+      const modules = LAP_PAGE_MODULES[page] || LAP_PAGE_MODULES['lap-admin'];
+      if (!modules.length) {
+        lapResults = {};
+        cb && cb(true);
+        return;
+      }
       google.script.run.withSuccessHandler(res => {
-        if (res && res.success) { lapConfig = res.config || {}; lapResults = res.results || {}; }
+        lapResults = (res && res.success && res.results) ? res.results : {};
+        cb && cb(!!(res && res.success));
+      }).withFailureHandler(() => {
+        lapResults = {};
+        cb && cb(false);
+      }).lapGetResults(currentSessionToken, modules);
+    }
+
+    // Paksa ambil ulang hasil modul yang relevan saja (mis. setelah import Motion/Mozart).
+    function lapRefresh(page) {
+      lapLoadPageResults(page, ok => {
         renderLapPage(page);
-        toast('Data diperbarui');
-      }).withFailureHandler(() => { renderLapPage(page); toast('Gagal memuat ulang'); })
-        .lapGetConfig(currentSessionToken);
+        toast(ok ? 'Data diperbarui' : 'Gagal memuat ulang');
+      });
     }
 
     function renderLapPage(page) {
       const host = document.getElementById('lap-page');
       if (!host) return;
+      const seq = ++lapRenderSeq;
       lapEnsureConfig(() => {
-        Object.keys(lapTblState).forEach(k => delete lapTblState[k]);
-        if (page === 'lap-setting') lapRenderSetting(host);
-        else if (page === 'lap-motion') lapRenderMotion(host);
-        else if (page === 'lap-mozart') lapRenderMozart(host);
-        else lapRenderAdmin(host);
-        lapTblMountAll();
-        const card = host.querySelector('.glass-card');
-        if (card) {
-          FX.reveal(card.querySelectorAll(':scope > .grid > .glass-inner, :scope > .grid > div'), { y: 12, step: 34 });
-          FX.reveal(card.querySelectorAll('.lap-tbl'), { y: 14, step: 40, start: 120 });
-        }
-        FX.countUp(host);
+        lapLoadPageResults(page, ok => {
+          if (seq !== lapRenderSeq || currentPage === undefined) return;
+          Object.keys(lapTblState).forEach(k => delete lapTblState[k]);
+          if (page === 'lap-setting') lapRenderSetting(host);
+          else if (page === 'lap-motion') lapRenderMotion(host);
+          else if (page === 'lap-mozart') lapRenderMozart(host);
+          else lapRenderAdmin(host);
+          lapTblMountAll();
+          const card = host.querySelector('.glass-card');
+          if (card) {
+            FX.reveal(card.querySelectorAll(':scope > .grid > .glass-inner, :scope > .grid > div'), { y: 12, step: 34 });
+            FX.reveal(card.querySelectorAll('.lap-tbl'), { y: 14, step: 40, start: 120 });
+          }
+          FX.countUp(host);
+        });
       });
     }
 
