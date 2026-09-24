@@ -610,7 +610,14 @@ export async function lapAdminStatus(env: Env, token: string, jobId: string) {
 		message: row.message,
 		updatedAt: row.updated_at,
 	};
-	if (row.status === "done") out.results = await lapLoadResults(env, s.username);
+	if (row.status === "done") {
+		// Kembalikan hanya modul Lap Admin. Jangan tarik snapshot Motion/Mozart
+		// yang tidak berkaitan dengan job ini.
+		out.results = await lapLoadResultsModules(env, s.username, [
+			"register", "registerMeta", "reportAgent", "reportAgentMeta",
+			"checkCoin", "checkCoinMeta", "idSelisih", "withdrawPgaIdf",
+		]);
+	}
 	return out;
 }
 
