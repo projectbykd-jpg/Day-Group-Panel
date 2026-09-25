@@ -3379,57 +3379,51 @@
       const role = String((currentProfile && currentProfile.role) || '').trim().toUpperCase();
       const isAdmin = role === 'ADMIN';
       const isBot = role === 'BOT';
-      const isOperatorOrAdmin = role === 'ADMIN' || role === 'OPERATOR';
+      const isOperatorOrAdmin = isAdmin || role === 'OPERATOR';
 
-      const show = (el, visible, display='flex') => {
+      const setRoleOnly = (el, allowed, display='flex') => {
         if (!el) return;
-        // hidden attribute is the final guard against CSS/Tailwind display rules leaking protected menus.
-        if (visible) {
+        if (allowed) {
           el.removeAttribute('hidden');
-          el.style.setProperty('display', display || 'flex', 'important');
+          el.style.setProperty('display', display, 'important');
         } else {
           el.setAttribute('hidden', '');
           el.style.setProperty('display', 'none', 'important');
         }
       };
 
-      // ADMIN menu: ADMIN only.
-      document.querySelectorAll('.admin-only').forEach(el => show(el, isAdmin));
-      // BOT menu items: BOT only.
-      document.querySelectorAll('.bot-only').forEach(el => show(el, isBot));
-      // BOT group header/body: BOT only.
-      const botGroup = document.querySelector('.nav-group[data-group="bot"]');
-      if (botGroup) show(botGroup, isBot, 'flex');
+      // HARD ROLE GATE: these two menus are hidden in the HTML by default.
+      document.querySelectorAll('[data-role-only="ADMIN"], .admin-only').forEach(el => setRoleOnly(el, isAdmin));
+      document.querySelectorAll('[data-role-only="BOT"], .bot-only').forEach(el => setRoleOnly(el, isBot));
 
-      // LIVE CHAT: ADMIN / OPERATOR only.
-      document.querySelectorAll('.livechat-op-only').forEach(el => show(el, isOperatorOrAdmin));
+      const botGroup = document.querySelector('.nav-group[data-group="bot"]');
+      if (botGroup) setRoleOnly(botGroup, isBot, 'flex');
+
+      document.querySelectorAll('.livechat-op-only').forEach(el => setRoleOnly(el, isOperatorOrAdmin));
       const livechatGroup = document.querySelector('.nav-group[data-group="livechat"]');
-      if (livechatGroup) show(livechatGroup, isOperatorOrAdmin, 'flex');
+      if (livechatGroup) setRoleOnly(livechatGroup, isOperatorOrAdmin, 'flex');
 
       document.querySelectorAll('.nav-extra').forEach(el => {
         if (!el.classList.contains('admin-only') &&
             !el.classList.contains('livechat-op-only') &&
             !el.classList.contains('bot-only')) {
-          show(el, !isBot);
+          setRoleOnly(el, !isBot);
         }
       });
 
       if (isBot) {
-        // BOT sees only BOT navigation.
-        document.querySelectorAll('.nav-solo, .nav-group:not([data-group="bot"])').forEach(el => show(el, false));
+        document.querySelectorAll('.nav-solo, .nav-group:not([data-group="bot"])').forEach(el => setRoleOnly(el, false));
         const mw = document.getElementById('market-wrapper');
         if (mw) mw.style.display = 'none';
         if (currentPage !== 'bot-dashboard') switchPage('bot-dashboard');
         return;
       }
 
-      // NON-BOT users must never see BOT navigation.
-      if (botGroup) show(botGroup, false);
-      document.querySelectorAll('.bot-only').forEach(el => show(el, false));
+      if (botGroup) setRoleOnly(botGroup, false);
+      document.querySelectorAll('.bot-only, [data-role-only="BOT"]').forEach(el => setRoleOnly(el, false));
+      document.querySelectorAll('.activity-admin-only').forEach(el => setRoleOnly(el, isAdmin, ''));
 
       restoreNavGroups();
-      document.querySelectorAll('.activity-admin-only').forEach(el => show(el, isAdmin, ''));
-
       const filterGrid = document.getElementById('activityFilterGrid');
       if (filterGrid) filterGrid.classList.toggle('activity-admin-grid', isAdmin);
       const scope = document.getElementById('activityScopeText');
