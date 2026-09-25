@@ -1,4 +1,5 @@
 name: Deploy panel-worker ke Cloudflare
+# Rollback stable panel build after session-header regression.
 
 # Deploy TANPA komputer. Pemilik cukup punya HP:
 #  - Otomatis tiap ada perubahan kode panel-worker yang masuk ke branch main.
