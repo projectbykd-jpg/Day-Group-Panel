@@ -461,10 +461,18 @@
       persistSessionToken(currentSessionToken);
       localStorage.setItem("daygroup_user", currentUser);
       localStorage.setItem("daygroup_profile", JSON.stringify(res));
-      document.getElementById('login-screen').style.display = 'none';
-      document.getElementById('app-container').style.display = 'flex';
+      const loginScreen = document.getElementById('login-screen');
+      const appContainer = document.getElementById('app-container');
+      if (loginScreen) {
+        loginScreen.style.setProperty('display', 'none', 'important');
+      }
+      if (appContainer) {
+        appContainer.hidden = false;
+        appContainer.style.setProperty('display', 'flex', 'important');
+      }
       document.body.classList.remove('justify-center');
-      document.getElementById('sidebar-user').innerText = currentUser.toUpperCase();
+      const sidebarUser = document.getElementById('sidebar-user');
+      if (sidebarUser) sidebarUser.innerText = currentUser.toUpperCase();
       const sessionAdmin = document.getElementById('session-admin-name');
       if (sessionAdmin) sessionAdmin.textContent = currentUser.toUpperCase();
       // masuk panel: sidebar dari kiri, header dari atas, menu & konten di-stagger
