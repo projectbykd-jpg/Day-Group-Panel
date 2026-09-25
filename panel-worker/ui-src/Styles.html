@@ -2593,3 +2593,78 @@ table tbody tr:hover td{
 }
 
 </style>
+
+
+/* KD HEADER LAYOUT V5 */
+/* Website aktif dipindahkan ke area kosong di tengah header.
+   Logo website berada di sisi kanan teks dan dibuat sedikit lebih besar. */
+.session-header{
+  grid-template-columns:150px minmax(360px,1fr) auto !important;
+}
+.session-sites-box{
+  display:grid !important;
+  grid-template-columns:minmax(0,1fr) auto !important;
+  grid-template-rows:auto auto !important;
+  align-items:center !important;
+  column-gap:14px !important;
+  row-gap:1px !important;
+  padding:4px 8px !important;
+}
+.session-sites-title{
+  grid-column:1 !important;
+  grid-row:1 !important;
+  margin:0 !important;
+}
+.session-sites{
+  grid-column:1 !important;
+  grid-row:2 !important;
+  margin:1px 0 0 !important;
+  max-width:none !important;
+}
+.session-logos{
+  grid-column:2 !important;
+  grid-row:1 / span 2 !important;
+  align-self:center !important;
+  margin:0 !important;
+  height:42px !important;
+  gap:9px !important;
+}
+.session-logo-item img,
+.session-logos img{
+  width:46px !important;
+  height:36px !important;
+  padding:3px !important;
+  border-radius:10px !important;
+}
+@media(max-width:1023px){
+  .session-header{
+    grid-template-columns:150px minmax(300px,1fr) auto !important;
+  }
+}
+@media(max-width:760px){
+  .session-header{
+    grid-template-columns:minmax(145px,1fr) auto !important;
+    gap:8px !important;
+  }
+  .session-header-main{
+    border-right:0 !important;
+    padding:3px 5px !important;
+  }
+  .session-sites-box{
+    grid-column:1 !important;
+    grid-row:1 !important;
+    padding:3px 4px !important;
+    border-top:0 !important;
+    display:grid !important;
+    grid-template-columns:minmax(0,1fr) auto !important;
+    grid-template-rows:auto auto !important;
+    column-gap:8px !important;
+  }
+  .session-sites-title{grid-column:1 !important;grid-row:1 !important;font-size:7px !important}
+  .session-sites{grid-column:1 !important;grid-row:2 !important;font-size:8px !important}
+  .session-logos{grid-column:2 !important;grid-row:1 / span 2 !important;height:36px !important;gap:5px !important}
+  .session-logo-item img,
+  .session-logos img{width:40px !important;height:32px !important}
+  .session-header-actions{grid-column:2 !important;grid-row:1 !important}
+}
+
