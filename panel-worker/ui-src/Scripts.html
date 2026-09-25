@@ -458,7 +458,7 @@
       };
 
       const home = document.getElementById('nav-home');
-      const automation = nav.querySelector('.nav-group[data-group="automation"]');
+      const automation = nav.querySelector('.nav-group[data-group="utama"]');
       const lapor = nav.querySelector('.nav-group[data-group="lapor"]');
       const activity = document.getElementById('nav-activity');
       const admin = document.getElementById('nav-admin');
@@ -1015,7 +1015,7 @@
         const direct = el.dataset.mobilePage;
         const group = el.dataset.mobileGroup;
         const inGroup =
-          (group === 'automation' && ['result','prediction','invest'].includes(page)) ||
+          (group === 'utama' && ['result','prediction','invest'].includes(page)) ||
           (group === 'lapor' && ['lap-admin','lap-motion','lap-mozart','lap-setting','pga-pending'].includes(page));
         el.classList.toggle('nav-active', direct === page || inGroup);
       });
@@ -3738,7 +3738,7 @@
       document.querySelectorAll('[data-role-only="ADMIN"], .admin-only').forEach(el => setRoleOnly(el, isAdmin));
       document.querySelectorAll('[data-role-only="BOT"], .bot-only').forEach(el => setRoleOnly(el, isBot));
 
-      document.querySelectorAll('.mobile-nav-item[data-mobile-group="automation"], .mobile-nav-item[data-mobile-group="lapor"]').forEach(el => {
+      document.querySelectorAll('.mobile-nav-item[data-mobile-group="utama"], .mobile-nav-item[data-mobile-group="lapor"]').forEach(el => {
         el.style.display = isBot ? 'none' : '';
       });
       const mobileActivity = document.querySelector('.mobile-nav-item[data-mobile-page="activity"]');
