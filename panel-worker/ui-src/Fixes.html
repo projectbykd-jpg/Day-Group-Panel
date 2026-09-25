@@ -124,7 +124,7 @@
      its active state is restored after any dynamic render instead of rebuilding
      the page or triggering network work just to open Result. */
   function stabilizeResult() {
-    var page = document.getElementById('page-result');
+    var page = document.getElementById('result-page') || document.getElementById('page-result');
     if (!page) return;
     page.style.minWidth = '0';
     page.style.maxWidth = '100%';
