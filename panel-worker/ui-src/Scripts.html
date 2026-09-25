@@ -2018,21 +2018,19 @@
       const dp = lapResults.motionDpPga || [], pe = lapResults.motionPendingError || [], wd = lapResults.motionWd || [];
       const wdSum = Number(sm.totalWdAmount) || wd.reduce((n,r) => n + Number(r.amount||0), 0);
       const wdCnt = Number(sm.totalWdRecords) || wd.length;
-      // Deposit memakai capture native Motion agar tidak memanggil endpoint
-      // deposit secara langsung (jalur direct terbukti 403).
-      const codeDepo = lapMotionHarvestScript();
+      const codeDepo = 'Klik “Salin Skrip Deposit” untuk membuat skrip Native Capture.';
       const codeWd = lapMotionConsoleScript('withdraw');
       const escCode = c => c.replace(/[&<>]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[ch]));
       host.innerHTML = lapHeaderCard('fa-bolt-lightning', 'Lap Motion', 'Motion DP PGA · PGA Pending/Error · PGA Withdraw', `
         <div class="glass-inner rounded-2xl p-4 border border-amber-500/20 text-[11px] text-slate-300 leading-relaxed">
           <div class="font-bold text-amber-300 mb-1"><i class="fa-solid fa-shield-halved mr-1"></i>Motion kadang menolak trafik server</div>
           motionv2.com sesekali menantang/menolak request dari Worker (WAF) -- hasilnya data bisa muncul 0 padahal aslinya ada.
-          Tarik data Motion lewat <b>Console</b> tab Motion (browser asli, bukan server).
-          <b>Deposit memakai capture native dari halaman RIWAYAT PGA</b> karena request direct Deposit dapat ditolak HTTP 403;
-          <b>Withdraw</b> tetap memakai request direct yang sudah terbukti jalan dari <b>WD REQUEST</b>/<b>RIWAYAT WD PGA</b>:
+          Tarik data Motion sekarang lewat <b>Console</b> tab Motion (browser asli, bukan server), sama seperti Lap Mozart --
+          Deposit &amp; Withdraw pakai <b>2 skrip terpisah</b> (endpoint deposit cuma mau nyaut kalau dibuka dari menu <b>RIWAYAT PGA</b>,
+          endpoint withdraw dari menu <b>WD REQUEST</b>/<b>RIWAYAT WD PGA</b>):
           <ol class="list-decimal ml-4 mt-1.5 space-y-1">
             <li>Buka tab <b>Motion</b> (motionv2.com), pastikan sudah login.</li>
-            <li>Untuk DEPOSIT: buka menu <b>RIWAYAT PGA</b> → klik <b>Salin Skrip Deposit Native</b> → jalankan di Console → gunakan filter tanggal/Apply/Refresh seperti biasa. Request yang dibuat Motion sendiri akan tertangkap.</li>
+            <li>Untuk DEPOSIT: buka menu <b>RIWAYAT PGA</b> → klik <b>Salin Skrip Deposit</b> di bawah.</li>
             <li>Untuk WITHDRAW: buka menu <b>WD REQUEST</b> (atau RIWAYAT WD PGA) → klik <b>Salin Skrip Withdraw</b>.</li>
             <li>Tekan <b>F12</b> → tab <b>Console</b>. (Pertama kali Chrome minta ketik <code>allow pasting</code> lalu Enter.)</li>
             <li>Tempel (Ctrl+V) → <b>Enter</b> → isi tanggal → tunggu muncul “terkirim ke panel OK”.</li>
@@ -2040,7 +2038,7 @@
             <li>Balik ke sini → <b>Muat Ulang</b>.</li>
           </ol>
           <div class="flex flex-wrap gap-2 mt-3">
-            <button onclick="lapMotionCopyScript('deposit')" class="bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs"><i class="fa-regular fa-copy mr-1"></i>Salin Skrip Deposit Native</button>
+            <button onclick="lapMotionCopyScript('deposit')" class="bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs"><i class="fa-regular fa-copy mr-1"></i>Salin Skrip Deposit</button>
             <button onclick="lapMotionCopyScript('withdraw')" class="bg-gradient-to-r from-purple-400 to-fuchsia-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs"><i class="fa-regular fa-copy mr-1"></i>Salin Skrip Withdraw</button>
             <button onclick="lapRefresh('lap-motion')" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-solid fa-rotate mr-1"></i>Muat Ulang</button>
             <button onclick="document.getElementById('lapMotionCodeWrap').hidden=!document.getElementById('lapMotionCodeWrap').hidden" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-solid fa-code mr-1"></i>Lihat Skrip</button>
