@@ -140,11 +140,11 @@
             <i class="fa-solid fa-clock-rotate-left text-cyan-400 text-sm shrink-0"></i><span class="tracking-wider">Aktivitas</span>
           </button>
           <!-- 4. ADMIN -->
-          <button onclick="switchPage('admin')" id="nav-admin" class="nav-extra admin-only sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-3 rounded-xl font-bold text-xs cursor-pointer nav-solo">
+          <button hidden data-role-only="ADMIN" onclick="switchPage('admin')" id="nav-admin" class="nav-extra admin-only sidebar-nav w-full flex items-center justify-start gap-3 px-4 py-3 rounded-xl font-bold text-xs cursor-pointer nav-solo">
             <i class="fa-solid fa-shield-halved text-amber-400 text-sm shrink-0"></i><span class="tracking-wider">Admin</span>
           </button>
           <!-- GRUP 3: BOT (hanya role BOT) -->
-          <div class="nav-group" data-group="bot">
+          <div hidden data-role-only="BOT" class="nav-group" data-group="bot">
             <button type="button" class="nav-group-head" onclick="toggleNavGroup('bot')">
               <span><i class="fa-solid fa-robot mr-2 text-emerald-400"></i>Bot</span>
               <i class="fa-solid fa-chevron-down nav-chev"></i>
