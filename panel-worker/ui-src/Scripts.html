@@ -796,9 +796,11 @@
       }
 
       titleEl.textContent = title || 'MENU';
-      content.innerHTML = source.innerHTML;
-      content.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
-      content.querySelectorAll('[hidden]').forEach(el => el.removeAttribute('hidden'));
+      const visibleButtons = Array.from(source.querySelectorAll(':scope > button'))
+        .filter(btn => !btn.hidden && getComputedStyle(btn).display !== 'none');
+      content.innerHTML = visibleButtons.length
+        ? visibleButtons.map(btn => btn.outerHTML.replace(/\\sid="[^"]*"/g, '')).join('')
+        : '<div class="mobile-nav-empty">Tidak ada fitur di menu ini.</div>';
       drawer.dataset.group = name;
       drawer.hidden = false;
 
