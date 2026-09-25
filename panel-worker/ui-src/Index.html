@@ -184,6 +184,30 @@
             </div>
           </div>
       </div>
+
+      <!-- MOBILE NAVIGATION -->
+      <div id="mobile-nav-shell" class="mobile-nav-shell" aria-label="Navigasi mobile">
+        <div id="mobile-nav-drawer" class="mobile-nav-drawer" hidden>
+          <div class="mobile-nav-drawer-title" id="mobile-nav-drawer-title">MENU</div>
+          <div id="mobile-nav-drawer-content" class="mobile-nav-drawer-content"></div>
+        </div>
+        <div class="mobile-nav-bar">
+          <button type="button" class="mobile-nav-item" data-mobile-page="home" onclick="mobileNavPage('home')">
+            <i class="fa-solid fa-gauge-high"></i><span>Dashboard</span>
+          </button>
+          <button type="button" class="mobile-nav-item" data-mobile-group="automation" onclick="mobileNavGroup('automation','Automation')">
+            <i class="fa-solid fa-bolt"></i><span>Automation</span>
+          </button>
+          <button type="button" class="mobile-nav-item" data-mobile-group="lapor" onclick="mobileNavGroup('lapor','Laporan Harian')">
+            <i class="fa-solid fa-file-invoice-dollar"></i><span>Laporan</span>
+          </button>
+          <button type="button" class="mobile-nav-item" data-mobile-page="activity" onclick="mobileNavPage('activity')">
+            <i class="fa-solid fa-clock-rotate-left"></i><span>Aktivitas</span>
+          </button>
+          <button type="button" class="mobile-nav-item" data-mobile-group="more" onclick="mobileNavMore()">
+            <i class="fa-solid fa-ellipsis"></i><span>Lainnya</span>
+          </button>
+        </div>
       </div>
       </div>
 

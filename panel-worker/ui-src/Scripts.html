@@ -770,7 +770,96 @@
     'livechat-templates': 'STATUS SESI'
   };
 
-    function toggleNavGroup(name) {
+    function mobileNavClose() {
+      const drawer = document.getElementById('mobile-nav-drawer');
+      if (drawer) drawer.hidden = true;
+      document.querySelectorAll('.mobile-nav-item').forEach(el => el.classList.remove('is-open'));
+    }
+
+    function mobileNavPage(page) {
+      mobileNavClose();
+      switchPage(page);
+    }
+
+    function mobileNavGroup(name, title) {
+      const drawer = document.getElementById('mobile-nav-drawer');
+      const content = document.getElementById('mobile-nav-drawer-content');
+      const titleEl = document.getElementById('mobile-nav-drawer-title');
+      if (!drawer || !content) return;
+
+      const source = document.querySelector('.nav-group[data-group="' + name + '"] .nav-group-body');
+      if (!source) return;
+
+      if (!drawer.hidden && drawer.dataset.group === name) {
+        mobileNavClose();
+        return;
+      }
+
+      titleEl.textContent = title || 'MENU';
+      const visibleButtons = Array.from(source.querySelectorAll(':scope > button'))
+        .filter(btn => !btn.hidden && getComputedStyle(btn).display !== 'none');
+      content.innerHTML = visibleButtons.length
+        ? visibleButtons.map(btn => btn.outerHTML.replace(/\\sid="[^"]*"/g, '')).join('')
+        : '<div class="mobile-nav-empty">Tidak ada fitur di menu ini.</div>';
+      drawer.dataset.group = name;
+      drawer.hidden = false;
+
+      document.querySelectorAll('.mobile-nav-item').forEach(el => el.classList.remove('is-open'));
+      const trigger = document.querySelector('.mobile-nav-item[data-mobile-group="' + name + '"]');
+      if (trigger) trigger.classList.add('is-open');
+
+      content.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', () => setTimeout(mobileNavClose, 80), { once: true });
+      });
+    }
+
+    function mobileNavMore() {
+      const drawer = document.getElementById('mobile-nav-drawer');
+      const content = document.getElementById('mobile-nav-drawer-content');
+      const titleEl = document.getElementById('mobile-nav-drawer-title');
+      if (!drawer || !content) return;
+
+      if (!drawer.hidden && drawer.dataset.group === 'more') {
+        mobileNavClose();
+        return;
+      }
+
+      titleEl.textContent = 'FITUR LAINNYA';
+      const items = [];
+
+      const addButton = (selector) => {
+        const btn = document.querySelector(selector);
+        if (!btn || btn.hidden || getComputedStyle(btn).display === 'none') return;
+        items.push(btn.outerHTML.replace(/\\sid="[^"]*"/g, ''));
+      };
+
+      addButton('#nav-livechat-sessions');
+      addButton('#nav-livechat-templates');
+      addButton('#nav-admin');
+
+      const bot = document.querySelector('.nav-group[data-group="bot"]');
+      if (bot && !bot.hidden && getComputedStyle(bot).display !== 'none') {
+        bot.querySelectorAll('.nav-group-body > button').forEach(btn => {
+          if (!btn.hidden) items.push(btn.outerHTML.replace(/\sid="[^"]*"/g, ''));
+        });
+      }
+
+      content.innerHTML = items.length
+        ? items.join('')
+        : '<div class="mobile-nav-empty">Tidak ada fitur tambahan untuk akun ini.</div>';
+
+      drawer.dataset.group = 'more';
+      drawer.hidden = false;
+      document.querySelectorAll('.mobile-nav-item').forEach(el => el.classList.remove('is-open'));
+      const trigger = document.querySelector('.mobile-nav-item[data-mobile-group="more"]');
+      if (trigger) trigger.classList.add('is-open');
+
+      content.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', () => setTimeout(mobileNavClose, 80), { once: true });
+      });
+    }
+
+        function toggleNavGroup(name) {
       const grp = document.querySelector('.nav-group[data-group="' + name + '"]');
       if (!grp) return;
       grp.classList.toggle('collapsed');
@@ -818,6 +907,15 @@
       NAV_KEYS.forEach(key => {
         const nav = document.getElementById('nav-' + key);
         if (nav) nav.classList.toggle('nav-active', key === page);
+      });
+
+      document.querySelectorAll('.mobile-nav-item').forEach(el => {
+        const direct = el.dataset.mobilePage;
+        const group = el.dataset.mobileGroup;
+        const inGroup =
+          (group === 'automation' && ['result','prediction','invest'].includes(page)) ||
+          (group === 'lapor' && ['lap-admin','lap-motion','lap-mozart','lap-setting','pga-pending'].includes(page));
+        el.classList.toggle('nav-active', direct === page || inGroup);
       });
 
       const kicker = document.getElementById('headerKicker');
@@ -3538,7 +3636,13 @@
       document.querySelectorAll('[data-role-only="ADMIN"], .admin-only').forEach(el => setRoleOnly(el, isAdmin));
       document.querySelectorAll('[data-role-only="BOT"], .bot-only').forEach(el => setRoleOnly(el, isBot));
 
-      const botGroup = document.querySelector('.nav-group[data-group="bot"]');
+      document.querySelectorAll('.mobile-nav-item[data-mobile-group="automation"], .mobile-nav-item[data-mobile-group="lapor"]').forEach(el => {
+        el.style.display = isBot ? 'none' : '';
+      });
+      const mobileActivity = document.querySelector('.mobile-nav-item[data-mobile-page="activity"]');
+      if (mobileActivity) mobileActivity.style.display = isBot ? 'none' : '';
+
+            const botGroup = document.querySelector('.nav-group[data-group="bot"]');
       if (botGroup) setRoleOnly(botGroup, isBot, 'flex');
 
       document.querySelectorAll('.livechat-op-only').forEach(el => setRoleOnly(el, isOperatorOrAdmin));
