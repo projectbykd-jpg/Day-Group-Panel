@@ -554,34 +554,38 @@ input:focus, select:focus, textarea:focus {
 
 
 /* =========================================================
-   KD RESULT RESPONSIVE / HEIGHT FIX V2
-   - Preview Live mengisi ruang kosong monitor.
-   - Kolom kiri/kanan tetap sejajar pada desktop.
-   - Saat viewport CSS terlalu sempit (termasuk browser zoom besar),
-     Result otomatis turun menjadi 1 kolom agar tidak terjepit.
+   KD RESULT RESPONSIVE / HEIGHT FIX V3
+   Layout utama tetap side-by-side pada desktop/normal zoom.
+   Pada viewport yang benar-benar sempit baru turun 1 kolom.
    ========================================================= */
-@media (min-width: 1200px) {
-  #result-page {
+@media (min-width: 900px) {
+  #result-page,
+  #result-page > .grid {
     width: 100% !important;
     min-width: 0 !important;
+    box-sizing: border-box !important;
   }
 
   #result-page > .grid {
     display: grid !important;
     grid-template-columns: minmax(0, 5fr) minmax(0, 7fr) !important;
     align-items: stretch !important;
-    width: 100% !important;
-    min-width: 0 !important;
+    gap: 20px !important;
   }
 
   #result-page > .grid > div {
     min-width: 0 !important;
     width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Kiri menentukan tinggi baris; kartu kanan mengikuti tinggi tersebut. */
+  #result-page > .grid > .lg\:col-span-5 {
+    height: auto !important;
     min-height: 0 !important;
   }
 
   #result-page > .grid > .lg\:col-span-5 > .glass-card {
-    width: 100% !important;
     height: 100% !important;
     min-height: 0 !important;
     box-sizing: border-box !important;
@@ -591,54 +595,68 @@ input:focus, select:focus, textarea:focus {
     display: flex !important;
     flex-direction: column !important;
     min-width: 0 !important;
+    height: auto !important;
   }
 
   #result-page > .grid > .lg\:col-span-7 > .glass-card:first-child {
     flex: 1 1 auto !important;
     min-height: 0 !important;
     width: 100% !important;
+    box-sizing: border-box !important;
   }
 
-  /* Jangan kunci LIVE PREVIEW ke h-20 saja.
-     Biarkan preview memakan seluruh ruang kosong yang tersedia. */
+  #result-page > .grid > .lg\:col-span-7 > .glass-card:last-child {
+    flex: 0 0 auto !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Live preview membesar mengisi ruang kosong DI DALAM monitor,
+     bukan mengubah tinggi keseluruhan layout secara liar. */
   #result-page > .grid > .lg\:col-span-7 > .glass-card:first-child .beranda-flex {
     flex: 1 1 auto !important;
-    min-height: 0 !important;
+    min-height: 110px !important;
   }
 
   #result-page #outputPreview {
+    width: 100% !important;
     flex: 1 1 auto !important;
     height: auto !important;
-    min-height: 96px !important;
+    min-height: 110px !important;
     max-height: none !important;
     box-sizing: border-box !important;
   }
 
   #result-page .monitor-stats {
     flex: 0 0 auto !important;
+    width: 100% !important;
   }
 
-  #result-page > .grid > .lg\:col-span-7 > .glass-card:last-child {
-    flex: 0 0 auto !important;
-    width: 100% !important;
+  #result-page .monitor-stats > div {
+    min-width: 0 !important;
+  }
+
+  #result-page .qcopy-btn {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
   }
 }
 
-/* Pada zoom besar / viewport CSS sempit, jangan paksa 5:7.
-   Turunkan menjadi satu kolom agar selalu rapi. */
-@media (min-width: 1024px) and (max-width: 1199px) {
+/* Tablet / zoom besar: tetap side-by-side selama masih cukup lebar.
+   Di bawah 900px baru dibuat 1 kolom yang rapi. */
+@media (max-width: 899px) {
   #result-page > .grid {
     display: grid !important;
     grid-template-columns: minmax(0, 1fr) !important;
-    align-items: stretch !important;
+    gap: 14px !important;
   }
 
-  #result-page > .grid > .lg\:col-span-5,
-  #result-page > .grid > .lg\:col-span-7 {
+  #result-page > .grid > div {
     width: 100% !important;
     min-width: 0 !important;
     height: auto !important;
-    min-height: 0 !important;
   }
 
   #result-page > .grid > .lg\:col-span-5 > .glass-card,
@@ -654,21 +672,13 @@ input:focus, select:focus, textarea:focus {
   }
 }
 
-/* Semua elemen Result harus boleh mengecil mengikuti kolomnya.
-   Ini mencegah isi tombol/field memaksa layout melebar pada zoom berbeda. */
+/* Semua child Result mengikuti lebar parent, jadi zoom tidak menyebabkan
+   elemen tertentu memaksa kolom melebar. */
 #result-page,
 #result-page > .grid,
 #result-page > .grid > div,
 #result-page .glass-card,
-#result-page .glass-inner,
-#result-page .monitor-stats,
-#result-page .qcopy-btn {
+#result-page .glass-inner {
   min-width: 0 !important;
   box-sizing: border-box !important;
-}
-
-#result-page .qcopy-btn {
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
 }
