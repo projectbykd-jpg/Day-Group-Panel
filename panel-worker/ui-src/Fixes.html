@@ -36,6 +36,30 @@
     content.querySelectorAll('[id]').forEach(function (el) { el.removeAttribute('id'); });
   }
 
+  function normalizeNavOrder() {
+    var nav = document.querySelector('#app-container .nav-groups');
+    if (!nav) return;
+    var order = {
+      home: 10,
+      automation: 20,
+      lapor: 30,
+      activity: 40,
+      bot: 50,
+      livechat: 60,
+      admin: 70
+    };
+    var home = document.getElementById('nav-home');
+    var automation = nav.querySelector('.nav-group[data-group="automation"]');
+    var lapor = nav.querySelector('.nav-group[data-group="lapor"]');
+    var activity = document.getElementById('nav-activity');
+    var bot = nav.querySelector('.nav-group[data-group="bot"]');
+    var livechat = nav.querySelector('.nav-group[data-group="livechat"]');
+    var admin = document.getElementById('nav-admin');
+    [[home,'home'],[automation,'automation'],[lapor,'lapor'],[activity,'activity'],[bot,'bot'],[livechat,'livechat'],[admin,'admin']].forEach(function (pair) {
+      if (pair[0]) pair[0].style.order = String(order[pair[1]]);
+    });
+  }
+
   function wrapMobile(fnName) {
     var original = window[fnName];
     if (typeof original !== 'function' || original.__kdWrapped) return;
@@ -48,11 +72,9 @@
     window[fnName] = wrapped;
   }
 
-  /* Navigation used to do a server log write + realtime poll on every click.
-     That made a simple menu switch wait behind network work and was the main
-     source of the current "lag" feeling. The existing business handlers are
-     preserved; only those two navigation-side effects are suppressed here.
-     Normal activity logging from real actions is untouched. */
+  /* Navigation used to do a server log write, realtime poll and page animation
+     on every click. A menu click should be local/instant; the background poll
+     already owns realtime synchronization. Real business/API logging is untouched. */
   function quietNavigation() {
     var original = window.switchPage;
     if (typeof original !== 'function' || original.__kdPerfWrapped) return;
@@ -67,14 +89,12 @@
 
       var oldPoll = window.pumpLivePoll;
       var oldRun = window.google && window.google.script && window.google.script.run;
+      var oldFx = null;
       var restoreRun = false;
       try {
-        /* switchPage() calls pumpLivePoll(true) at the end. Let the regular
-           background polling loop own that work instead of doing it per click. */
         if (typeof oldPoll === 'function') window.pumpLivePoll = function () {};
 
-        /* Suppress ONLY the navigation audit event "BUKA HALAMAN". Other
-           logClientActivity calls elsewhere continue to reach the server. */
+        /* Suppress ONLY the navigation audit event "BUKA HALAMAN". */
         if (oldRun) {
           var wrapRunner = function (runner) {
             if (!runner || typeof runner !== 'object') return runner;
@@ -86,10 +106,7 @@
                     return target[prop].apply(target, arguments);
                   };
                 }
-                if (prop === 'withFailureHandler') {
-                  return function () { return wrapRunner(target[prop].apply(target, arguments)); };
-                }
-                if (prop === 'withSuccessHandler') {
+                if (prop === 'withFailureHandler' || prop === 'withSuccessHandler' || prop === 'withUserObject') {
                   return function () { return wrapRunner(target[prop].apply(target, arguments)); };
                 }
                 return target[prop];
@@ -100,12 +117,16 @@
           restoreRun = true;
         }
 
+        /* Keep business behaviour but skip transition animation during navigation.
+           The original FX preference is restored immediately afterwards. */
+        try { oldFx = localStorage.getItem('dg_fx'); localStorage.setItem('dg_fx', 'off'); } catch (e) {}
         return original.call(this, page);
       } finally {
+        if (oldFx !== null) { try { localStorage.setItem('dg_fx', oldFx); } catch (e) {} }
         if (typeof oldPoll === 'function') window.pumpLivePoll = oldPoll;
         if (restoreRun) window.google.script.run = oldRun;
-        applyFeatureAccess();
         cleanupMobileCloneIds();
+        normalizeNavOrder();
       }
     };
     wrapped.__kdPerfWrapped = true;
@@ -116,6 +137,7 @@
     wrapMobile('mobileNavGroup');
     wrapMobile('mobileNavMore');
     quietNavigation();
+    normalizeNavOrder();
     applyFeatureAccess();
     cleanupMobileCloneIds();
   }
@@ -124,13 +146,12 @@
   document.addEventListener('DOMContentLoaded', install, { once: true });
   var oldApply = window.applyProfileUI;
   if (typeof oldApply === 'function' && !oldApply.__kdAccessWrapped) {
-    var ap = function () { var out = oldApply.apply(this, arguments); applyFeatureAccess(); return out; };
+    var ap = function () { var out = oldApply.apply(this, arguments); normalizeNavOrder(); applyFeatureAccess(); return out; };
     ap.__kdAccessWrapped = true;
     window.applyProfileUI = ap;
   }
 
-  /* No global MutationObserver. The old observer scanned/rewrote large parts of
-     the DOM for every table/card update, which caused CPU spikes and lag.
-     Mobile clones are cleaned at the exact two points where they are created. */
+  /* Intentionally no global MutationObserver: the previous observer scanned the
+     DOM for every render/update and was a major source of CPU spikes and lag. */
 })();
 </script>
