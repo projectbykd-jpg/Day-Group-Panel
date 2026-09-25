@@ -1483,6 +1483,182 @@
       }).lapGetConfig(currentSessionToken);
     }
 
+    // ================= PGA PENDING (live -- sinkron dari skrip Console tab Motion) =================
+    // BEDA dari Lap Motion di atas: bukan impor sekali per rentang tanggal, tapi
+    // daftar HIDUP yang harus selalu mencerminkan apa yang SEDANG tampil di
+    // motionv2.com/withdraw-request dengan badge "PGA Pending" -- baris yang
+    // sudah tidak ada di sana (sudah diproses/hilang) harus otomatis hilang dari
+    // sini juga. motionv2.com KADANG menolak trafik server (WAF, sama seperti
+    // Lap Motion) -- jadi TIDAK ditarik dari Worker, tapi DIBACA LANGSUNG dari
+    // tabel yang sudah dirender di layar oleh skrip Console yang jalan di tab
+    // Motion (bukan lewat API-nya sama sekali), setiap 2 detik selama tab itu
+    // terbuka, lalu didorong (POST) ke panel. Panel di sini cuma poll snapshot
+    // terakhir tiap 2 detik juga -- lihat src/lib/pga-pending.ts untuk kenapa
+    // disimpan di KV dgn TTL pendek (bukan Turso): biar baris yang berhenti
+    // disinkron otomatis basi & hilang sendiri tanpa job pembersih terpisah.
+    let pgaPendingRows = [];
+    let pgaPendingUpdatedAt = 0;
+    let pgaPendingTimer = null;
+
+    function pgaPendingConsoleScript() {
+      const panel = location.origin;
+      const token = currentSessionToken || '';
+      return "(async()=>{\n"
+        + "  const O=location.origin, PANEL=" + JSON.stringify(panel) + ", TOKEN=" + JSON.stringify(token) + ";\n"
+        + "  if(!/motionv2/i.test(O)){alert('Buka skrip ini di TAB MOTION (motionv2.com), bukan di sini.');return;}\n"
+        + "  if(window.__pgaPendingTimer){clearInterval(window.__pgaPendingTimer);console.log('%cPGA Pending: skrip lama dihentikan, mulai ulang.','color:#ff0');}\n"
+        + "  const norm=s=>String(s||'').replace(/\\s+/g,' ').trim();\n"
+        // Halaman WD Request BUKAN <table> HTML -- dibangun dari <div> MUI, dan
+        // (ketahuan dari testing user) punya DUA representasi teks per baris
+        // (mis. varian ringkas utk breakpoint sempit) yang SAMA-SAMA ikut
+        // kebaca di .innerText/.textContent baris, bikin ekstraksi berbasis
+        // "potong teks antar label" (versi sebelumnya) kacau -- label & nilai
+        // bisa duplikat/beda urutan. Jadi PINDAH ke ekstraksi POSISIONAL yg
+        // tidak peduli itu: kolom STATUS ditemukan dulu (anak langsung baris
+        // yang MEMUAT badge "PGA Pending" itu sendiri, dicek via .contains --
+        // bukan cocokkan teks), lalu WEBSITE/ID TRANS/TANGGAL/ID USER/JUMLAH
+        // diambil RELATIF terhadap posisi kolom STATUS itu (mundur 7,6,5,4,1
+        // kolom) -- urutan 8 kolom [WEBSITE, ID TRANS, TANGGAL, ID USER, NAMA
+        // REKENING, NO. REKENING, JUMLAH, STATUS] SELALU berurutan spt itu di
+        // DOM (dikonfirmasi dari console.log user), jadi tidak peduli ada
+        // berapa kolom lain (checkbox dsb) sebelum WEBSITE -- itu yg bikin
+        // pendekatan ini kebal thd checkbox/kolom tambahan yang mungkin
+        // muncul/hilang tergantung breakpoint. "Grabbed PGA PGA Pending 000"
+        // adalah TEKS TETAP (konvensi log internal pemilik), BUKAN dibaca dari
+        // Motion -- dikonfirmasi dari isi kolom Status di Google Sheet log
+        // yang sudah ada, semua baris (vendor/website apapun) sama persis.
+        + "  function scan(){\n"
+        + "    const found=[]; const seenStatus=new Set();\n"
+        + "    const badges=Array.prototype.filter.call(document.querySelectorAll('body *'),el=>el.children.length===0&&/PGA Pending/i.test(el.textContent||''));\n"
+        + "    badges.forEach(badge=>{\n"
+        // Naik dari badge: begitu ketemu langkah di mana PARENT node saat ini
+        // punya >=8 anak sekaligus, parent itu = "row" (baris data, minimal 8
+        // kolom: WEBSITE..STATUS, biasanya 10 dgn checkbox+ACTION), dan node
+        // (anak langsung row yg dilewati barusan) = kolom STATUS. Murni hitung
+        // jumlah anak, TIDAK baca teks sama sekali -- kebal thd duplikasi teks
+        // responsive yang bikin pendekatan berbasis label kacau sebelumnya.
+        + "      let node=badge, statusCell=null, row=null;\n"
+        + "      for(let i=0;i<20&&node&&node.parentElement;i++){\n"
+        + "        const parent=node.parentElement;\n"
+        + "        if(parent.children.length>=8){statusCell=node;row=parent;break;}\n"
+        + "        node=parent;\n"
+        + "      }\n"
+        + "      if(!row||!statusCell||seenStatus.has(statusCell))return; seenStatus.add(statusCell);\n"
+        + "      const cells=Array.from(row.children);\n"
+        + "      const statusIdx=cells.indexOf(statusCell);\n"
+        + "      if(statusIdx<7)return;\n"
+        + "      const cellText=c=>c?norm(c.innerText||c.textContent):'';\n"
+        + "      const statusFull=cellText(statusCell);\n"
+        + "      const refM=statusFull.match(/PGA Ref No:?\\s*(\\S+)/i);\n"
+        + "      const vendM=statusFull.match(/Vendor Name:?\\s*([^]*)$/i);\n"
+        + "      found.push({\n"
+        + "        website: cellText(cells[statusIdx-7]),\n"
+        + "        idTrans: cellText(cells[statusIdx-6]),\n"
+        + "        tanggal: cellText(cells[statusIdx-5]),\n"
+        + "        idUser: cellText(cells[statusIdx-4]),\n"
+        + "        jumlah: parseInt(cellText(cells[statusIdx-1]).replace(/[^0-9]/g,''),10)||0,\n"
+        + "        statusText: 'Grabbed PGA PGA Pending 000',\n"
+        + "        pgaRefNo: refM?refM[1]:'',\n"
+        + "        vendorName: vendM?norm(vendM[1]):'',\n"
+        + "      });\n"
+        + "    });\n"
+        + "    return found;\n"
+        + "  }\n"
+        + "  async function tick(){\n"
+        + "    try{\n"
+        + "      const rows=scan();\n"
+        + "      document.title='['+rows.length+' PGA Pending] MOTION';\n"
+        // console.table setiap tick -- kalau masih ada kolom yg salah/kosong,
+        // KELIHATAN LANGSUNG di Console tanpa perlu diagnosa terpisah lagi.
+        + "      if(rows.length)console.table(rows);\n"
+        + "      await fetch(PANEL+'/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'pgaPendingSync',token:TOKEN,rows:rows})});\n"
+        + "    }catch(e){console.log('PGA Pending: sync gagal -- ',(e&&e.message)||e);}\n"
+        + "  }\n"
+        + "  console.log('%cPGA Pending: mulai sinkron tiap 2 detik. Biarkan tab ini TETAP TERBUKA di halaman WD Request.','color:#0f0;font-weight:bold');\n"
+        + "  tick();\n"
+        + "  window.__pgaPendingTimer=setInterval(tick,2000);\n"
+        + "  alert('PGA Pending: sinkron otomatis jalan tiap 2 detik selama tab ini tetap terbuka di halaman WD Request.\\n\\nBuka panel -> menu PGA Pending.');\n"
+        + "})();";
+    }
+    function pgaPendingCopyScript() {
+      const code = pgaPendingConsoleScript();
+      const done = () => toast('Skrip disalin. Buka motionv2.com -> WD Request, Console, tempel, Enter. Biarkan tab tetap terbuka.');
+      navigator.clipboard.writeText(code).then(done).catch(() => {
+        const ta = document.getElementById('pgaPendingCode');
+        if (ta) { document.getElementById('pgaPendingCodeWrap').hidden = false; ta.focus(); ta.select(); try { document.execCommand('copy'); done(); } catch(e){ toast('Salin manual dari kotak di bawah'); } }
+      });
+    }
+
+    function stopPgaPendingPolling() {
+      if (pgaPendingTimer) { clearInterval(pgaPendingTimer); pgaPendingTimer = null; }
+    }
+    function startPgaPendingPolling() {
+      stopPgaPendingPolling();
+      pollPgaPendingStatus();
+      pgaPendingTimer = setInterval(pollPgaPendingStatus, 2000);
+    }
+    function pollPgaPendingStatus() {
+      google.script.run.withSuccessHandler(res => {
+        if (!res || !res.success) return;
+        pgaPendingRows = res.rows || [];
+        pgaPendingUpdatedAt = res.updatedAt || 0;
+        pgaPendingRepaint();
+      }).withFailureHandler(() => {}).pgaPendingStatus(currentSessionToken);
+    }
+    function pgaPendingRepaint() {
+      if (lapTblState['pga_pending']) { lapTblState['pga_pending'].rows = pgaPendingRows; lapTblRepaint('pga_pending'); }
+      const cnt = document.getElementById('pgaPendingLiveCount');
+      if (cnt) cnt.textContent = pgaPendingRows.length;
+      const upd = document.getElementById('pgaPendingUpdatedAt');
+      if (upd) {
+        if (!pgaPendingUpdatedAt) {
+          upd.textContent = 'Belum ada data masuk — jalankan skrip di tab Motion (menu WD Request).';
+          upd.className = 'text-[10px] text-amber-400 mt-1';
+        } else {
+          const secAgo = Math.max(0, Math.round((Date.now() - pgaPendingUpdatedAt) / 1000));
+          upd.textContent = 'Update terakhir ' + secAgo + ' detik lalu';
+          upd.className = 'text-[10px] mt-1 ' + (secAgo > 15 ? 'text-rose-400' : 'text-emerald-400');
+        }
+      }
+    }
+    function renderPgaPendingPage() {
+      const host = document.getElementById('pga-pending-page');
+      if (!host) return;
+      const code = pgaPendingConsoleScript();
+      const escCode = c => c.replace(/[&<>]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[ch]));
+      host.innerHTML = lapHeaderCard('fa-tower-broadcast', 'PGA Pending', 'Live sync withdraw berstatus PGA Pending dari motionv2.com/withdraw-request.', `
+        <div class="glass-inner rounded-2xl p-4 border border-rose-500/20 text-[11px] text-slate-300 leading-relaxed">
+          <div class="font-bold text-rose-300 mb-1"><i class="fa-solid fa-satellite-dish mr-1"></i>Cara pakai</div>
+          List ini TIDAK ditarik server (Motion sering menolak trafik server/WAF) — dibaca LANGSUNG dari tabel WD Request oleh skrip yang jalan di tab Motion, tiap 2 detik, selama tab itu terbuka. Baris yang sudah hilang dari WD Request otomatis hilang dari sini juga dalam hitungan detik.
+          <ol class="list-decimal ml-4 mt-1.5 space-y-1">
+            <li>Buka tab <b>Motion</b> (motionv2.com) → menu <b>WD REQUEST</b>, pastikan sudah login.</li>
+            <li>Klik <b>Salin Skrip</b> di bawah.</li>
+            <li>Tekan <b>F12</b> → tab <b>Console</b> (pertama kali Chrome minta ketik <code>allow pasting</code> dulu lalu Enter).</li>
+            <li>Tempel (Ctrl+V) → <b>Enter</b>. Biarkan tab Motion itu TETAP TERBUKA (boleh dikecilkan, jangan ditutup).</li>
+            <li>Balik ke sini — List di bawah update sendiri tiap 2 detik.</li>
+          </ol>
+          <div class="flex flex-wrap gap-2 mt-3">
+            <button onclick="pgaPendingCopyScript()" class="bg-gradient-to-r from-rose-400 to-orange-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs"><i class="fa-regular fa-copy mr-1"></i>Salin Skrip</button>
+            <button onclick="document.getElementById('pgaPendingCodeWrap').hidden=!document.getElementById('pgaPendingCodeWrap').hidden" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-solid fa-code mr-1"></i>Lihat Skrip</button>
+          </div>
+          <div id="pgaPendingCodeWrap" hidden class="mt-2">
+            <textarea id="pgaPendingCode" readonly onclick="this.select()" class="w-full h-32 glass-inner rounded-xl p-2 text-[10px] font-mono text-slate-200 leading-tight">${escCode(code)}</textarea>
+          </div>
+        </div>
+        <div class="flex items-center justify-between flex-wrap gap-2 mt-1">
+          <span class="text-[11px] font-bold text-slate-300">Baris aktif: <span id="pgaPendingLiveCount" class="text-rose-400">${pgaPendingRows.length}</span></span>
+          <div id="pgaPendingUpdatedAt" class="text-[10px] text-slate-500">Memuat…</div>
+        </div>
+        <div id="pgaPendingTableWrap">
+          ${lapTable('pga_pending', ['WEBSITE','ID TRANS','TANGGAL','ID USER','JUMLAH','STATUS','PGA REF NO','VENDOR'], pgaPendingRows,
+            r => `<tr>${td(r.website)}${td(r.idTrans,'text-[10px]')}${td(r.tanggal)}${td(r.idUser,'font-bold text-cyan-300')}${td('Rp '+lapFmt(r.jumlah),'text-right text-emerald-400')}${td(r.statusText,'text-[10px] text-rose-300')}${td(r.pgaRefNo,'text-[10px]')}${td(r.vendorName,'text-amber-300')}</tr>`,
+            r => [r.vendorName, r.website, r.idTrans, r.tanggal, r.idUser, 'Rp '+lapFmt(r.jumlah), r.statusText, r.pgaRefNo, 'Pending'].join('\t'),
+            ['website','idTrans','idUser','pgaRefNo','vendorName'], {title:'PGA Pending', open:true})}
+        </div>`);
+      lapTblMountAll();
+      pgaPendingRepaint();
+    }
+
     function lapRenderMotion(host) {
       const meta = (lapResults._motionMeta && lapResults._motionMeta[0]) || {};
       const sm = meta.summary || {};
