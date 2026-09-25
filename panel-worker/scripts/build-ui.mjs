@@ -109,6 +109,7 @@ const shim = `<script>
     }
     fetch(API, {
       method: "POST",
+      credentials: "same-origin",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     })
