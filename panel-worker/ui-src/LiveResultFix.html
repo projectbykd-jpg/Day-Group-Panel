@@ -1,0 +1,100 @@
+<script>
+/* Result live-preview reliability layer.
+   Keeps the existing parser/renderer in Scripts.html as the single source of truth.
+   This only guarantees that Result input changes trigger the existing autoGenerate()
+   after the page/DOM is ready. No server request is added. */
+(function () {
+  var installed = false;
+  var observer = null;
+  var lastText = null;
+
+  function inputEl() { return document.getElementById('inputText'); }
+
+  function syncResultPreview() {
+    var el = inputEl();
+    if (!el || typeof window.autoGenerate !== 'function') return;
+    var text = String(el.value || '');
+    if (!text.trim()) return;
+    if (text === lastText) return;
+    lastText = text;
+    try { window.autoGenerate(); } catch (e) {
+      // Do not break the panel if an unrelated page is being rendered.
+    }
+  }
+
+  function attach() {
+    var el = inputEl();
+    if (!el) return false;
+    if (el.__kdLivePreviewBound) return true;
+    el.__kdLivePreviewBound = true;
+
+    ['input', 'change', 'paste'].forEach(function (name) {
+      el.addEventListener(name, function () {
+        // Clipboard paste updates .value after the paste event; one frame is enough.
+        requestAnimationFrame(function () {
+          lastText = null;
+          syncResultPreview();
+        });
+      }, { passive: true });
+    });
+
+    // Existing draft/session restore can populate the textarea without firing input.
+    setTimeout(function () {
+      lastText = null;
+      syncResultPreview();
+    }, 0);
+    return true;
+  }
+
+  function install() {
+    attach();
+    if (installed) return;
+    installed = true;
+
+    // Result is rendered dynamically. Observe only the app container and only
+    // react when inputText appears; never scan/rewrite the whole document.
+    var root = document.getElementById('app-container') || document.body;
+    if (root && window.MutationObserver) {
+      observer = new MutationObserver(function (records) {
+        var needsAttach = false;
+        for (var i = 0; i < records.length && !needsAttach; i++) {
+          if (records[i].addedNodes && records[i].addedNodes.length) needsAttach = true;
+        }
+        if (needsAttach) {
+          if (attach()) {
+            var el = inputEl();
+            if (el && String(el.value || '').trim()) {
+              setTimeout(function () { lastText = null; syncResultPreview(); }, 0);
+            }
+          }
+        }
+      });
+      observer.observe(root, { childList: true, subtree: true });
+    }
+
+    // Covers navigation that replaces the Result DOM without emitting an input event.
+    var originalSwitch = window.switchPage;
+    if (typeof originalSwitch === 'function' && !originalSwitch.__kdLivePreviewWrapped) {
+      var wrappedSwitch = function () {
+        var out = originalSwitch.apply(this, arguments);
+        setTimeout(function () {
+          attach();
+          lastText = null;
+          syncResultPreview();
+        }, 0);
+        return out;
+      };
+      wrappedSwitch.__kdLivePreviewWrapped = true;
+      window.switchPage = wrappedSwitch;
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', install, { once: true });
+  } else {
+    install();
+  }
+  setTimeout(install, 0);
+  setTimeout(install, 300);
+})();
+</script>
