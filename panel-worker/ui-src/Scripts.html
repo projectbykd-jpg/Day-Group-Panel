@@ -369,9 +369,12 @@
       applyWebsiteTheme(res.websites || []);
       // switchPage('home') sudah memanggil loadHeaderSummary() di bagian akhirnya,
       // jadi tidak perlu dipanggil lagi di sini (dulu jadi 2x panggil server).
-      const botOnly = res && res.role === 'BOT';
+      const sessionRole = String((res && res.role) || '').trim().toUpperCase();
+      const botOnly = sessionRole === 'BOT';
       applyProfileUI(); restoreDraft(); resetSessionTimer();
       switchPage(botOnly ? 'bot-dashboard' : 'home');
+      // Re-apply role visibility after page switching so no CSS/page render can re-show protected menus.
+      applyProfileUI();
       // Kunci maintenance dievaluasi begitu panel terbuka (login / resume sesi).
       if (res && res.maintenance) setMaintenanceLock(res.maintenance.enabled, res.maintenance.message);
       if (!botOnly) startLivePolling();
@@ -3380,25 +3383,39 @@
 
       const show = (el, visible, display='flex') => {
         if (!el) return;
-        el.style.setProperty('display', visible ? display : 'none', 'important');
+        // hidden attribute is the final guard against CSS/Tailwind display rules leaking protected menus.
+        if (visible) {
+          el.removeAttribute('hidden');
+          el.style.setProperty('display', display || 'flex', 'important');
+        } else {
+          el.setAttribute('hidden', '');
+          el.style.setProperty('display', 'none', 'important');
+        }
       };
 
-      document.querySelectorAll('.bot-only').forEach(el => show(el, isBot));
+      // ADMIN menu: ADMIN only.
       document.querySelectorAll('.admin-only').forEach(el => show(el, isAdmin));
-      document.querySelectorAll('.livechat-op-only').forEach(el => show(el, isOperatorOrAdmin));
-
+      // BOT menu items: BOT only.
+      document.querySelectorAll('.bot-only').forEach(el => show(el, isBot));
+      // BOT group header/body: BOT only.
       const botGroup = document.querySelector('.nav-group[data-group="bot"]');
-      if (botGroup) show(botGroup, isBot, '');
+      if (botGroup) show(botGroup, isBot, 'flex');
+
+      // LIVE CHAT: ADMIN / OPERATOR only.
+      document.querySelectorAll('.livechat-op-only').forEach(el => show(el, isOperatorOrAdmin));
       const livechatGroup = document.querySelector('.nav-group[data-group="livechat"]');
-      if (livechatGroup) show(livechatGroup, isOperatorOrAdmin, '');
+      if (livechatGroup) show(livechatGroup, isOperatorOrAdmin, 'flex');
 
       document.querySelectorAll('.nav-extra').forEach(el => {
-        if (!el.classList.contains('admin-only') && !el.classList.contains('livechat-op-only') && !el.classList.contains('bot-only')) {
+        if (!el.classList.contains('admin-only') &&
+            !el.classList.contains('livechat-op-only') &&
+            !el.classList.contains('bot-only')) {
           show(el, !isBot);
         }
       });
 
       if (isBot) {
+        // BOT sees only BOT navigation.
         document.querySelectorAll('.nav-solo, .nav-group:not([data-group="bot"])').forEach(el => show(el, false));
         const mw = document.getElementById('market-wrapper');
         if (mw) mw.style.display = 'none';
@@ -3406,14 +3423,19 @@
         return;
       }
 
-      document.querySelectorAll('.nav-group[data-group="bot"]').forEach(el => show(el, false));
+      // NON-BOT users must never see BOT navigation.
+      if (botGroup) show(botGroup, false);
+      document.querySelectorAll('.bot-only').forEach(el => show(el, false));
+
       restoreNavGroups();
       document.querySelectorAll('.activity-admin-only').forEach(el => show(el, isAdmin, ''));
 
       const filterGrid = document.getElementById('activityFilterGrid');
       if (filterGrid) filterGrid.classList.toggle('activity-admin-grid', isAdmin);
       const scope = document.getElementById('activityScopeText');
-      if (scope) scope.textContent = isAdmin ? 'Admin melihat gabungan Activity Log hari ini dan BackUp Activity Log.' : 'Setiap user hanya melihat riwayat akunnya sendiri pada hari ini.';
+      if (scope) scope.textContent = isAdmin
+        ? 'Admin melihat gabungan Activity Log hari ini dan BackUp Activity Log.'
+        : 'Setiap user hanya melihat riwayat akunnya sendiri pada hari ini.';
     }
     function escapeHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
     function restoreDraft(){const d=JSON.parse(localStorage.getItem('daygroup_draft')||'null');if(!d)return;document.getElementById('inputText').value=d.text||'';document.getElementById('marketSelect').value=d.market||'';document.getElementById('angkaInput').value=d.angka||'';if(d.text)autoGenerate();}
