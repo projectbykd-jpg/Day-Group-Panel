@@ -362,6 +362,8 @@
       document.getElementById('app-container').style.display = 'flex';
       document.body.classList.remove('justify-center');
       document.getElementById('sidebar-user').innerText = currentUser.toUpperCase();
+      const sessionAdmin = document.getElementById('session-admin-name');
+      if (sessionAdmin) sessionAdmin.textContent = currentUser.toUpperCase();
       // masuk panel: sidebar dari kiri, header dari atas, menu & konten di-stagger
       setTimeout(() => FX.enter(), 30);
       applyWebsiteTheme(res.websites || []);
@@ -642,6 +644,13 @@
     }
 
     function switchPage(page) {
+      const role = String((currentProfile && currentProfile.role) || '').trim().toUpperCase();
+      const isAdmin = role === 'ADMIN';
+      const isBot = role === 'BOT';
+      const botRoute = BOT_PAGES.includes(page);
+      if (isBot && !botRoute) page = 'bot-dashboard';
+      if (!isBot && botRoute) page = 'home';
+      if (page === 'admin' && !isAdmin) page = isBot ? 'bot-dashboard' : 'home';
       const pages = {
         home:'main-panel', result:'result-page', prediction:'prediction-page', activity:'activity-page',
         admin:'admin-page', invest:'invest-page', 'pga-pending':'pga-pending-page',
@@ -3364,53 +3373,48 @@
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && document.getElementById("popupCloseBtn").style.display !== "none") closeActionPopup(); });
 
     function applyProfileUI() {
-      const isAdmin = !!(currentProfile && currentProfile.role === 'ADMIN');
-      const isBot = !!(currentProfile && currentProfile.role === 'BOT');
-      const isOperatorOrAdmin = !!(currentProfile && (currentProfile.role === 'ADMIN' || currentProfile.role === 'OPERATOR'));
+      const role = String((currentProfile && currentProfile.role) || '').trim().toUpperCase();
+      const isAdmin = role === 'ADMIN';
+      const isBot = role === 'BOT';
+      const isOperatorOrAdmin = role === 'ADMIN' || role === 'OPERATOR';
 
-      // Role BOT: terisolasi total — sembunyikan SEMUA menu lama, hanya menu
-      // ber-atribut data-bot-ok yang tampil. Paksa landing ke halaman BOT.
+      const show = (el, visible, display='flex') => {
+        if (!el) return;
+        el.style.setProperty('display', visible ? display : 'none', 'important');
+      };
+
+      document.querySelectorAll('.bot-only').forEach(el => show(el, isBot));
+      document.querySelectorAll('.admin-only').forEach(el => show(el, isAdmin));
+      document.querySelectorAll('.livechat-op-only').forEach(el => show(el, isOperatorOrAdmin));
+
+      const botGroup = document.querySelector('.nav-group[data-group="bot"]');
+      if (botGroup) show(botGroup, isBot, '');
+      const livechatGroup = document.querySelector('.nav-group[data-group="livechat"]');
+      if (livechatGroup) show(livechatGroup, isOperatorOrAdmin, '');
+
+      document.querySelectorAll('.nav-extra').forEach(el => {
+        if (!el.classList.contains('admin-only') && !el.classList.contains('livechat-op-only') && !el.classList.contains('bot-only')) {
+          show(el, !isBot);
+        }
+      });
+
       if (isBot) {
-        document.querySelectorAll('.sidebar-nav').forEach(el => {
-          el.style.display = el.classList.contains('bot-only') ? 'flex' : 'none';
-        });
-        document.querySelectorAll('.nav-group').forEach(g => {
-          g.style.display = g.querySelector('.sidebar-nav.bot-only') ? '' : 'none';
-        });
+        document.querySelectorAll('.nav-solo, .nav-group:not([data-group="bot"])').forEach(el => show(el, false));
         const mw = document.getElementById('market-wrapper');
         if (mw) mw.style.display = 'none';
-        if (!BOT_PAGES.includes(currentPage)) switchPage('bot-dashboard');
+        if (currentPage !== 'bot-dashboard') switchPage('bot-dashboard');
         return;
       }
 
-      document.querySelectorAll('.nav-extra').forEach(el => el.style.display = 'flex');
-      document.querySelectorAll('.bot-only').forEach(el => el.style.display = 'none');
-      // Role BOT terisolasi total (lihat komentar di atas) -- grup "Bot" di sidebar
-      // cuma berisi tombol ber-class .bot-only, jadi kalau semuanya disembunyikan,
-      // wrapper grupnya (judul + chevron) ikut disembunyikan juga. Sebelumnya cuma
-      // tombolnya yang disembunyikan, wrapper-nya nyangkut kosong tampil di SEMUA
-      // akun non-BOT (admin, operator, viewer).
-      document.querySelectorAll('.nav-group').forEach(g => {
-        if (g.querySelector('.sidebar-nav.bot-only')) g.style.display = 'none';
-      });
-      document.querySelectorAll('.admin-only').forEach(el => el.style.display = isAdmin ? 'flex' : 'none');
-      document.querySelectorAll('.livechat-op-only').forEach(el => el.style.display = isOperatorOrAdmin ? 'flex' : 'none');
-      const livechatGroup = document.querySelector('.nav-group[data-group="livechat"]');
-      if (livechatGroup) livechatGroup.style.display = isOperatorOrAdmin ? '' : 'none';
+      document.querySelectorAll('.nav-group[data-group="bot"]').forEach(el => show(el, false));
       restoreNavGroups();
-      document.querySelectorAll('.activity-admin-only').forEach(el => el.style.display = isAdmin ? '' : 'none');
+      document.querySelectorAll('.activity-admin-only').forEach(el => show(el, isAdmin, ''));
 
       const filterGrid = document.getElementById('activityFilterGrid');
       if (filterGrid) filterGrid.classList.toggle('activity-admin-grid', isAdmin);
-
       const scope = document.getElementById('activityScopeText');
-      if (scope) {
-        scope.textContent = isAdmin
-          ? 'Admin melihat gabungan Activity Log hari ini dan BackUp Activity Log.'
-          : 'Setiap user hanya melihat riwayat akunnya sendiri pada hari ini.';
-      }
+      if (scope) scope.textContent = isAdmin ? 'Admin melihat gabungan Activity Log hari ini dan BackUp Activity Log.' : 'Setiap user hanya melihat riwayat akunnya sendiri pada hari ini.';
     }
-
     function escapeHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
     function restoreDraft(){const d=JSON.parse(localStorage.getItem('daygroup_draft')||'null');if(!d)return;document.getElementById('inputText').value=d.text||'';document.getElementById('marketSelect').value=d.market||'';document.getElementById('angkaInput').value=d.angka||'';if(d.text)autoGenerate();}
     function saveDraft(){localStorage.setItem('daygroup_draft',JSON.stringify({text:document.getElementById('inputText').value,market:document.getElementById('marketSelect').value,angka:document.getElementById('angkaInput').value}));}
