@@ -372,8 +372,12 @@
         label.title = theme.names.join(' + ');
       }
       if (badge) badge.style.display = currentProfile ? 'inline-flex' : 'none';
+      // Sidebar memakai key theme yang sudah dikenali. Header wajib memakai
+      // data website asli dari profil user agar website user tidak pernah hilang
+      // hanya karena preset theme/logo belum tersedia.
+      const rawWebsites = websites || (currentProfile && currentProfile.websites) || [];
       renderSidebarSiteLogos(theme.keys);
-      renderSessionWebsites(theme.keys);
+      renderSessionWebsites(rawWebsites);
       return theme;
     }
 
