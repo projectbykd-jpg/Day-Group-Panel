@@ -3009,12 +3009,17 @@
     function showResult(res) {
       const prev = resultData || {};
       resultData = res || {};
+      // Layout Result terbaru tidak lagi menampilkan elemen #market terpisah.
+      // Parser tetap menghasilkan market untuk kebutuhan internal/copy, tetapi
+      // preview harus tetap berjalan walaupun elemen market tidak dirender.
       const marketEl = document.getElementById('market');
       const newMarket = res.market || '-';
       const realMarket = newMarket !== '-' && newMarket !== 'UNKNOWN';
-      marketEl.className = realMarket ? "text-base sm:text-lg font-extrabold text-white tracking-widest animate-market" : "text-base sm:text-lg font-extrabold text-white tracking-widest";
-      if (realMarket && newMarket !== (prev.market || '-')) FX.scramble(marketEl, { text: newMarket, step: 26 });
-      else marketEl.innerText = newMarket;
+      if (marketEl) {
+        marketEl.className = realMarket ? "text-base sm:text-lg font-extrabold text-white tracking-widest animate-market" : "text-base sm:text-lg font-extrabold text-white tracking-widest";
+        if (realMarket && newMarket !== (prev.market || '-')) FX.scramble(marketEl, { text: newMarket, step: 26 });
+        else marketEl.innerText = newMarket;
+      }
       const td2 = document.getElementById('twoDigit');
       const newTd = res.twoDigit !== '' ? String(res.twoDigit).padStart(2, '0') : '-';
       td2.innerText = newTd;
@@ -3030,8 +3035,10 @@
 
     function resetMonitor() {
       resultData = {};
-      document.getElementById('market').innerText = '-';
-      document.getElementById('twoDigit').innerText = '-';
+      const marketEl = document.getElementById('market');
+      if (marketEl) marketEl.innerText = '-';
+      const twoDigitEl = document.getElementById('twoDigit');
+      if (twoDigitEl) twoDigitEl.innerText = '-';
       document.getElementById('shio').innerText = '-';
       document.getElementById('shio-icon').innerText = '';
       document.getElementById('status').innerText = '-';
