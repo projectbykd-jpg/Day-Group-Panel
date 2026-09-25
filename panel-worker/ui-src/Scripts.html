@@ -909,6 +909,15 @@
         if (nav) nav.classList.toggle('nav-active', key === page);
       });
 
+      document.querySelectorAll('.mobile-nav-item').forEach(el => {
+        const direct = el.dataset.mobilePage;
+        const group = el.dataset.mobileGroup;
+        const inGroup =
+          (group === 'automation' && ['result','prediction','invest'].includes(page)) ||
+          (group === 'lapor' && ['lap-admin','lap-motion','lap-mozart','lap-setting','pga-pending'].includes(page));
+        el.classList.toggle('nav-active', direct === page || inGroup);
+      });
+
       const kicker = document.getElementById('headerKicker');
       if (kicker) kicker.textContent = HEADER_KICKER[page] || 'KD-GROUP PANEL';
 
@@ -3627,7 +3636,13 @@
       document.querySelectorAll('[data-role-only="ADMIN"], .admin-only').forEach(el => setRoleOnly(el, isAdmin));
       document.querySelectorAll('[data-role-only="BOT"], .bot-only').forEach(el => setRoleOnly(el, isBot));
 
-      const botGroup = document.querySelector('.nav-group[data-group="bot"]');
+      document.querySelectorAll('.mobile-nav-item[data-mobile-group="automation"], .mobile-nav-item[data-mobile-group="lapor"]').forEach(el => {
+        el.style.display = isBot ? 'none' : '';
+      });
+      const mobileActivity = document.querySelector('.mobile-nav-item[data-mobile-page="activity"]');
+      if (mobileActivity) mobileActivity.style.display = isBot ? 'none' : '';
+
+            const botGroup = document.querySelector('.nav-group[data-group="bot"]');
       if (botGroup) setRoleOnly(botGroup, isBot, 'flex');
 
       document.querySelectorAll('.livechat-op-only').forEach(el => setRoleOnly(el, isOperatorOrAdmin));
