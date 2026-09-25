@@ -296,6 +296,38 @@
       return keys;
     }
 
+    function renderSessionWebsites(websites) {
+      const nameEl = document.getElementById('session-sites-name');
+      const logosEl = document.getElementById('session-logos');
+      if (!nameEl || !logosEl) return;
+
+      const keys = [...new Set(
+        (Array.isArray(websites) ? websites : String(websites || '').split(','))
+          .map(normalizeThemeWebsite)
+          .filter(key => !!SITE_THEME_PRESETS[key])
+      )];
+
+      if (!keys.length) {
+        nameEl.textContent = '-';
+        logosEl.innerHTML = '';
+        return;
+      }
+
+      const names = keys.map(key => SITE_THEME_PRESETS[key].name);
+      nameEl.textContent = names.join(' + ');
+
+      logosEl.innerHTML = keys.map(key => {
+        const meta = SITE_LOGO_PRESETS[key];
+        if (!meta || !meta.single) return '';
+        const label = SITE_THEME_PRESETS[key].name;
+        return `
+          <div class="session-logo-item" title="${escapeHtml(label)}">
+            <img src="${meta.single}" alt="${escapeHtml(label)}" loading="eager" decoding="async" referrerpolicy="no-referrer">
+            <span>${escapeHtml(label)}</span>
+          </div>`;
+      }).join('');
+    }
+
     function applyWebsiteTheme(websites) {
       const theme = buildWebsiteTheme(websites || (currentProfile && currentProfile.websites) || []);
       document.body.classList.add('theme-dynamic');
@@ -318,6 +350,7 @@
       }
       if (badge) badge.style.display = currentProfile ? 'inline-flex' : 'none';
       renderSidebarSiteLogos(theme.keys);
+      renderSessionWebsites(theme.keys);
       return theme;
     }
 
