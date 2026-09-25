@@ -1469,39 +1469,19 @@
       // rentang yang diminta memang mencakup hari ini, jadi dipakai cuma dalam
       // kondisi itu dan user diberi tahu lewat peringatan.
       const pullCalls = isDepo
-        // VID bisa berisi BEBERAPA vendor_id sekaligus (dipisah koma/spasi/baris
-        // baru) -- akun yang ngurus banyak website (dropdown "By Website" di
-        // Motion) punya vendor_id BEDA per website, jadi tarik data 1-per-1 per
-        // vendor lalu digabung, supaya semua website ikut ketarik dalam 1x jalan.
         ? "  const vids=VID.split(/[\\s,]+/).filter(Boolean);\n"
-          + "  const d1=sd+' 00:00:00', d2=ed+' 23:59:59';\n"
-          + "  const hariIni=td(new Date());\n"
-          + "  let paid=[], create=[], fallbackDipakai=false;\n"
-          + "  const tMulai=Date.now();\n"
+          + "  let all=[];\n"
           + "  for(const vid of vids){\n"
-          + "    for(const kind of [{label:'paid',fb:'0',sf:'paid_at',into:0},{label:'create',fb:'1',sf:'created_at',into:1}]){\n"
-          + "      console.log('%cMotion: deposit '+kind.label+' vendor '+vid+'...','color:#0ff');\n"
-          + "      let rows;\n"
-          + "      try{\n"
-          // limit sengaja BESAR (1000): query bertanggal di Motion mahal sekali,
-          // jadi lebih baik dibayar 1-2 kali daripada 9 kali @ beberapa menit.
-          // Aman walau server diam-diam membatasinya -- paginasi di pull()
-          // memakai offset dari jumlah baris yang benar-benar diterima.
-          + "        rows=await pull('/api/deposit/list/pga',{limit:1000,count:0,date1:d1,date2:d2,filter_by:kind.fb,filter_status:'1',sort:{field:kind.sf,order:'desc'},vendor_id:vid},sd);\n"
-          + "      }catch(e){\n"
-          + "        if(!(sd<=hariIni&&hariIni<=ed))throw e;\n"
-          + "        console.log('%cMotion: request bertanggal gagal ('+((e&&e.message)||e)+') -- coba jalur cepat TANPA filter tanggal (hanya data hari ini)','color:#ff0');\n"
-          + "        rows=await pull('/api/deposit/list/pga',{limit:1000,count:0,vendor_id:vid},sd);\n"
-          + "        fallbackDipakai=true;\n"
-          + "      }\n"
-          + "      if(kind.into===0)paid=paid.concat(rows);else create=create.concat(rows);\n"
-          + "    }\n"
+          + "    console.log('%cMotion: deposit vendor '+vid+' (request dasar)...','color:#0ff');\n"
+          + "    const rows=await pull('/api/deposit/list/pga',{limit:1000,count:0,vendor_id:vid},sd);\n"
+          + "    all=all.concat(rows);\n"
           + "  }\n"
-          + "  if(fallbackDipakai)console.log('%cPERHATIAN: sebagian data diambil lewat jalur cepat tanpa filter tanggal -- isinya HANYA hari ini.','color:#f80;font-weight:bold');\n"
-          + "  console.log('%cMotion: total waktu tarik deposit '+((Date.now()-tMulai)/1000).toFixed(1)+' detik ('+vids.length+' vendor x 2 query)','color:#0f0;font-weight:bold');\n"
+          + "  const inDayRange=v=>{const d=String(v||'').split(' ')[0];return !!d&&d>=sd&&d<=ed;};\n"
+          + "  const paid=all.filter(r=>inDayRange(r&&r.paid_at));\n"
+          + "  const create=all.filter(r=>inDayRange(r&&r.created_at));\n"
+          + "  console.log('%cMotion: deposit selesai — raw '+all.length+' · paid '+paid.length+' · create '+create.length,'color:#0f0;font-weight:bold');\n"
         : "  console.log('%cMotion: withdraw...','color:#0ff');\n"
-          + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'});\n";
-      const payload = isDepo
+          + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'});\n";      const payload = isDepo
         ? "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,depoPaidRows:paid,depoCreateRows:create}"
         : "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,wdRows:wd}";
       const okMsg = isDepo
