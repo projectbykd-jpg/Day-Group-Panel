@@ -1469,19 +1469,22 @@
       // rentang yang diminta memang mencakup hari ini, jadi dipakai cuma dalam
       // kondisi itu dan user diberi tahu lewat peringatan.
       const pullCalls = isDepo
+        // VID bisa berisi BEBERAPA vendor_id sekaligus (dipisah koma/spasi/baris
+        // baru) -- akun yang ngurus banyak website (dropdown "By Website" di
+        // Motion) punya vendor_id BEDA per website, jadi tarik data 1-per-1 per
+        // vendor lalu digabung, supaya semua website ikut ketarik dalam 1x jalan.
         ? "  const vids=VID.split(/[\\s,]+/).filter(Boolean);\n"
-          + "  let all=[];\n"
+          + "  const d1=sd+' 00:00:00', d2=ed+' 23:59:59';\n"
+          + "  let paid=[], create=[];\n"
           + "  for(const vid of vids){\n"
-          + "    console.log('%cMotion: deposit vendor '+vid+' (request dasar)...','color:#0ff');\n"
-          + "    const rows=await pull('/api/deposit/list/pga',{limit:1000,count:0,vendor_id:vid},sd);\n"
-          + "    all=all.concat(rows);\n"
+          + "    console.log('%cMotion: deposit paid vendor '+vid+'...','color:#0ff');\n"
+          + "    paid=paid.concat(await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'0',sort:{field:'paid_at',order:'desc'},vendor_id:vid},20));\n"
+          + "    console.log('%cMotion: deposit create vendor '+vid+'...','color:#0ff');\n"
+          + "    create=create.concat(await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'1',sort:{field:'created_at',order:'desc'},vendor_id:vid},20));\n"
           + "  }\n"
-          + "  const inDayRange=v=>{const d=String(v||'').split(' ')[0];return !!d&&d>=sd&&d<=ed;};\n"
-          + "  const paid=all.filter(r=>inDayRange(r&&r.paid_at));\n"
-          + "  const create=all.filter(r=>inDayRange(r&&r.created_at));\n"
-          + "  console.log('%cMotion: deposit selesai — raw '+all.length+' · paid '+paid.length+' · create '+create.length,'color:#0f0;font-weight:bold');\n"
         : "  console.log('%cMotion: withdraw...','color:#0ff');\n"
-          + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'});\n";      const payload = isDepo
+          + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'},100);\n";
+      const payload = isDepo
         ? "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,depoPaidRows:paid,depoCreateRows:create}"
         : "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,wdRows:wd}";
       const okMsg = isDepo
@@ -1609,7 +1612,7 @@
         + "      const tReq=Date.now();\n"
         + "      const r=await post(path,{...bd,page:p,start:rows.length});\n"
         + "      const detik=((Date.now()-tReq)/1000).toFixed(1);\n"
-        + "      if(r.status===401||r.status===403){throw new Error('Motion '+r.status+' -- ditolak Motion. Cek Token Motion di Setting panel (salin ulang x-access-token terbaru dari Network tab), atau logout lalu login ulang di tab Motion ini.');}\n"
+        + "      if(r.status===401||r.status===403){throw new Error('Motion '+r.status+' -- request Deposit bertanggal ditolak Motion. Gunakan Skrip Nebeng Deposit dari Lap Motion agar request dibuat oleh halaman RIWAYAT PGA sendiri.');}\n"
         + "      if(!r.ok){if(p===0)throw new Error(path+' HTTP '+r.status);break;}\n"
         + "      const j=await r.json();\n"
         + "      if(total===null){const opt=j&&j.data_optional;const t=opt&&opt.total_records;if(t!=null&&!isNaN(Number(t)))total=Number(t);}\n"
