@@ -1499,6 +1499,11 @@
     let pgaPendingRows = [];
     let pgaPendingUpdatedAt = 0;
     let pgaPendingTimer = null;
+    // WD LISTED -- checklist manual (dari PGA Pending yang dicentang+COPY),
+    // PERSISTEN di Turso (lihat src/lib/wd-listed.ts), tampil lintas operator
+    // berdasarkan WEBSITE yang sama, bukan cuma yang menambahkan.
+    let wdListedRows = [];
+    let wdListedTimer = null;
 
     function pgaPendingConsoleScript() {
       const panel = location.origin;
@@ -1506,7 +1511,8 @@
       return "(async()=>{\n"
         + "  const O=location.origin, PANEL=" + JSON.stringify(panel) + ", TOKEN=" + JSON.stringify(token) + ";\n"
         + "  if(!/motionv2/i.test(O)){alert('Buka skrip ini di TAB MOTION (motionv2.com), bukan di sini.');return;}\n"
-        + "  if(window.__pgaPendingTimer){clearInterval(window.__pgaPendingTimer);console.log('%cPGA Pending: skrip lama dihentikan, mulai ulang.','color:#ff0');}\n"
+        + "  if(window.__pgaPendingTimer){clearInterval(window.__pgaPendingTimer);console.log('%cPGA Pending: skrip lama (interval biasa) dihentikan, mulai ulang.','color:#ff0');}\n"
+        + "  if(window.__pgaPendingWorker){try{window.__pgaPendingWorker.terminate();}catch(e){}console.log('%cPGA Pending: skrip lama (worker) dihentikan, mulai ulang.','color:#ff0');}\n"
         + "  const norm=s=>String(s||'').replace(/\\s+/g,' ').trim();\n"
         // Halaman WD Request BUKAN <table> HTML -- dibangun dari <div> MUI, dan
         // (ketahuan dari testing user) punya DUA representasi teks per baris
@@ -1548,15 +1554,25 @@
         + "      const statusIdx=cells.indexOf(statusCell);\n"
         + "      if(statusIdx<7)return;\n"
         + "      const cellText=c=>c?norm(c.innerText||c.textContent):'';\n"
+        // Kadang (tergantung breakpoint/varian render) label kolomnya IKUT
+        // kebawa nempel di depan nilai dlm sel yang sama (mis. sel WEBSITE
+        // isinya \"WEBSITE XOTOGEL\", bukan cuma \"XOTOGEL\") -- dibersihkan di
+        // sini apapun bentuknya: kalau labelnya tidak ada pun, ini no-op aman.\n"
+        + "      const strip=(t,labelRe)=>t.replace(new RegExp('^'+labelRe+'\\\\.?:?\\\\s*','i'),'').trim();\n"
         + "      const statusFull=cellText(statusCell);\n"
         + "      const refM=statusFull.match(/PGA Ref No:?\\s*(\\S+)/i);\n"
         + "      const vendM=statusFull.match(/Vendor Name:?\\s*([^]*)$/i);\n"
+        // Baris yang PGA Ref No-nya belum muncul (badge PGA Pending sudah ada
+        // tapi ref-nya belum ke-assign di Motion) SENGAJA dilewati total --
+        // bukan cuma disembunyikan dari tombol COPY, tapi tidak masuk List
+        // sama sekali, karena datanya memang belum lengkap buat dicatat.
+        + "      if(!refM)return;\n"
         + "      found.push({\n"
-        + "        website: cellText(cells[statusIdx-7]),\n"
-        + "        idTrans: cellText(cells[statusIdx-6]),\n"
-        + "        tanggal: cellText(cells[statusIdx-5]),\n"
-        + "        idUser: cellText(cells[statusIdx-4]),\n"
-        + "        jumlah: parseInt(cellText(cells[statusIdx-1]).replace(/[^0-9]/g,''),10)||0,\n"
+        + "        website: strip(cellText(cells[statusIdx-7]),'WEBSITE'),\n"
+        + "        idTrans: strip(cellText(cells[statusIdx-6]),'ID\\\\s*TRANS'),\n"
+        + "        tanggal: strip(cellText(cells[statusIdx-5]),'TANGGAL'),\n"
+        + "        idUser: strip(cellText(cells[statusIdx-4]),'ID\\\\s*USER'),\n"
+        + "        jumlah: parseInt(strip(cellText(cells[statusIdx-1]),'JUMLAH').replace(/[^0-9]/g,''),10)||0,\n"
         + "        statusText: 'Grabbed PGA PGA Pending 000',\n"
         + "        pgaRefNo: refM?refM[1]:'',\n"
         + "        vendorName: vendM?norm(vendM[1]):'',\n"
@@ -1576,7 +1592,26 @@
         + "  }\n"
         + "  console.log('%cPGA Pending: mulai sinkron tiap 2 detik. Biarkan tab ini TETAP TERBUKA di halaman WD Request.','color:#0f0;font-weight:bold');\n"
         + "  tick();\n"
-        + "  window.__pgaPendingTimer=setInterval(tick,2000);\n"
+        // Timer LEWAT WEB WORKER, bukan setInterval biasa di thread utama --
+        // Chrome (dan browser lain) MELAMBATKAN setInterval sampai cuma 1x per
+        // MENIT kalau tab-nya di-background/minimize (buat hemat baterai),
+        // padahal justru tujuan fitur ini supaya tab Motion boleh dikecilkan
+        // sambil kerja di tempat lain. Timer di dalam Worker TIDAK kena
+        // pelambatan itu, jadi tetap tiap 2 detik walau tab tidak aktif.
+        // Fallback ke setInterval biasa kalau Worker gagal dibuat (mis. CSP
+        // situsnya melarang blob: worker).\n"
+        + "  try{\n"
+        + "    const workerSrc='setInterval(function(){postMessage(1)},2000);';\n"
+        + "    const blobUrl=URL.createObjectURL(new Blob([workerSrc],{type:'application/javascript'}));\n"
+        + "    const worker=new Worker(blobUrl);\n"
+        + "    worker.onmessage=tick;\n"
+        + "    worker.onerror=function(e){console.log('PGA Pending: Worker error, fallback ke setInterval biasa --',e&&e.message);worker.terminate();window.__pgaPendingWorker=null;window.__pgaPendingTimer=setInterval(tick,2000);};\n"
+        + "    window.__pgaPendingWorker=worker;\n"
+        + "    console.log('%cPGA Pending: timer pakai Web Worker -- tetap tiap 2 detik walau tab Motion di-background/minimize.','color:#0ff');\n"
+        + "  }catch(e){\n"
+        + "    console.log('PGA Pending: Web Worker gagal dibuat, fallback ke setInterval biasa (bisa melambat kalau tab di-background) --',(e&&e.message)||e);\n"
+        + "    window.__pgaPendingTimer=setInterval(tick,2000);\n"
+        + "  }\n"
         + "  alert('PGA Pending: sinkron otomatis jalan tiap 2 detik selama tab ini tetap terbuka di halaman WD Request.\\n\\nBuka panel -> menu PGA Pending.');\n"
         + "})();";
     }
@@ -1627,24 +1662,29 @@
       const code = pgaPendingConsoleScript();
       const escCode = c => c.replace(/[&<>]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[ch]));
       host.innerHTML = lapHeaderCard('fa-tower-broadcast', 'PGA Pending', 'Live sync withdraw berstatus PGA Pending dari motionv2.com/withdraw-request.', `
-        <div class="glass-inner rounded-2xl p-4 border border-rose-500/20 text-[11px] text-slate-300 leading-relaxed">
-          <div class="font-bold text-rose-300 mb-1"><i class="fa-solid fa-satellite-dish mr-1"></i>Cara pakai</div>
-          List ini TIDAK ditarik server (Motion sering menolak trafik server/WAF) — dibaca LANGSUNG dari tabel WD Request oleh skrip yang jalan di tab Motion, tiap 2 detik, selama tab itu terbuka. Baris yang sudah hilang dari WD Request otomatis hilang dari sini juga dalam hitungan detik.
-          <ol class="list-decimal ml-4 mt-1.5 space-y-1">
-            <li>Buka tab <b>Motion</b> (motionv2.com) → menu <b>WD REQUEST</b>, pastikan sudah login.</li>
-            <li>Klik <b>Salin Skrip</b> di bawah.</li>
-            <li>Tekan <b>F12</b> → tab <b>Console</b> (pertama kali Chrome minta ketik <code>allow pasting</code> dulu lalu Enter).</li>
-            <li>Tempel (Ctrl+V) → <b>Enter</b>. Biarkan tab Motion itu TETAP TERBUKA (boleh dikecilkan, jangan ditutup).</li>
-            <li>Balik ke sini — List di bawah update sendiri tiap 2 detik.</li>
-          </ol>
-          <div class="flex flex-wrap gap-2 mt-3">
-            <button onclick="pgaPendingCopyScript()" class="bg-gradient-to-r from-rose-400 to-orange-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs"><i class="fa-regular fa-copy mr-1"></i>Salin Skrip</button>
-            <button onclick="document.getElementById('pgaPendingCodeWrap').hidden=!document.getElementById('pgaPendingCodeWrap').hidden" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-solid fa-code mr-1"></i>Lihat Skrip</button>
+        <details class="glass-inner rounded-2xl border border-rose-500/20 text-[11px] text-slate-300 leading-relaxed pga-collapse" open>
+          <summary class="p-4 flex items-center gap-2 cursor-pointer select-none">
+            <span class="font-bold text-rose-300 flex-1"><i class="fa-solid fa-satellite-dish mr-1"></i>Cara pakai</span>
+            <i class="fa-solid fa-chevron-down pga-collapse-caret"></i>
+          </summary>
+          <div class="px-4 pb-4 -mt-1">
+            List ini TIDAK ditarik server (Motion sering menolak trafik server/WAF) — dibaca LANGSUNG dari tabel WD Request oleh skrip yang jalan di tab Motion, tiap 2 detik, selama tab itu terbuka. Baris yang sudah hilang dari WD Request otomatis hilang dari sini juga dalam hitungan detik.
+            <ol class="list-decimal ml-4 mt-1.5 space-y-1">
+              <li>Buka tab <b>Motion</b> (motionv2.com) → menu <b>WD REQUEST</b>, pastikan sudah login.</li>
+              <li>Klik <b>Salin Skrip</b> di bawah.</li>
+              <li>Tekan <b>F12</b> → tab <b>Console</b> (pertama kali Chrome minta ketik <code>allow pasting</code> dulu lalu Enter).</li>
+              <li>Tempel (Ctrl+V) → <b>Enter</b>. Biarkan tab Motion itu TETAP TERBUKA (boleh dikecilkan, jangan ditutup).</li>
+              <li>Balik ke sini — List di bawah update sendiri tiap 2 detik.</li>
+            </ol>
+            <div class="flex flex-wrap gap-2 mt-3">
+              <button onclick="pgaPendingCopyScript()" class="bg-gradient-to-r from-rose-400 to-orange-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs"><i class="fa-regular fa-copy mr-1"></i>Salin Skrip</button>
+              <button onclick="document.getElementById('pgaPendingCodeWrap').hidden=!document.getElementById('pgaPendingCodeWrap').hidden" class="glass-inner px-4 py-2 rounded-xl text-xs font-bold"><i class="fa-solid fa-code mr-1"></i>Lihat Skrip</button>
+            </div>
+            <div id="pgaPendingCodeWrap" hidden class="mt-2">
+              <textarea id="pgaPendingCode" readonly onclick="this.select()" class="w-full h-32 glass-inner rounded-xl p-2 text-[10px] font-mono text-slate-200 leading-tight">${escCode(code)}</textarea>
+            </div>
           </div>
-          <div id="pgaPendingCodeWrap" hidden class="mt-2">
-            <textarea id="pgaPendingCode" readonly onclick="this.select()" class="w-full h-32 glass-inner rounded-xl p-2 text-[10px] font-mono text-slate-200 leading-tight">${escCode(code)}</textarea>
-          </div>
-        </div>
+        </details>
         <div class="flex items-center justify-between flex-wrap gap-2 mt-1">
           <span class="text-[11px] font-bold text-slate-300">Baris aktif: <span id="pgaPendingLiveCount" class="text-rose-400">${pgaPendingRows.length}</span></span>
           <div id="pgaPendingUpdatedAt" class="text-[10px] text-slate-500">Memuat…</div>
@@ -1653,10 +1693,117 @@
           ${lapTable('pga_pending', ['WEBSITE','ID TRANS','TANGGAL','ID USER','JUMLAH','STATUS','PGA REF NO','VENDOR'], pgaPendingRows,
             r => `<tr>${td(r.website)}${td(r.idTrans,'text-[10px]')}${td(r.tanggal)}${td(r.idUser,'font-bold text-cyan-300')}${td('Rp '+lapFmt(r.jumlah),'text-right text-emerald-400')}${td(r.statusText,'text-[10px] text-rose-300')}${td(r.pgaRefNo,'text-[10px]')}${td(r.vendorName,'text-amber-300')}</tr>`,
             r => [r.vendorName, r.website, r.idTrans, r.tanggal, r.idUser, 'Rp '+lapFmt(r.jumlah), r.statusText, r.pgaRefNo, 'Pending'].join('\t'),
-            ['website','idTrans','idUser','pgaRefNo','vendorName'], {title:'PGA Pending', open:true})}
+            ['website','idTrans','idUser','pgaRefNo','vendorName'], {title:'PGA Pending', open:true, checkable:true})}
+        </div>
+        <div class="mt-1">
+          <div id="wdListedTableWrap">
+            ${lapTable('wd_listed', ['WEBSITE','ID TRANS','TANGGAL','ID USER','JUMLAH','PGA REF NO','VENDOR','CEK TERAKHIR','ACTION'], wdListedRows,
+              r => `<tr>${td(r.website)}${td(r.idTrans,'text-[10px]')}${td(r.tanggal)}${td(r.idUser,'font-bold text-cyan-300')}${td('Rp '+lapFmt(r.jumlah),'text-right text-emerald-400')}${td(`<a href="https://dbb2b.q2checkout.com/struk/disbursement/${encodeURIComponent(r.pgaRefNo)}" target="_blank" rel="noopener" class="text-[10px] underline decoration-dotted">${r.pgaRefNo}</a>`)}${td(r.vendorName,'text-amber-300')}${td(r.checkStatus?(`<span class="${wdListedStatusClass(r.checkStatus)}">${r.checkStatus}</span>${r.checkDate?`<div class="text-[9px] text-slate-500 mt-0.5">${r.checkDate}</div>`:''}`):'<span class="text-slate-600">—</span>')}${td(`<div class="flex items-center gap-1.5"><button onclick="wdListedCheckClick(${r.id},this)" class="lap-pg-btn !w-auto px-2" title="Cek status terbaru"><i class="fa-solid fa-rotate"></i> CEK</button><button onclick="wdListedDeleteClick(${r.id})" class="lap-pg-btn !w-auto px-2 text-rose-400" title="Hapus dari list"><i class="fa-solid fa-xmark"></i></button></div>`)}</tr>`,
+              r => r.pgaRefNo,
+              ['website','idTrans','idUser','pgaRefNo','vendorName'], {title:'WD Listed', open:true, checkable:true})}
+          </div>
         </div>`);
       lapTblMountAll();
       pgaPendingRepaint();
+      // Checklist+COPY di tabel PGA Pending SEKALIGUS mendaftarkan baris yang
+      // dicentang ke WD Listed -- tombol COPY bawaan lapTable tidak diubah
+      // (tabel lain yang pakai checkable nanti tidak ikut kepengaruh), cuma
+      // "disambar" khusus di sini supaya tetap menyalin ke clipboard SAMA
+      // seperti biasa, plus kirim ke wdListedSync kalau memang ada centangan.
+      const origPgaCopy = window['__lapCopy_pga_pending'];
+      window['__lapCopy_pga_pending'] = (ev) => {
+        const st = lapTblState['pga_pending'];
+        if (st && st.checkable && st.selected.size) {
+          const list = lapTblFiltered('pga_pending').filter((r,i) => st.selected.has(st.copyFn(r,i)));
+          if (list.length) wdListedSyncRows(list);
+        }
+        origPgaCopy(ev);
+      };
+      // Format COPY WD Listed BEDA TOTAL dari tabel lain (bukan 1 baris per
+      // transaksi) -- tiap baris jadi blok multi-baris (WEB/Trans ID/Date
+      // Trans/User ID/Status/PGA Ref. No), dipisah 1 baris kosong antar blok,
+      // dan SATU baris "KET : DONE FU KE TICKETING" di paling akhir (cuma
+      // sekali walau yang dicentang banyak) -- jadi TIDAK dipakaikan copyFn
+      // bawaan lapTable (yang isinya cuma pgaRefNo, dipakai internal buat
+      // identitas checkbox saja), tombol COPY-nya di-timpa total di sini.
+      window['__lapCopy_wd_listed'] = (ev2) => {
+        ev2 && ev2.stopPropagation();
+        const st = lapTblState['wd_listed'];
+        let list = lapTblFiltered('wd_listed');
+        if (st && st.checkable && st.selected.size) {
+          list = list.filter((r,i) => st.selected.has(st.copyFn(r,i)));
+        }
+        if (!list.length) { toast('Data kosong'); return; }
+        const pad2 = n => String(n).padStart(2,'0');
+        // "9/17/2026 3:34:43 AM" (apa adanya dari Motion) -> "09/17/2026 03:34:43"
+        // (format 24 jam berpadding, sesuai contoh yang diminta).
+        const formatDateTrans = t => {
+          const m = String(t||'').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)?$/i);
+          if (!m) return t || '';
+          let [, mo, d, y, h, mi, s, ap] = m;
+          h = parseInt(h, 10);
+          if (ap) {
+            const apUp = ap.toUpperCase();
+            if (apUp === 'PM' && h !== 12) h += 12;
+            if (apUp === 'AM' && h === 12) h = 0;
+          }
+          return pad2(mo) + '/' + pad2(d) + '/' + y + ' ' + pad2(h) + ':' + mi + ':' + s;
+        };
+        const block = r => 'WEB : ' + r.website + '\nTrans ID : ' + r.idTrans + '\nDate Trans : ' + formatDateTrans(r.tanggal) +
+          '\nUser ID : ' + r.idUser + '\nStatus : ' + r.statusText + '\nPGA Ref. No: ' + r.pgaRefNo;
+        const text = list.map(block).join('\n\n') + '\n\nKET : DONE FU KE TICKETING';
+        navigator.clipboard.writeText(text).then(() => toast(list.length + ' baris disalin'));
+      };
+      loadWdListed();
+      wdListedTimer && clearInterval(wdListedTimer);
+      wdListedTimer = setInterval(loadWdListed, 8000);
+    }
+    function wdListedStatusClass(status) {
+      const s = String(status||'').toLowerCase();
+      if (s.indexOf('success') >= 0 || s.indexOf('sukses') >= 0 || s.indexOf('paid') >= 0) return 'text-emerald-400 font-bold';
+      if (s.indexOf('fail') >= 0 || s.indexOf('gagal') >= 0 || s.indexOf('reject') >= 0) return 'text-rose-400 font-bold';
+      return 'text-amber-400 font-bold';
+    }
+    function wdListedSyncRows(rows) {
+      google.script.run.withSuccessHandler(res => {
+        if (res && res.success) { toast((res.added||0) + ' baris masuk ke WD Listed'); loadWdListed(); }
+      }).withFailureHandler(() => {}).wdListedSync(currentSessionToken, rows);
+    }
+    function loadWdListed() {
+      google.script.run.withSuccessHandler(res => {
+        if (!res || !res.success) return;
+        wdListedRows = res.rows || [];
+        if (lapTblState['wd_listed']) { lapTblState['wd_listed'].rows = wdListedRows; lapTblRepaint('wd_listed'); }
+      }).withFailureHandler(() => {}).wdListedGetList(currentSessionToken);
+    }
+    function wdListedCheckClick(id, btn) {
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; }
+      google.script.run.withSuccessHandler(res => {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-rotate"></i> CEK'; }
+        if (!res || !res.success) { toast('Gagal cek status: ' + ((res && res.message) || '?')); return; }
+        const idx = wdListedRows.findIndex(r => r.id === res.row.id);
+        if (idx >= 0) wdListedRows[idx] = res.row;
+        if (lapTblState['wd_listed']) { lapTblState['wd_listed'].rows = wdListedRows; lapTblRepaint('wd_listed'); }
+        toast('Status: ' + res.row.checkStatus);
+      }).withFailureHandler(e => {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-rotate"></i> CEK'; }
+        toast('Gagal cek status: ' + ((e && e.message) || e));
+      }).wdListedCheck(currentSessionToken, id);
+    }
+    async function wdListedDeleteClick(id) {
+      const approved = await confirmCenter({
+        type: 'danger',
+        title: 'Hapus dari WD Listed?',
+        message: 'Baris ini akan dihapus dari daftar WD Listed untuk semua operator website ini.',
+        confirmText: 'YA, HAPUS'
+      });
+      if (!approved) return;
+      google.script.run.withSuccessHandler(res => {
+        if (!res || !res.success) { toast('Gagal menghapus.'); return; }
+        wdListedRows = wdListedRows.filter(r => r.id !== id);
+        if (lapTblState['wd_listed']) { lapTblState['wd_listed'].rows = wdListedRows; lapTblRepaint('wd_listed'); }
+        toast('Baris dihapus dari WD Listed');
+      }).withFailureHandler(e => toast('Gagal menghapus: ' + ((e && e.message) || e))).wdListedRemove(currentSessionToken, id);
     }
 
     function lapRenderMotion(host) {
