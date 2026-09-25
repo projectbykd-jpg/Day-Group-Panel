@@ -296,58 +296,33 @@
       return keys;
     }
 
-        function renderSessionWebsites(websites) {
+    function renderSessionWebsites(websites) {
       const nameEl = document.getElementById('session-sites-name');
       const logosEl = document.getElementById('session-logos');
       if (!nameEl || !logosEl) return;
 
-      const rawSites = Array.isArray(websites)
-        ? websites
-        : String(websites || '').split(',');
+      const raw = Array.isArray(websites) ? websites : String(websites || '').split(',');
+      const sites = [...new Set(raw.map(v => String(v || '').trim()).filter(Boolean))];
 
-      const rawKeys = [...new Set(rawSites
-        .map(v => String(v || '').trim())
-        .filter(Boolean))];
-
-      const keys = [...new Set(
-        rawKeys
-          .map(normalizeThemeWebsite)
-          .filter(key => !!SITE_THEME_PRESETS[key])
-      )];
-
-      // Jangan pernah membuat header kosong. Jika preset logo belum ada,
-      // tetap tampilkan nama website dari profil user.
-      const displayNames = rawKeys.map(v => {
-        const key = normalizeThemeWebsite(v);
-        return SITE_THEME_PRESETS[key]?.name || v.trim().toUpperCase();
-      });
-
-      if (!displayNames.length) {
+      if (!sites.length) {
         nameEl.textContent = '-';
         logosEl.innerHTML = '';
         return;
       }
 
-      nameEl.textContent = displayNames.join(' + ');
+      nameEl.textContent = sites.map(v => {
+        const key = normalizeThemeWebsite(v);
+        return (SITE_THEME_PRESETS[key] && SITE_THEME_PRESETS[key].name) || v.toUpperCase();
+      }).join(' + ');
 
-      logosEl.innerHTML = rawKeys.map(raw => {
-        const key = normalizeThemeWebsite(raw);
+      logosEl.innerHTML = sites.map(v => {
+        const key = normalizeThemeWebsite(v);
         const meta = SITE_LOGO_PRESETS[key];
-        const label = SITE_THEME_PRESETS[key]?.name || raw.trim().toUpperCase();
-
+        const label = (SITE_THEME_PRESETS[key] && SITE_THEME_PRESETS[key].name) || v.toUpperCase();
         if (!meta || !meta.single) {
-          return `
-            <div class="session-logo-item" title="${escapeHtml(label)}">
-              <div class="session-logo-fallback"><i class="fa-solid fa-globe"></i></div>
-              <span>${escapeHtml(label)}</span>
-            </div>`;
+          return '<div class="session-logo-item"><span>' + escapeHtml(label) + '</span></div>';
         }
-
-        return `
-          <div class="session-logo-item" title="${escapeHtml(label)}">
-            <img src="${meta.single}" alt="${escapeHtml(label)}" loading="eager" decoding="async" referrerpolicy="no-referrer">
-            <span>${escapeHtml(label)}</span>
-          </div>`;
+        return '<div class="session-logo-item"><img src="' + meta.single + '" alt="' + escapeHtml(label) + ' logo" loading="eager" decoding="async" referrerpolicy="no-referrer"><span>' + escapeHtml(label) + '</span></div>';
       }).join('');
     }
 
@@ -372,12 +347,8 @@
         label.title = theme.names.join(' + ');
       }
       if (badge) badge.style.display = currentProfile ? 'inline-flex' : 'none';
-      // Sidebar memakai key theme yang sudah dikenali. Header wajib memakai
-      // data website asli dari profil user agar website user tidak pernah hilang
-      // hanya karena preset theme/logo belum tersedia.
-      const rawWebsites = websites || (currentProfile && currentProfile.websites) || [];
       renderSidebarSiteLogos(theme.keys);
-      renderSessionWebsites(rawWebsites);
+      renderSessionWebsites(websites || (currentProfile && currentProfile.websites) || []);
       return theme;
     }
 
@@ -414,27 +385,7 @@
     function applyAuthenticatedSession(res, tokenOverride) {
       currentSessionToken = String(tokenOverride || res.sessionToken || currentSessionToken || '');
       currentUser = String(res.user || res.username || '');
-      // Profil sesi adalah sumber kebenaran. Normalisasi websites di sini
-      // supaya header selalu membaca assignment user terbaru dari server,
-      // termasuk format JSON/string yang mungkin datang dari versi backend lama.
-      const rawProfile = (res && res.profile && typeof res.profile === 'object') ? res.profile : res;
-      const normalizeWebsites = (value) => {
-        if (Array.isArray(value)) return value.flatMap(v => String(v ?? '').split(',')).map(v => v.trim()).filter(Boolean);
-        if (typeof value === 'string') {
-          const s = value.trim();
-          if (!s) return [];
-          try {
-            const parsed = JSON.parse(s);
-            if (Array.isArray(parsed)) return parsed.flatMap(v => String(v ?? '').split(',')).map(v => v.trim()).filter(Boolean);
-          } catch (e) {}
-          return s.split(',').map(v => v.trim()).filter(Boolean);
-        }
-        return [];
-      };
-      const serverWebsites = normalizeWebsites(rawProfile && rawProfile.websites);
-      const sessionProfile = Object.assign({}, rawProfile || res, { websites: serverWebsites });
-      currentProfile = sessionProfile;
-      res = sessionProfile;
+      currentProfile = res;
       localStorage.setItem("daygroup_session", currentSessionToken);
       localStorage.setItem("daygroup_user", currentUser);
       localStorage.setItem("daygroup_profile", JSON.stringify(res));
@@ -446,7 +397,7 @@
       if (sessionAdmin) sessionAdmin.textContent = currentUser.toUpperCase();
       // masuk panel: sidebar dari kiri, header dari atas, menu & konten di-stagger
       setTimeout(() => FX.enter(), 30);
-      applyWebsiteTheme(sessionProfile.websites);
+      applyWebsiteTheme(res.websites || []);
       // switchPage('home') sudah memanggil loadHeaderSummary() di bagian akhirnya,
       // jadi tidak perlu dipanggil lagi di sini (dulu jadi 2x panggil server).
       const sessionRole = String((res && res.role) || '').trim().toUpperCase();
