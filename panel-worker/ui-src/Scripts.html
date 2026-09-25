@@ -1518,8 +1518,8 @@
         // sessionStorage tab yang login cuma jadi CADANGAN kalau Setting kosong.
         + "  const isJwt=s=>typeof s==='string'&&/^eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/.test(s);\n"
         + "  const findToken=()=>{try{for(const store of [localStorage,sessionStorage]){for(let i=0;i<store.length;i++){const k=store.key(i);let v;try{v=store.getItem(k);}catch(e){continue;}if(isJwt(v))return v;try{const p=JSON.parse(v);if(isJwt(p))return p;if(p&&isJwt(p.token))return p.token;if(p&&isJwt(p.access_token))return p.access_token;if(p&&isJwt(p.accessToken))return p.accessToken;}catch(e){}}}}catch(e){}return null;};\n"
-        + "  let MTOKEN=" + JSON.stringify(mtoken) + "||findToken();\n"
-        + "  if(!MTOKEN){alert('Token Motion belum diisi di Setting, dan tidak ketemu otomatis dari sesi browser ini. Isi Token Motion di menu Setting panel (salin x-access-token dari Network tab), atau pastikan sudah LOGIN di tab Motion ini.');return;}\n"
+        + "  let MTOKEN=findToken()||" + JSON.stringify(mtoken) + ";\n"
+        + "  if(!MTOKEN){alert('Token Motion tidak ketemu otomatis. Pastikan sudah LOGIN di tab Motion ini, atau isi Token Motion di Setting panel.');return;}\n"
         + "  const p2=n=>('0'+n).slice(-2), td=d=>d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());\n"
         + "  const sd=prompt('Tanggal MULAI (YYYY-MM-DD)',td(new Date())); if(!sd)return;\n"
         + "  const ed=prompt('Tanggal AKHIR (YYYY-MM-DD)',sd); if(!ed)return;\n"
@@ -1660,6 +1660,8 @@
     }
     function lapMotionCopyScript(mode) {
       lapEnsureConfig(() => {
+        /* Skrip Console dapat mengambil token fresh langsung dari sesi Motion.
+           tokenMotion di Setting tetap menjadi fallback. */
         const code = lapMotionConsoleScript(mode);
         const done = () => toast('Skrip disalin. Buka menu ' + (mode === 'deposit' ? 'RIWAYAT PGA' : 'WD REQUEST') + ' di tab Motion, Console, tempel, Enter.');
         navigator.clipboard.writeText(code).then(done).catch(() => {
