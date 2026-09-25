@@ -1451,7 +1451,7 @@
       const panel = location.origin;
       const token = currentSessionToken || '';
       const mtoken = ((lapConfig && lapConfig.tokenMotion) || '').replace(/^Bearer\s+/i, '').trim();
-      const vendorId = ((lapConfig && lapConfig.vendorIdMotion) || '').trim();
+      const vendorId = String((lapConfig && lapConfig.vendorIdMotion) || ((document.getElementById('lapVendorIdMotion') && document.getElementById('lapVendorIdMotion').value) || '')).trim();
       const code = mode === 'deposit'
         ? "(async()=>{\nconst origTitle=document.title;\ntry{\n  const O=location.origin, PANEL=\"\", TOKEN=\"\", VID=\"\";\n  if(!/motionv2/i.test(O)){alert('Buka skrip ini di TAB MOTION (motionv2.com), bukan di sini.');return;}\n\n  const panelOrigin=\"PLACEHOLDER_PANEL\".replace('PLACEHOLDER_PANEL',location.origin);\n  const sessionToken=\"PLACEHOLDER_TOKEN\".replace('PLACEHOLDER_TOKEN','');\n  const configuredVendor=\"PLACEHOLDER_VENDOR\".replace('PLACEHOLDER_VENDOR','');\n\n  const isJwt=s=>typeof s==='string'&&/^eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/.test(s);\n  const findToken=()=>{\n    try{\n      for(const store of [localStorage,sessionStorage]){\n        for(let i=0;i<store.length;i++){\n          const k=store.key(i);let v;\n          try{v=store.getItem(k);}catch(e){continue;}\n          if(isJwt(v))return v;\n          try{\n            const p=JSON.parse(v);\n            if(isJwt(p))return p;\n            if(p&&isJwt(p.token))return p.token;\n            if(p&&isJwt(p.access_token))return p.access_token;\n            if(p&&isJwt(p.accessToken))return p.accessToken;\n          }catch(e){}\n        }\n      }\n    }catch(e){}\n    return null;\n  };\n\n  const MTOKEN=findToken()||'';\n  if(!MTOKEN){alert('Token Motion tidak ditemukan. Pastikan sudah LOGIN di tab Motion.');return;}\n\n  const p2=n=>('0'+n).slice(-2);\n  const today=()=>{const d=new Date();return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());};\n  const sd=prompt('Tanggal MULAI (YYYY-MM-DD)',today());if(!sd)return;\n  const ed=prompt('Tanggal AKHIR (YYYY-MM-DD)',sd);if(!ed)return;\n\n  let vendor=configuredVendor.trim();\n  const configuredVendors=[...new Set(configuredVendor.split(',').map(s=>s.trim()).filter(Boolean))];\n  const normalizeVendor=s=>String(s??'').trim();\n  const validVendor=s=>/^[A-Za-z0-9_-]{16,80}$/.test(normalizeVendor(s));\n  const addVendor=(set,v)=>{\n    const x=normalizeVendor(v);\n    if(validVendor(x))set.add(x);\n  };\n  const getSiteKey=()=>{\n    try{\n      const sels=[...document.querySelectorAll('select')];\n      const sel=sels.find(s=>/website|site|web/i.test((s.id||'')+' '+(s.name||'')+' '+(s.getAttribute('aria-label')||'')));\n      const opt=sel&&sel.options[sel.selectedIndex];\n      return String((sel&&sel.value)||((opt&&opt.textContent)||'')||location.hostname).trim().slice(0,180);\n    }catch(e){return location.hostname;}\n  };\n  const cacheKey='dg_motion_vendor_v1:'+location.hostname+':'+getSiteKey();\n  const readCached=()=>{\n    try{\n      const v=localStorage.getItem(cacheKey)||'';\n      return validVendor(v)?v:'';\n    }catch(e){return '';}\n  };\n  const writeCached=v=>{\n    try{if(validVendor(v))localStorage.setItem(cacheKey,v);}catch(e){}\n  };\n\n  if(!vendor && configuredVendors.length===1) vendor=configuredVendors[0];\n  if(!vendor) vendor=readCached();\n\n  if(!vendor){\n    const found=new Set();
 
@@ -1571,14 +1571,25 @@
     }
 
     function lapMotionCopyScript(mode) {
-      lapEnsureConfig(() => {
+      // Selalu ambil konfigurasi terbaru saat generate script.
+      // Jangan pakai snapshot lapConfig lama karena operator bisa baru saja
+      // mengubah Vendor ID di Setting.
+      const applyAndCopy = () => {
         const code = lapMotionConsoleScript(mode);
         const done = () => toast('Skrip disalin. Buka menu ' + (mode === 'deposit' ? 'RIWAYAT PGA' : 'WD REQUEST') + ' di tab Motion, Console, tempel, Enter.');
         navigator.clipboard.writeText(code).then(done).catch(() => {
           const ta = document.getElementById(mode === 'deposit' ? 'lapMotionCodeDeposit' : 'lapMotionCodeWithdraw');
-          if (ta) { document.getElementById('lapMotionCodeWrap').hidden = false; ta.focus(); ta.select(); try { document.execCommand('copy'); done(); } catch(e){ toast('Salin manual dari kotak di bawah'); } }
+          if (ta) {
+            document.getElementById('lapMotionCodeWrap').hidden = false;
+            ta.focus(); ta.select();
+            try { document.execCommand('copy'); done(); } catch(e){ toast('Salin manual dari kotak di bawah'); }
+          }
         });
-      });
+      };
+      google.script.run.withSuccessHandler(res => {
+        if (res && res.success) lapConfig = res.config || lapConfig || {};
+        applyAndCopy();
+      }).withFailureHandler(applyAndCopy).lapGetConfig(currentSessionToken);
     }
 
     function lapRenderMotion(host) {
