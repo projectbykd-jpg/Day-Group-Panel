@@ -414,7 +414,27 @@
     function applyAuthenticatedSession(res, tokenOverride) {
       currentSessionToken = String(tokenOverride || res.sessionToken || currentSessionToken || '');
       currentUser = String(res.user || res.username || '');
-      currentProfile = res;
+      // Profil sesi adalah sumber kebenaran. Normalisasi websites di sini
+      // supaya header selalu membaca assignment user terbaru dari server,
+      // termasuk format JSON/string yang mungkin datang dari versi backend lama.
+      const rawProfile = (res && res.profile && typeof res.profile === 'object') ? res.profile : res;
+      const normalizeWebsites = (value) => {
+        if (Array.isArray(value)) return value.flatMap(v => String(v ?? '').split(',')).map(v => v.trim()).filter(Boolean);
+        if (typeof value === 'string') {
+          const s = value.trim();
+          if (!s) return [];
+          try {
+            const parsed = JSON.parse(s);
+            if (Array.isArray(parsed)) return parsed.flatMap(v => String(v ?? '').split(',')).map(v => v.trim()).filter(Boolean);
+          } catch (e) {}
+          return s.split(',').map(v => v.trim()).filter(Boolean);
+        }
+        return [];
+      };
+      const serverWebsites = normalizeWebsites(rawProfile && rawProfile.websites);
+      const sessionProfile = Object.assign({}, rawProfile || res, { websites: serverWebsites });
+      currentProfile = sessionProfile;
+      res = sessionProfile;
       localStorage.setItem("daygroup_session", currentSessionToken);
       localStorage.setItem("daygroup_user", currentUser);
       localStorage.setItem("daygroup_profile", JSON.stringify(res));
@@ -426,7 +446,7 @@
       if (sessionAdmin) sessionAdmin.textContent = currentUser.toUpperCase();
       // masuk panel: sidebar dari kiri, header dari atas, menu & konten di-stagger
       setTimeout(() => FX.enter(), 30);
-      applyWebsiteTheme(res.websites || []);
+      applyWebsiteTheme(sessionProfile.websites);
       // switchPage('home') sudah memanggil loadHeaderSummary() di bagian akhirnya,
       // jadi tidak perlu dipanggil lagi di sini (dulu jadi 2x panggil server).
       const sessionRole = String((res && res.role) || '').trim().toUpperCase();
