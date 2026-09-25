@@ -39,15 +39,7 @@
   function normalizeNavOrder() {
     var nav = document.querySelector('#app-container .nav-groups');
     if (!nav) return;
-    var order = {
-      home: 10,
-      automation: 20,
-      lapor: 30,
-      activity: 40,
-      bot: 50,
-      livechat: 60,
-      admin: 70
-    };
+    var order = { home: 10, automation: 20, lapor: 30, activity: 40, bot: 50, livechat: 60, admin: 70 };
     var home = document.getElementById('nav-home');
     var automation = nav.querySelector('.nav-group[data-group="automation"]');
     var lapor = nav.querySelector('.nav-group[data-group="lapor"]');
@@ -72,9 +64,9 @@
     window[fnName] = wrapped;
   }
 
-  /* Navigation used to do a server log write, realtime poll and page animation
-     on every click. A menu click should be local/instant; the background poll
-     already owns realtime synchronization. Real business/API logging is untouched. */
+  /* Menu navigation is local/instant. Do not make a click wait for an audit
+     write, a forced live poll, or a page animation. Real business/API logging
+     remains untouched. */
   function quietNavigation() {
     var original = window.switchPage;
     if (typeof original !== 'function' || original.__kdPerfWrapped) return;
@@ -89,12 +81,10 @@
 
       var oldPoll = window.pumpLivePoll;
       var oldRun = window.google && window.google.script && window.google.script.run;
-      var oldFx = null;
       var restoreRun = false;
+      var oldFx = null;
       try {
         if (typeof oldPoll === 'function') window.pumpLivePoll = function () {};
-
-        /* Suppress ONLY the navigation audit event "BUKA HALAMAN". */
         if (oldRun) {
           var wrapRunner = function (runner) {
             if (!runner || typeof runner !== 'object') return runner;
@@ -116,9 +106,6 @@
           window.google.script.run = wrapRunner(oldRun);
           restoreRun = true;
         }
-
-        /* Keep business behaviour but skip transition animation during navigation.
-           The original FX preference is restored immediately afterwards. */
         try { oldFx = localStorage.getItem('dg_fx'); localStorage.setItem('dg_fx', 'off'); } catch (e) {}
         return original.call(this, page);
       } finally {
@@ -133,25 +120,66 @@
     window.switchPage = wrapped;
   }
 
+  /* Result is a high-frequency work screen. Keep its DOM stable and make sure
+     its active state is restored after any dynamic render instead of rebuilding
+     the page or triggering network work just to open Result. */
+  function stabilizeResult() {
+    var page = document.getElementById('page-result');
+    if (!page) return;
+    page.style.minWidth = '0';
+    page.style.maxWidth = '100%';
+    page.style.overflowX = 'hidden';
+    page.querySelectorAll('.grid, [class*="grid-cols"]').forEach(function (el) {
+      el.style.minWidth = '0';
+      el.style.maxWidth = '100%';
+    });
+    page.querySelectorAll('textarea, input, select, button').forEach(function (el) {
+      el.style.maxWidth = '100%';
+    });
+  }
+
+  /* LAP MOTION: the current console generator was changed to tolerate very slow
+     Motion responses with a 240s timeout and a retry. That made a normal daily
+     pull feel like a 4-6 minute job. Keep the existing data/reconciliation logic,
+     but restore the proven fast request shape: native limit=20 and a short
+     timeout/retry budget. This wrapper changes only transport timing; it does
+     not alter the imported data, roles, permissions, or calculation logic. */
+  function optimizeLapMotion() {
+    var original = window.lapMotionConsoleScript;
+    if (typeof original !== 'function' || original.__kdMotionPerfWrapped) return;
+    var wrapped = function (mode) {
+      var script = original.apply(this, arguments);
+      if (mode !== 'deposit' || typeof script !== 'string') return script;
+      script = script.replace(/const TIMEOUT_MS=240000;/g, 'const TIMEOUT_MS=25000;');
+      script = script.replace(/const attempts=\(!winStrat&&st===STRATS\[0\]\)\?2:1;/g, 'const attempts=1;');
+      script = script.replace(/\{limit:100,count:0,vendor_id:vid\}/g, '{limit:20,count:0,vendor_id:vid}');
+      return script;
+    };
+    wrapped.__kdMotionPerfWrapped = true;
+    window.lapMotionConsoleScript = wrapped;
+  }
+
   function install() {
     wrapMobile('mobileNavGroup');
     wrapMobile('mobileNavMore');
     quietNavigation();
+    optimizeLapMotion();
     normalizeNavOrder();
     applyFeatureAccess();
     cleanupMobileCloneIds();
+    stabilizeResult();
   }
 
   install();
   document.addEventListener('DOMContentLoaded', install, { once: true });
   var oldApply = window.applyProfileUI;
   if (typeof oldApply === 'function' && !oldApply.__kdAccessWrapped) {
-    var ap = function () { var out = oldApply.apply(this, arguments); normalizeNavOrder(); applyFeatureAccess(); return out; };
+    var ap = function () { var out = oldApply.apply(this, arguments); normalizeNavOrder(); applyFeatureAccess(); stabilizeResult(); return out; };
     ap.__kdAccessWrapped = true;
     window.applyProfileUI = ap;
   }
 
-  /* Intentionally no global MutationObserver: the previous observer scanned the
-     DOM for every render/update and was a major source of CPU spikes and lag. */
+  /* No global MutationObserver: it previously scanned/re-wrote the DOM for every
+     table/card update and was a major source of CPU spikes and UI lag. */
 })();
 </script>
