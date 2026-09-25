@@ -1,6 +1,29 @@
   <script>
+    function readStoredSessionToken() {
+      try {
+        const local = localStorage.getItem("daygroup_session");
+        if (local) return String(local).trim();
+      } catch (e) {}
+      try {
+        const m = document.cookie.match(/(?:^|;\\s*)kd_session=([^;]+)/);
+        return m ? decodeURIComponent(m[1]) : "";
+      } catch (e) { return ""; }
+    }
+    function persistSessionToken(token) {
+      const value = String(token || "").trim();
+      if (!value) return;
+      try { localStorage.setItem("daygroup_session", value); } catch (e) {}
+      try {
+        document.cookie = "kd_session=" + encodeURIComponent(value) + "; Max-Age=1814400; Path=/; SameSite=Lax" + (location.protocol === "https:" ? "; Secure" : "");
+      } catch (e) {}
+    }
+    function clearStoredSessionToken() {
+      try { localStorage.removeItem("daygroup_session"); } catch (e) {}
+      try { document.cookie = "kd_session=; Max-Age=0; Path=/; SameSite=Lax" + (location.protocol === "https:" ? "; Secure" : ""); } catch (e) {}
+    }
+
     let currentUser = "";
-    let currentSessionToken = localStorage.getItem("daygroup_session") || "";
+    let currentSessionToken = readStoredSessionToken();
     let globalPredictionsData = [];
     let globalClosingPrediction = null;
     // Data hasil 1x panggilan getBootstrapData saat panel dibuka. Dipakai sekali lalu
@@ -392,7 +415,7 @@
 
 
     function clearLocalSession() {
-      localStorage.removeItem("daygroup_session");
+      clearStoredSessionToken();
       localStorage.removeItem("daygroup_user");
       localStorage.removeItem("daygroup_profile");
       currentSessionToken = "";
@@ -435,7 +458,7 @@
       const sessionProfile = Object.assign({}, rawProfile || res, { websites: serverWebsites });
       currentProfile = sessionProfile;
       res = sessionProfile;
-      localStorage.setItem("daygroup_session", currentSessionToken);
+      persistSessionToken(currentSessionToken);
       localStorage.setItem("daygroup_user", currentUser);
       localStorage.setItem("daygroup_profile", JSON.stringify(res));
       document.getElementById('login-screen').style.display = 'none';
@@ -612,38 +635,61 @@
         openLoginScreen('');
         return;
       }
-      google.script.run
-        .withSuccessHandler(res => {
-          if (res && res.success && res.profile) {
-            // Simpan ringkasan header yang ikut terkirim, lalu buka panel.
-            bootstrapPrefetch = res;
-            applyAuthenticatedSession(res.profile, currentSessionToken);
-          } else if (res && res.success) {
-            // Cadangan: server versi lama membalas profil langsung (tanpa .profile).
-            applyAuthenticatedSession(res, currentSessionToken);
-          } else {
-            // Jangan langsung menghapus token pada satu kegagalan bootstrap.
-            // Cloudflare/KV bisa mengalami transient failure; retry dulu.
-            const msg = (res && res.message) || 'Sesi belum dapat diverifikasi.';
-            if (window.__bootstrapRetry < 2) {
-              window.__bootstrapRetry = (window.__bootstrapRetry || 0) + 1;
-              setTimeout(() => window.location.reload(), 700);
+
+      // Jika server sedang transient/error, jangan memaksa operator login ulang.
+      // Profil cache hanya dipakai untuk mempertahankan UI sementara; server tetap
+      // menjadi sumber kebenaran dan akan menggantinya begitu bootstrap berhasil.
+      let cachedProfile = null;
+      try {
+        cachedProfile = JSON.parse(localStorage.getItem("daygroup_profile") || "null");
+      } catch (e) {}
+      if (cachedProfile && (cachedProfile.user || cachedProfile.username)) {
+        applyAuthenticatedSession(cachedProfile, currentSessionToken);
+        window.__sessionCacheShown = true;
+      }
+
+      const verifyBootstrap = (attempt) => {
+        google.script.run
+          .withSuccessHandler(res => {
+            if (res && res.success && res.profile) {
+              bootstrapPrefetch = res;
+              applyAuthenticatedSession(res.profile, currentSessionToken);
+              window.__bootstrapRetry = 0;
               return;
             }
-            clearLocalSession();
-            openLoginScreen(msg);
-          }
-        })
-        .withFailureHandler(() => {
-          if (window.__bootstrapRetry < 2) {
-            window.__bootstrapRetry = (window.__bootstrapRetry || 0) + 1;
-            setTimeout(() => window.location.reload(), 700);
-            return;
-          }
-          clearLocalSession();
-          openLoginScreen('Sesi tidak valid. Silakan login kembali.');
-        })
-        .getBootstrapData(currentSessionToken);
+            if (res && res.success) {
+              applyAuthenticatedSession(res, currentSessionToken);
+              window.__bootstrapRetry = 0;
+              return;
+            }
+
+            // Token benar-benar ditolak oleh server: baru hapus sesi lokal.
+            // Error sementara tidak boleh memaksa login ulang.
+            const msg = (res && res.message) || 'Sesi belum dapat diverifikasi.';
+            if (attempt < 2) {
+              setTimeout(() => verifyBootstrap(attempt + 1), 800 * (attempt + 1));
+              return;
+            }
+            if (!window.__sessionCacheShown || /sesi tidak valid|telah berakhir|tidak ditemukan|tidak aktif|terkunci/i.test(msg)) {
+              clearLocalSession();
+              openLoginScreen(msg);
+            }
+          })
+          .withFailureHandler(() => {
+            if (attempt < 2) {
+              setTimeout(() => verifyBootstrap(attempt + 1), 800 * (attempt + 1));
+              return;
+            }
+            // Kalau cache masih valid, pertahankan panel dan jangan logout paksa.
+            // Polling berikutnya akan mencoba validasi lagi.
+            if (!window.__sessionCacheShown) {
+              openLoginScreen('Koneksi ke server sedang bermasalah. Silakan coba lagi.');
+            }
+          })
+          .getBootstrapData(currentSessionToken);
+      };
+
+      verifyBootstrap(0);
     });
 
     document.getElementById('pass').addEventListener('keypress', function (e) { if (e.key === 'Enter') { handleLogin(); } });
