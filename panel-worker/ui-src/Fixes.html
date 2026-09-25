@@ -1,7 +1,35 @@
 <script>
-/* KD-Group UI wiring fixes — navigation/DOM only. Business handlers,
-   roles and permissions remain owned by the existing Scripts.html logic. */
+/* KD-Group UI stability/performance layer.
+   Business handlers, API calls, roles and permissions remain owned by Scripts.html. */
 (function () {
+  function profileSnapshot() {
+    try { return JSON.parse(localStorage.getItem('daygroup_profile') || '{}') || {}; } catch (e) { return {}; }
+  }
+  function role() { return String(profileSnapshot().role || '').trim().toUpperCase(); }
+  function perms() {
+    var p = profileSnapshot().permissions || {};
+    return { telegram: p.telegram !== false, linktree: p.linktree !== false, panelz: p.panelz !== false };
+  }
+  function setVisible(el, yes) {
+    if (!el) return;
+    if (yes) { el.hidden = false; el.style.removeProperty('display'); }
+    else { el.hidden = true; el.style.setProperty('display', 'none', 'important'); }
+  }
+  function applyFeatureAccess() {
+    var r = role(), p = perms(), isBot = r === 'BOT', isAdmin = r === 'ADMIN', isOp = isAdmin || r === 'OPERATOR';
+    document.querySelectorAll('[onclick*="copyTelegram"]').forEach(function (el) { setVisible(el, p.telegram && !isBot); });
+    document.querySelectorAll('[onclick*="copyLinktree1"],[onclick*="copyLinktree2"]').forEach(function (el) { setVisible(el, p.linktree && !isBot); });
+    document.querySelectorAll('[onclick*="copyPanelZ"],[onclick*="sendToPanelZ"],[onclick*="sendToPanelZCustom"]').forEach(function (el) { setVisible(el, p.panelz && !isBot); });
+    document.querySelectorAll('.livechat-op-only').forEach(function (el) { setVisible(el, isOp); });
+    var lc = document.querySelector('.nav-group[data-group="livechat"]');
+    if (lc) setVisible(lc, isOp);
+    if (isBot) {
+      document.querySelectorAll('.nav-extra, .nav-solo, .nav-group:not([data-group="bot"])').forEach(function (el) { setVisible(el, false); });
+      var bg = document.querySelector('.nav-group[data-group="bot"]');
+      if (bg) setVisible(bg, true);
+    }
+  }
+
   function cleanupMobileCloneIds() {
     var content = document.getElementById('mobile-nav-drawer-content');
     if (!content) return;
@@ -20,23 +48,89 @@
     window[fnName] = wrapped;
   }
 
+  /* Navigation used to do a server log write + realtime poll on every click.
+     That made a simple menu switch wait behind network work and was the main
+     source of the current "lag" feeling. The existing business handlers are
+     preserved; only those two navigation-side effects are suppressed here.
+     Normal activity logging from real actions is untouched. */
+  function quietNavigation() {
+    var original = window.switchPage;
+    if (typeof original !== 'function' || original.__kdPerfWrapped) return;
+    var wrapped = function (page) {
+      var r = role();
+      var botPages = ['bot-dashboard','bot-sources','bot-history','bot-fbdirect','bot-config'];
+      var livePages = ['livechat-sessions','livechat-templates'];
+      if (r === 'BOT' && botPages.indexOf(page) < 0) page = 'bot-dashboard';
+      if (r !== 'BOT' && botPages.indexOf(page) >= 0) page = 'home';
+      if (page === 'admin' && r !== 'ADMIN') page = r === 'BOT' ? 'bot-dashboard' : 'home';
+      if (livePages.indexOf(page) >= 0 && r !== 'ADMIN' && r !== 'OPERATOR') page = 'home';
+
+      var oldPoll = window.pumpLivePoll;
+      var oldRun = window.google && window.google.script && window.google.script.run;
+      var restoreRun = false;
+      try {
+        /* switchPage() calls pumpLivePoll(true) at the end. Let the regular
+           background polling loop own that work instead of doing it per click. */
+        if (typeof oldPoll === 'function') window.pumpLivePoll = function () {};
+
+        /* Suppress ONLY the navigation audit event "BUKA HALAMAN". Other
+           logClientActivity calls elsewhere continue to reach the server. */
+        if (oldRun) {
+          var wrapRunner = function (runner) {
+            if (!runner || typeof runner !== 'object') return runner;
+            return new Proxy(runner, {
+              get: function (target, prop) {
+                if (prop === 'logClientActivity') {
+                  return function (token, action) {
+                    if (String(action || '').toUpperCase() === 'BUKA HALAMAN') return undefined;
+                    return target[prop].apply(target, arguments);
+                  };
+                }
+                if (prop === 'withFailureHandler') {
+                  return function () { return wrapRunner(target[prop].apply(target, arguments)); };
+                }
+                if (prop === 'withSuccessHandler') {
+                  return function () { return wrapRunner(target[prop].apply(target, arguments)); };
+                }
+                return target[prop];
+              }
+            });
+          };
+          window.google.script.run = wrapRunner(oldRun);
+          restoreRun = true;
+        }
+
+        return original.call(this, page);
+      } finally {
+        if (typeof oldPoll === 'function') window.pumpLivePoll = oldPoll;
+        if (restoreRun) window.google.script.run = oldRun;
+        applyFeatureAccess();
+        cleanupMobileCloneIds();
+      }
+    };
+    wrapped.__kdPerfWrapped = true;
+    window.switchPage = wrapped;
+  }
+
   function install() {
-    // The original mobile builder is preserved; we only remove duplicate IDs
-    // from cloned buttons so getElementById/query selectors do not hit the
-    // hidden desktop copy instead of the visible mobile copy.
     wrapMobile('mobileNavGroup');
     wrapMobile('mobileNavMore');
+    quietNavigation();
+    applyFeatureAccess();
     cleanupMobileCloneIds();
   }
 
   install();
   document.addEventListener('DOMContentLoaded', install, { once: true });
+  var oldApply = window.applyProfileUI;
+  if (typeof oldApply === 'function' && !oldApply.__kdAccessWrapped) {
+    var ap = function () { var out = oldApply.apply(this, arguments); applyFeatureAccess(); return out; };
+    ap.__kdAccessWrapped = true;
+    window.applyProfileUI = ap;
+  }
 
-  // New page content can recreate the mobile drawer. Observe nodes only;
-  // observing style/hidden would create a feedback loop.
-  var observer = new MutationObserver(function () {
-    cleanupMobileCloneIds();
-  });
-  observer.observe(document.documentElement, { subtree: true, childList: true });
+  /* No global MutationObserver. The old observer scanned/rewrote large parts of
+     the DOM for every table/card update, which caused CPU spikes and lag.
+     Mobile clones are cleaned at the exact two points where they are created. */
 })();
 </script>
