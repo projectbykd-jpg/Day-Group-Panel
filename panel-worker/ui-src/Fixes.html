@@ -1,0 +1,108 @@
+<script>
+/* KD-Group UI wiring fixes — presentation/access layer only.
+   Tidak mengubah handler bisnis/API; hanya menjaga navigasi, mobile clone,
+   dan visibilitas permission agar wiring UI konsisten. */
+(function () {
+  function profileSnapshot() {
+    try { return JSON.parse(localStorage.getItem('daygroup_profile') || '{}') || {}; } catch (e) { return {}; }
+  }
+  function role() { return String(profileSnapshot().role || '').trim().toUpperCase(); }
+  function perms() {
+    var p = profileSnapshot().permissions || {};
+    return { telegram: p.telegram !== false, linktree: p.linktree !== false, panelz: p.panelz !== false };
+  }
+  function setVisible(el, yes) {
+    if (!el) return;
+    if (yes) {
+      el.hidden = false;
+      el.style.removeProperty('display');
+    } else {
+      el.hidden = true;
+      el.style.setProperty('display', 'none', 'important');
+    }
+  }
+
+  function applyFeatureAccess() {
+    var r = role();
+    var p = perms();
+    var isBot = r === 'BOT';
+    var isAdmin = r === 'ADMIN';
+    var isOp = isAdmin || r === 'OPERATOR';
+
+    document.querySelectorAll('[onclick*="copyTelegram"]').forEach(function (el) { setVisible(el, p.telegram && !isBot); });
+    document.querySelectorAll('[onclick*="copyLinktree1"],[onclick*="copyLinktree2"]').forEach(function (el) { setVisible(el, p.linktree && !isBot); });
+    document.querySelectorAll('[onclick*="copyPanelZ"],[onclick*="sendToPanelZ"],[onclick*="sendToPanelZCustom"]').forEach(function (el) { setVisible(el, p.panelz && !isBot); });
+
+    document.querySelectorAll('.livechat-op-only').forEach(function (el) { setVisible(el, isOp); });
+    var lc = document.querySelector('.nav-group[data-group="livechat"]');
+    if (lc) setVisible(lc, isOp);
+
+    if (isBot) {
+      document.querySelectorAll('.nav-extra, .nav-solo, .nav-group:not([data-group="bot"])').forEach(function (el) { setVisible(el, false); });
+      var bg = document.querySelector('.nav-group[data-group="bot"]');
+      if (bg) setVisible(bg, true);
+    }
+  }
+
+  function cleanupMobileCloneIds() {
+    var content = document.getElementById('mobile-nav-drawer-content');
+    if (!content) return;
+    content.querySelectorAll('[id]').forEach(function (el) { el.removeAttribute('id'); });
+  }
+
+  function wrapMobile(fnName) {
+    var original = window[fnName];
+    if (typeof original !== 'function' || original.__kdWrapped) return;
+    var wrapped = function () {
+      var out = original.apply(this, arguments);
+      cleanupMobileCloneIds();
+      return out;
+    };
+    wrapped.__kdWrapped = true;
+    window[fnName] = wrapped;
+  }
+
+  function guardNavigation() {
+    var original = window.switchPage;
+    if (typeof original !== 'function' || original.__kdAccessWrapped) return;
+    var wrapped = function (page) {
+      var r = role();
+      var botPages = ['bot-dashboard','bot-sources','bot-history','bot-fbdirect','bot-config'];
+      var livePages = ['livechat-sessions','livechat-templates'];
+      if (r === 'BOT' && botPages.indexOf(page) < 0) page = 'bot-dashboard';
+      if (r !== 'BOT' && botPages.indexOf(page) >= 0) page = 'home';
+      if (page === 'admin' && r !== 'ADMIN') page = r === 'BOT' ? 'bot-dashboard' : 'home';
+      if (livePages.indexOf(page) >= 0 && r !== 'ADMIN' && r !== 'OPERATOR') page = 'home';
+      var out = original.call(this, page);
+      applyFeatureAccess();
+      cleanupMobileCloneIds();
+      return out;
+    };
+    wrapped.__kdAccessWrapped = true;
+    window.switchPage = wrapped;
+  }
+
+  function install() {
+    wrapMobile('mobileNavGroup');
+    wrapMobile('mobileNavMore');
+    guardNavigation();
+    applyFeatureAccess();
+    cleanupMobileCloneIds();
+  }
+
+  install();
+  document.addEventListener('DOMContentLoaded', install, { once: true });
+  var oldApply = window.applyProfileUI;
+  if (typeof oldApply === 'function' && !oldApply.__kdAccessWrapped) {
+    var ap = function () {
+      var out = oldApply.apply(this, arguments);
+      applyFeatureAccess();
+      return out;
+    };
+    ap.__kdAccessWrapped = true;
+    window.applyProfileUI = ap;
+  }
+  var accessObserver = new MutationObserver(function () { applyFeatureAccess(); });
+  accessObserver.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['hidden','style','class'] });
+})();
+</script>
