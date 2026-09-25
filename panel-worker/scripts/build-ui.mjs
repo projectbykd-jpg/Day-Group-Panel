@@ -17,6 +17,7 @@ const indexHtml = src("Index.html");
 const stylesHtml = src("Styles.html");
 const scriptsHtml = src("Scripts.html");
 const fixesHtml = src("Fixes.html");
+const liveResultFixHtml = src("LiveResultFix.html");
 const redesignCss = src("Redesign.css");
 
 // Positional-arg -> /api body-field mapping, keyed by function name.
@@ -176,7 +177,7 @@ if (tailwindCss) {
 		stylesHtml + `\n<style id="kd-professional-redesign">\n${redesignCss}\n</style>`,
 	);
 }
-out = out.replace(/<\?!?=?\s*include\(\s*['"]Scripts['"]\s*\)\s*;?\s*\?>/, shim + "\n" + scriptsHtml + "\n" + fixesHtml);
+out = out.replace(/<\?!?=?\s*include\(\s*['"]Scripts['"]\s*\)\s*;?\s*\?>/, shim + "\n" + scriptsHtml + "\n" + fixesHtml + "\n" + liveResultFixHtml);
 out = out.replace(/<\?!?=?[\s\S]*?\?>/g, "");
 
 if (/<\?/.test(out) || /include\(/.test(out)) {
