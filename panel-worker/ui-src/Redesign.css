@@ -554,10 +554,9 @@ input:focus, select:focus, textarea:focus {
 
 
 /* =========================================================
-   KD RESULT LAYOUT V4 — RESTORE TRUE 2-COLUMN GRID
-   Penting: markup memakai Tailwind lg:col-span-5 + lg:col-span-7,
-   jadi grid parent harus tetap 12 kolom. Jangan menggantinya menjadi
-   grid 2 kolom tanpa me-reset grid-column anak.
+   KD RESULT LAYOUT V5 — FULL USE OF AVAILABLE HEIGHT
+   Monitor + Quick Copy harus mengisi tinggi yang sama dengan panel kiri.
+   LIVE PREVIEW memakai seluruh ruang kosong yang tersedia di Monitor.
    ========================================================= */
 @media (min-width: 820px) {
   #result-page {
@@ -581,19 +580,20 @@ input:focus, select:focus, textarea:focus {
     width: 100% !important;
     min-width: 0 !important;
     min-height: 0 !important;
-    height: auto !important;
     box-sizing: border-box !important;
   }
 
-  /* Pada desktop normal: kiri 5/12, kanan 7/12. */
   #result-page > .grid > .lg\:col-span-5 {
     grid-column: span 5 / span 5 !important;
+    height: auto !important;
   }
 
   #result-page > .grid > .lg\:col-span-7 {
     grid-column: span 7 / span 7 !important;
     display: flex !important;
     flex-direction: column !important;
+    height: 100% !important;
+    min-height: 0 !important;
   }
 
   #result-page > .grid > .lg\:col-span-5 > .glass-card {
@@ -603,10 +603,13 @@ input:focus, select:focus, textarea:focus {
     box-sizing: border-box !important;
   }
 
+  /* Monitor memakai semua tinggi yang tersisa setelah Quick Copy. */
   #result-page > .grid > .lg\:col-span-7 > .glass-card:first-child {
     width: 100% !important;
-    flex: 1 1 auto !important;
     min-height: 0 !important;
+    flex: 1 1 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
     box-sizing: border-box !important;
   }
 
@@ -616,25 +619,27 @@ input:focus, select:focus, textarea:focus {
     box-sizing: border-box !important;
   }
 
-  /* Live preview mengambil ruang kosong di dalam monitor, bukan membuat
-     seluruh kolom menjadi terlalu tinggi. */
-  #result-page > .grid > .lg\:col-span-7 > .glass-card:first-child .beranda-flex {
-    flex: 1 1 auto !important;
-    min-height: 0 !important;
+  /* Stats tetap di atas. Preview benar-benar menyerap sisa tinggi Monitor. */
+  #result-page > .grid > .lg\:col-span-7 > .glass-card:first-child .monitor-stats {
+    flex: 0 0 auto !important;
   }
 
+  #result-page > .grid > .lg\:col-span-7 > .glass-card:first-child .beranda-flex {
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  /* Override h-20 legacy: tinggi preview harus FLUID, bukan 80/120px. */
   #result-page #outputPreview {
     width: 100% !important;
-    min-width: 0 !important;
-    height: 120px !important;
-    min-height: 120px !important;
-    max-height: 260px !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    flex: 1 1 0 !important;
     box-sizing: border-box !important;
-  }
-
-  #result-page .monitor-stats {
-    flex: 0 0 auto !important;
-    width: 100% !important;
+    overflow-y: auto !important;
   }
 
   #result-page .qcopy-btn {
@@ -645,8 +650,7 @@ input:focus, select:focus, textarea:focus {
   }
 }
 
-/* Zoom besar / jendela lebih sempit: tetap 2 kolom, tetapi ubah menjadi
-   6/6 agar kedua panel tetap proporsional. */
+/* Lebar desktop yang lebih sempit: tetap dua kolom 6/6 agar tidak gepeng. */
 @media (min-width: 820px) and (max-width: 1199px) {
   #result-page > .grid > .lg\:col-span-5 {
     grid-column: span 6 / span 6 !important;
@@ -657,7 +661,7 @@ input:focus, select:focus, textarea:focus {
   }
 }
 
-/* Hanya viewport yang benar-benar sempit yang diturunkan menjadi 1 kolom. */
+/* Baru pada viewport yang benar-benar sempit turun menjadi satu kolom. */
 @media (max-width: 819px) {
   #result-page > .grid {
     display: grid !important;
@@ -684,6 +688,7 @@ input:focus, select:focus, textarea:focus {
   #result-page #outputPreview {
     height: 120px !important;
     min-height: 120px !important;
+    flex: none !important;
   }
 }
 
