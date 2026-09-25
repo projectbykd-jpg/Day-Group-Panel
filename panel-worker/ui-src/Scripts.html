@@ -416,8 +416,11 @@
 
     function clearLocalSession() {
       clearStoredSessionToken();
-      localStorage.removeItem("daygroup_user");
-      localStorage.removeItem("daygroup_profile");
+      // Safari/iOS Private Browsing atau kebijakan storage tertentu dapat
+      // melempar saat localStorage ditulis/dihapus. Storage tidak boleh pernah
+      // memblokir transisi login/logout atau membuat halaman menjadi blank.
+      try { localStorage.removeItem("daygroup_user"); } catch (e) {}
+      try { localStorage.removeItem("daygroup_profile"); } catch (e) {}
       currentSessionToken = "";
       currentUser = "";
       currentProfile = null;
@@ -459,8 +462,10 @@
       currentProfile = sessionProfile;
       res = sessionProfile;
       persistSessionToken(currentSessionToken);
-      localStorage.setItem("daygroup_user", currentUser);
-      localStorage.setItem("daygroup_profile", JSON.stringify(res));
+      // Cache sesi hanya optimasi resume; kegagalan storage tidak boleh
+      // menghentikan render panel setelah autentikasi berhasil.
+      try { localStorage.setItem("daygroup_user", currentUser); } catch (e) {}
+      try { localStorage.setItem("daygroup_profile", JSON.stringify(res)); } catch (e) {}
       const loginScreen = document.getElementById('login-screen');
       const appContainer = document.getElementById('app-container');
       if (loginScreen) {
@@ -3686,8 +3691,32 @@
         : 'Setiap user hanya melihat riwayat akunnya sendiri pada hari ini.';
     }
     function escapeHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
-    function restoreDraft(){const d=JSON.parse(localStorage.getItem('daygroup_draft')||'null');if(!d)return;document.getElementById('inputText').value=d.text||'';document.getElementById('marketSelect').value=d.market||'';document.getElementById('angkaInput').value=d.angka||'';if(d.text)autoGenerate();}
-    function saveDraft(){localStorage.setItem('daygroup_draft',JSON.stringify({text:document.getElementById('inputText').value,market:document.getElementById('marketSelect').value,angka:document.getElementById('angkaInput').value}));}
+    function restoreDraft(){
+      let d = null;
+      try { d = JSON.parse(localStorage.getItem('daygroup_draft') || 'null'); } catch (e) { d = null; }
+      if (!d) return;
+      const inputText = document.getElementById('inputText');
+      const marketSelect = document.getElementById('marketSelect');
+      const angkaInput = document.getElementById('angkaInput');
+      if (inputText) inputText.value = d.text || '';
+      if (marketSelect) marketSelect.value = d.market || '';
+      if (angkaInput) angkaInput.value = d.angka || '';
+      if (d.text) {
+        try { autoGenerate(); } catch (e) {}
+      }
+    }
+    function saveDraft(){
+      try {
+        const inputText = document.getElementById('inputText');
+        const marketSelect = document.getElementById('marketSelect');
+        const angkaInput = document.getElementById('angkaInput');
+        localStorage.setItem('daygroup_draft', JSON.stringify({
+          text: inputText ? inputText.value : '',
+          market: marketSelect ? marketSelect.value : '',
+          angka: angkaInput ? angkaInput.value : ''
+        }));
+      } catch (e) {}
+    }
     ['inputText','marketSelect','angkaInput'].forEach(id=>document.getElementById(id).addEventListener('input',saveDraft));
     // Session Timeout DIHAPUS TOTAL untuk SEMUA akun (termasuk admin) — tidak ada
     // lagi logout otomatis karena tidak aktif. Fungsi ini dibiarkan ada (bukan
