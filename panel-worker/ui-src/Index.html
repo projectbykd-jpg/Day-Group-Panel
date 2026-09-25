@@ -200,24 +200,40 @@
       </div>
 
       <!-- HEADER CONTAINER (dibekukan saat scroll) -->
-      <div class="w-full glass-card rounded-3xl p-4 sm:p-5 relative overflow-hidden sticky top-2 z-40 header-frozen session-header">
+      <div class="w-full glass-card rounded-3xl p-3 sm:p-4 relative overflow-hidden sticky top-2 z-40 header-frozen session-header">
+        <!-- BLOK 1: STATUS SESI -->
         <div class="session-header-main">
           <div class="session-kicker">STATUS SESI</div>
           <div class="session-admin" id="session-admin-name">ADMIN</div>
-          <div class="session-sites" id="session-sites-name">HUGOTOGEL + FOLATOTO</div>
-          <div class="session-logos" id="session-logos">
-            <img src="https://i.ibb.co/DD78Pp4f/image.png" alt="HUGO" loading="eager" decoding="async" referrerpolicy="no-referrer">
-            <img src="https://i.ibb.co/21NSfyWh/image.png" alt="FOLA" loading="eager" decoding="async" referrerpolicy="no-referrer">
-          </div>
           <div class="session-credit">DESIGN BY KD</div>
         </div>
+
+        <!-- BLOK 2: LOGO WEBSITE -->
+        <div class="session-sites-box">
+          <div class="session-sites-title">WEBSITE AKTIF</div>
+          <div class="session-sites" id="session-sites-name">HUGOTOGEL + FOLATOTO</div>
+          <div class="session-logos" id="session-logos">
+            <div class="session-logo-item">
+              <img src="https://i.ibb.co/DD78Pp4f/image.png" alt="HUGOTOGEL" loading="eager" decoding="async" referrerpolicy="no-referrer">
+              <span>HUGOTOGEL</span>
+            </div>
+            <div class="session-logo-item">
+              <img src="https://i.ibb.co/21NSfyWh/image.png" alt="FOLATOTO" loading="eager" decoding="async" referrerpolicy="no-referrer">
+              <span>FOLATOTO</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- BLOK 3: WAKTU + KELUAR -->
         <div class="session-header-actions">
           <div class="session-clock-box">
-            <div id="live-clock" class="text-sm sm:text-base font-bold font-mono tracking-wider text-slate-50">00:00:00</div>
-            <div id="live-date" class="text-[10px] text-slate-400 font-semibold mt-0.5">LOADING...</div>
+            <div class="session-clock-label">WAKTU SEKARANG</div>
+            <div id="live-clock" class="session-clock-value">00:00:00</div>
+            <div id="live-date" class="session-clock-date">LOADING...</div>
           </div>
-          <button onclick="handleLogout()" class="bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/25 font-bold text-xs px-4 py-3 rounded-2xl transition-all active:scale-95 flex items-center gap-2 cursor-pointer" title="Log Out">
-            <i class="fa-solid fa-power-off"></i><span class="hidden sm:inline">Keluar</span>
+          <button onclick="handleLogout()" class="session-logout-btn" title="Keluar">
+            <i class="fa-solid fa-power-off"></i>
+            <span>Keluar</span>
           </button>
         </div>
       </div>
