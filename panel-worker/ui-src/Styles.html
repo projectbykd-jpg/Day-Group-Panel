@@ -2510,16 +2510,16 @@ table tbody tr:hover td{
 
 </style>
 /* KD SESSION HEADER / SIDEBAR CLEANUP — live Worker UI */
-.session-header{display:flex;align-items:center;justify-content:space-between;gap:1rem;min-height:108px}
+.session-header{display:flex;align-items:center;justify-content:space-between;gap:.75rem;min-height:76px;padding:.75rem 1rem!important}
 .session-header-main{min-width:0;display:flex;flex-direction:column;justify-content:center}
 .session-kicker{font-size:10px;font-weight:800;letter-spacing:.22em;color:#94a3b8;text-transform:uppercase}
-.session-admin{margin-top:4px;font-size:18px;line-height:1.1;font-weight:900;letter-spacing:.08em;color:#fff}
-.session-sites{margin-top:3px;font-size:11px;font-weight:800;letter-spacing:.14em;color:#67e8f9;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.session-logos{display:flex;align-items:center;gap:10px;margin-top:9px;height:34px}
-.session-logos img{width:42px;height:34px;object-fit:contain;border-radius:9px;background:rgba(255,255,255,.04);padding:3px;border:1px solid rgba(255,255,255,.08)}
-.session-credit{margin-top:7px;font-size:8px;font-weight:800;letter-spacing:.24em;color:#64748b}
+.session-admin{margin-top:2px;font-size:14px;line-height:1.1;font-weight:900;letter-spacing:.08em;color:#fff}
+.session-sites{margin-top:2px;font-size:9px;font-weight:800;letter-spacing:.14em;color:#67e8f9;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.session-logos{display:flex;align-items:center;gap:6px;margin-top:5px;height:25px}
+.session-logos img{width:32px;height:25px;object-fit:contain;border-radius:9px;background:rgba(255,255,255,.04);padding:3px;border:1px solid rgba(255,255,255,.08)}
+.session-credit{margin-top:3px;font-size:7px;font-weight:800;letter-spacing:.24em;color:#64748b}
 .session-header-actions{display:flex;align-items:center;gap:10px;flex-shrink:0}
-.session-clock-box{min-width:128px;text-align:right;padding:.55rem .85rem;border-radius:14px;background:rgba(15,23,42,.5);border:1px solid rgba(255,255,255,.06)}
+.session-clock-box{min-width:108px;text-align:right;padding:.4rem .65rem;border-radius:14px;background:rgba(15,23,42,.5);border:1px solid rgba(255,255,255,.06)}
 @media(max-width:1023px){.session-header{align-items:flex-start}.session-header-actions{margin-left:auto}.session-sites{max-width:48vw}}
 @media(max-width:640px){.session-header{min-height:0;padding:.85rem}.session-admin{font-size:15px}.session-sites{font-size:9px;max-width:52vw}.session-logos{height:28px}.session-logos img{width:34px;height:28px}.session-credit{font-size:7px}.session-clock-box{min-width:98px;padding:.45rem .6rem}.session-header-actions .session-clock-box #live-date{font-size:8px}.session-header-actions button{padding:.7rem .8rem}.session-header-actions button span{display:none!important}}
 /* Keep one primary page scroll; sidebar follows page instead of creating a second scroll trap. */
