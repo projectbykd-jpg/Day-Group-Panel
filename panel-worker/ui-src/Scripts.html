@@ -827,18 +827,15 @@
       titleEl.textContent = 'FITUR LAINNYA';
       const items = [];
 
-      const addSource = (selector, label) => {
-        const source = document.querySelector(selector);
-        if (!source || source.closest('[hidden]')) return;
-        source.querySelectorAll(':scope > button').forEach(btn => {
-          if (btn.closest('[hidden]')) return;
-          items.push(btn.outerHTML.replace(/\sid="[^"]*"/g, ''));
-        });
+      const addButton = (selector) => {
+        const btn = document.querySelector(selector);
+        if (!btn || btn.hidden || getComputedStyle(btn).display === 'none') return;
+        items.push(btn.outerHTML.replace(/\\sid="[^"]*"/g, ''));
       };
 
-      addSource('#nav-livechat-sessions', 'Live Chat');
-      addSource('#nav-livechat-templates', 'Live Chat');
-      addSource('#nav-admin', 'Admin');
+      addButton('#nav-livechat-sessions');
+      addButton('#nav-livechat-templates');
+      addButton('#nav-admin');
 
       const bot = document.querySelector('.nav-group[data-group="bot"]');
       if (bot && !bot.hidden && getComputedStyle(bot).display !== 'none') {
