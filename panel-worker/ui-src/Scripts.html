@@ -434,6 +434,63 @@
       sidebar.scrollLeft = 0;
     }
 
+    // Pastikan seluruh menu normal langsung "mount" setelah autentikasi.
+    // CSS legacy menyembunyikan .nav-extra sebagai default; jangan menunggu
+    // refresh/repaint browser untuk membuat menu terlihat.
+    function syncSidebarAfterLogin() {
+      const nav = document.querySelector('#app-container .nav-groups');
+      if (!nav) return;
+
+      const role = String((currentProfile && currentProfile.role) || '').trim().toUpperCase();
+      const isAdmin = role === 'ADMIN';
+      const isBot = role === 'BOT';
+      const isOperatorOrAdmin = isAdmin || role === 'OPERATOR';
+
+      const show = (el, yes, display) => {
+        if (!el) return;
+        if (yes) {
+          el.hidden = false;
+          el.style.setProperty('display', display || 'block', 'important');
+        } else {
+          el.hidden = true;
+          el.style.setProperty('display', 'none', 'important');
+        }
+      };
+
+      const home = document.getElementById('nav-home');
+      const automation = nav.querySelector('.nav-group[data-group="automation"]');
+      const lapor = nav.querySelector('.nav-group[data-group="lapor"]');
+      const activity = document.getElementById('nav-activity');
+      const admin = document.getElementById('nav-admin');
+      const bot = nav.querySelector('.nav-group[data-group="bot"]');
+      const livechat = nav.querySelector('.nav-group[data-group="livechat"]');
+
+      if (isBot) {
+        show(home, false);
+        show(automation, false, 'flex');
+        show(lapor, false, 'flex');
+        show(activity, false);
+        show(admin, false);
+        show(livechat, false, 'flex');
+        show(bot, true, 'flex');
+        bot.querySelectorAll('.nav-group-body > button').forEach(btn => show(btn, true, 'flex'));
+        return;
+      }
+
+      show(home, true, 'flex');
+      show(automation, true, 'flex');
+      show(lapor, true, 'flex');
+      show(activity, true, 'flex');
+      show(bot, false, 'flex');
+      show(admin, isAdmin, 'flex');
+      show(livechat, isOperatorOrAdmin, 'flex');
+
+      // Semua item fitur non-BOT harus tampil segera setelah login.
+      automation && automation.querySelectorAll('.nav-group-body > button').forEach(btn => show(btn, true, 'flex'));
+      lapor && lapor.querySelectorAll('.nav-group-body > button').forEach(btn => show(btn, true, 'flex'));
+      livechat && livechat.querySelectorAll('.nav-group-body > button').forEach(btn => show(btn, isOperatorOrAdmin, 'flex'));
+    }
+
     function openLoginScreen(message) {
       resetSidebarScroll();
       document.getElementById('app-container').style.display = 'none';
@@ -504,11 +561,25 @@
       // Terapkan role SEBELUM navigasi pertama, lalu ulangi sesudah render.
       // Ini mencegah menu terlihat setengah/tertinggal saat transisi login.
       applyProfileUI();
+      syncSidebarAfterLogin();
       restoreDraft();
       resetSessionTimer();
       switchPage(botOnly ? 'bot-dashboard' : 'home');
       applyProfileUI();
-      requestAnimationFrame(() => resetSidebarScroll());
+      syncSidebarAfterLogin();
+
+      // Re-assert beberapa frame setelah DOM/layout repaint agar login pertama
+      // tidak membutuhkan browser refresh untuk menampilkan menu.
+      requestAnimationFrame(() => {
+        syncSidebarAfterLogin();
+        resetSidebarScroll();
+      });
+      setTimeout(() => {
+        syncSidebarAfterLogin();
+        resetSidebarScroll();
+      }, 120);
+      setTimeout(() => syncSidebarAfterLogin(), 500);
+
       // Kunci maintenance dievaluasi begitu panel terbuka (login / resume sesi).
       if (res && res.maintenance) setMaintenanceLock(res.maintenance.enabled, res.maintenance.message);
       if (!botOnly) startLivePolling();
