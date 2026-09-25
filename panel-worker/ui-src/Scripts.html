@@ -1576,39 +1576,54 @@
         + "    {label:'cookie saja (tanpa token header)', opts:{credentials:'include',headers:{'content-type':'application/json'}}},\n"
         + "    {label:'token header saja (tanpa cookie)', opts:{credentials:'omit',headers:H}},\n"
         + "  ];\n"
-        + "  let winStrat=null;\n"
-        + "  const post=async(path,body)=>{\n"
-        + "    const list=winStrat?[winStrat]:STRATS;\n"
-        + "    let lastErr, lastAuthFail=null;\n"
-        + "    for(const st of list){\n"
-        // Strategi pertama (token header + cookie) itu yang TERBUKTI benar (request
-        // body-nya sudah dicocokkan persis dengan yang situsnya sendiri kirim).
-        // PENTING soal DURASI: query deposit BERTANGGAL di sisi Motion memang makan
-        // waktu menit-menitan (di Network tab situsnya sendiri terlihat sampai
-        // ~200 detik) -- situsnya sabar menunggu, sedangkan skrip ini dulu menyerah
-        // di 30 detik lalu salah menyimpulkan "server menolak/blokir". Jadi yang
-        // dilonggarkan adalah BATAS TUNGGU (TIMEOUT_MS), bukan jumlah percobaan:
-        // mengulang query berat yang sama berkali-kali hanya menambah beban server.
-        + "      const attempts=(!winStrat&&st===STRATS[0])?2:1;\n"
-        + "      let ok=false;\n"
-        + "      for(let a=0;a<attempts&&!ok;a++){\n"
-        + "        try{\n"
-        + "          const r=await fetchTO(O+path,{method:'POST',body:JSON.stringify(body),...st.opts},TIMEOUT_MS);\n"
-        + "          if(r.status===401||r.status===403){lastAuthFail=r;console.log('  strategi \"'+st.label+'\" ditolak: HTTP '+r.status);ok=true;break;}\n"
-        + "          if(!winStrat){winStrat=st;console.log('%cMotion: cara akses yang jalan -> '+st.label,'color:#0f0;font-weight:bold');}\n"
-        + "          return r;\n"
-        + "        }catch(e){\n"
-        + "          lastErr=e;\n"
-        + "          const why=(e&&e.name==='AbortError')?'timeout':((e&&e.message)||e);\n"
-        + "          console.log('  strategi \"'+st.label+'\" percobaan '+(a+1)+'/'+attempts+' gagal: '+why);\n"
-        + "        }\n"
-        + "      }\n"
-        + "    }\n"
-        + "    if(lastAuthFail)return lastAuthFail;\n"
-        + "    const isTO=lastErr&&lastErr.name==='AbortError';\n"
-        + "    throw new Error(path+(isTO?' server Motion tidak merespons sama sekali setelah beberapa kali dicoba (bukan salah token/vendor_id -- body request sudah persis sama dengan situsnya). Coba jalankan skrip ini lagi, atau tunggu beberapa menit lalu coba lagi.':' gagal: '+((lastErr&&lastErr.message)||lastErr)));\n"
-        + "  };\n"
-        // pull(path, bodyBase, stopBefore):
+        + "  let winStrat=null;
+"
+        + "  const post=async(path,body)=>{
+"
+        + "    let list=winStrat?[winStrat]:STRATS;
+"
+        + "    let lastErr,lastAuthFail=null;
+"
+        + "    const retryFreshToken=()=>{const fresh=findToken();if(fresh&&fresh!==MTOKEN){MTOKEN=fresh;H['x-access-token']=fresh;winStrat=null;console.log('%cMotion: memakai JWT sesi browser terbaru setelah 401/403','color:#0f0;font-weight:bold');return true;}return false;};
+"
+        + "    for(let pass=0;pass<2;pass++){
+"
+        + "      if(pass===1){if(!retryFreshToken())break;list=STRATS;}
+"
+        + "      for(const st of list){
+"
+        + "        const attempts=(!winStrat&&st===STRATS[0])?2:1;
+"
+        + "        for(let a=0;a<attempts;a++){
+"
+        + "          try{
+"
+        + "            const r=await fetchTO(O+path,{method:'POST',body:JSON.stringify(body),...st.opts},TIMEOUT_MS);
+"
+        + "            if(r.status===401||r.status===403){lastAuthFail=r;console.log('  strategi \\"'+st.label+'\\" ditolak: HTTP '+r.status);break;}
+"
+        + "            if(!winStrat){winStrat=st;console.log('%cMotion: cara akses yang jalan -> '+st.label,'color:#0f0;font-weight:bold');}
+"
+        + "            return r;
+"
+        + "          }catch(e){lastErr=e;console.log('  strategi \\"'+st.label+'\\" percobaan '+(a+1)+'/'+attempts+' gagal: '+((e&&e.name==='AbortError')?'timeout':((e&&e.message)||e)));}
+"
+        + "        }
+"
+        + "      }
+"
+        + "      if(lastAuthFail&&pass===0)console.log('%cMotion menolak kredensial. Mencoba token sesi terbaru...','color:#ff0;font-weight:bold');
+"
+        + "    }
+"
+        + "    if(lastAuthFail)return lastAuthFail;
+"
+        + "    const isTO=lastErr&&lastErr.name==='AbortError';
+"
+        + "    throw new Error(path+(isTO?' server Motion tidak merespons setelah beberapa kali dicoba.':' gagal: '+((lastErr&&lastErr.message)||lastErr)));
+"
+        + "  };
+"        // pull(path, bodyBase, stopBefore):
         // - offset MANDIRI: `start` dihitung dari jumlah baris yang SUDAH terkumpul,
         //   bukan nomor_halaman*limit. Jadi kalau server diam-diam membatasi limit
         //   (mis. kita minta 100 tapi dia cuma kasih 20), paginasi tetap benar &
