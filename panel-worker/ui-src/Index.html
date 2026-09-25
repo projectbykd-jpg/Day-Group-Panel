@@ -4,6 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>KD ● Group</title>
+  <!-- Critical boot guard: cegah FOUC/raw HTML berkedip sebelum CSS + session UI siap. -->
+  <style id="kd-boot-guard">
+    html.kd-booting body { visibility: hidden !important; }
+    html.kd-booting { background: #060a15 !important; }
+  </style>
+  <script>document.documentElement.classList.add('kd-booting');</script>
   <link rel="icon" type="image/png" href="https://i.ibb.co/r203LHQm/3b266ede-033f-4c5b-a125-77b76028439f.png">
   <!-- Buka koneksi ke CDN lebih awal supaya aset (Tailwind, ikon, font) mulai diunduh
        tanpa nunggu antrean DNS/TLS satu per satu. Aman: cuma "pemanasan" koneksi. -->
