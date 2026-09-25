@@ -73,7 +73,7 @@ body {
    Existing markup is preserved; CSS order only changes visual grouping. */
 .nav-groups { display: flex !important; flex-direction: column !important; }
 .nav-groups > .nav-group[data-group="utama"] { order: 10; }
-.nav-groups > .nav-group[data-group="automation"] { order: 20; }
+.nav-groups > .nav-group[data-group="utama"] { order: 20; }
 .nav-groups > .nav-group[data-group="lapor"] { order: 30; }
 .nav-groups > .nav-solo { order: 40; }
 .nav-groups > .nav-group[data-group="bot"] { order: 50; }
