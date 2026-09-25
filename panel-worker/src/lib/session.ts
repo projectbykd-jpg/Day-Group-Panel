@@ -13,7 +13,7 @@
 const TTL_SECONDS = 60 * 60 * 24 * 21;
 // Maksimal token per user. Login ke-N+1 membuang token terlama. Mencegah
 // riwayat login (ganti browser/HP, clear cookie) menumpuk jadi puluhan.
-const MAX_SESSIONS_PER_USER = 6;
+const MAX_SESSIONS_PER_USER = 30;
 
 export interface SessionRecord {
 	username: string;
@@ -160,10 +160,17 @@ export async function loadSession(env: Env, token: string): Promise<SessionRecor
 		try {
 			const rec = JSON.parse(raw) as SessionRecord;
 			if (!rec.expiresAt || rec.expiresAt <= Date.now()) {
-				try {
-					await env.SESS.delete(token);
-				} catch {
-					/* abaikan */
+				// KV can expire before the D1 fallback record is pruned. Do not
+				// immediately kill a session here; verify D1 first.
+				const row = await env.DB.prepare(
+					`SELECT username, created_at, expires_at FROM sessions WHERE token = ?`,
+				).bind(token).first<{ username: string; created_at: number; expires_at: number }>();
+				if (row && row.expires_at > Date.now()) {
+					return { username: row.username, createdAt: row.created_at, expiresAt: row.expires_at };
+				}
+				try { await env.SESS.delete(token); } catch { /* abaikan */ }
+				if (row) {
+					try { await env.DB.prepare(`DELETE FROM sessions WHERE token = ?`).bind(token).run(); } catch { /* abaikan */ }
 				}
 				return null;
 			}
