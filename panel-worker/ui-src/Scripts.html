@@ -427,7 +427,15 @@
       resetWebsiteTheme();
     }
 
+    function resetSidebarScroll() {
+      const sidebar = document.querySelector('#app-container > .sidebar-frozen');
+      if (!sidebar) return;
+      sidebar.scrollTop = 0;
+      sidebar.scrollLeft = 0;
+    }
+
     function openLoginScreen(message) {
+      resetSidebarScroll();
       document.getElementById('app-container').style.display = 'none';
       document.getElementById('login-screen').style.display = 'flex';
       document.body.classList.add('justify-center');
@@ -476,6 +484,11 @@
         appContainer.style.setProperty('display', 'flex', 'important');
       }
       document.body.classList.remove('justify-center');
+
+      // Setelah login, mulai dari posisi paling atas agar Dashboard/Automation/
+      // Laporan Harian tidak ikut "tertinggal" di posisi scroll sesi sebelumnya.
+      requestAnimationFrame(() => resetSidebarScroll());
+
       const sidebarUser = document.getElementById('sidebar-user');
       if (sidebarUser) sidebarUser.innerText = currentUser.toUpperCase();
       const sessionAdmin = document.getElementById('session-admin-name');
@@ -487,10 +500,15 @@
       // jadi tidak perlu dipanggil lagi di sini (dulu jadi 2x panggil server).
       const sessionRole = String((res && res.role) || '').trim().toUpperCase();
       const botOnly = sessionRole === 'BOT';
-      applyProfileUI(); restoreDraft(); resetSessionTimer();
-      switchPage(botOnly ? 'bot-dashboard' : 'home');
-      // Re-apply role visibility after page switching so no CSS/page render can re-show protected menus.
+
+      // Terapkan role SEBELUM navigasi pertama, lalu ulangi sesudah render.
+      // Ini mencegah menu terlihat setengah/tertinggal saat transisi login.
       applyProfileUI();
+      restoreDraft();
+      resetSessionTimer();
+      switchPage(botOnly ? 'bot-dashboard' : 'home');
+      applyProfileUI();
+      requestAnimationFrame(() => resetSidebarScroll());
       // Kunci maintenance dievaluasi begitu panel terbuka (login / resume sesi).
       if (res && res.maintenance) setMaintenanceLock(res.maintenance.enabled, res.maintenance.message);
       if (!botOnly) startLivePolling();
