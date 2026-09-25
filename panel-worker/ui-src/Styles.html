@@ -2528,4 +2528,68 @@ table tbody tr:hover td{
 .nav-solo{margin-top:.15rem}
 .nav-groups{overflow:visible!important}
 
+/* ===== SESSION HEADER V4 ===== */
+.session-header{
+  display:grid!important;
+  grid-template-columns:minmax(150px,1fr) minmax(240px,1.25fr) auto;
+  align-items:center;
+  gap:12px;
+  min-height:78px;
+  padding:10px 12px!important;
+}
+.session-header-main{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  padding:4px 8px;
+  border-right:1px solid rgba(148,163,184,.08);
+}
+.session-kicker{font-size:10px;font-weight:800;letter-spacing:.18em;color:#94a3b8;text-transform:uppercase}
+.session-admin{margin-top:4px;font-size:15px;line-height:1.1;font-weight:900;letter-spacing:.07em;color:#fff}
+.session-credit{margin-top:7px;font-size:7px;font-weight:800;letter-spacing:.22em;color:#64748b}
+.session-sites-box{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  padding:4px 12px;
+}
+.session-sites-title{font-size:8px;font-weight:800;letter-spacing:.16em;color:#64748b;text-transform:uppercase}
+.session-sites{display:none!important}
+.session-logos{display:flex;align-items:center;gap:10px;margin-top:6px;height:34px}
+.session-logo-item{display:flex;align-items:center;gap:7px;min-width:0}
+.session-logo-item img{
+  width:38px;height:30px;object-fit:contain;border-radius:9px;
+  background:rgba(255,255,255,.04);padding:3px;
+  border:1px solid rgba(255,255,255,.08);
+}
+.session-logo-item span{font-size:8px;font-weight:900;letter-spacing:.08em;color:#cbd5e1;white-space:nowrap}
+.session-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-shrink:0}
+.session-clock-box{
+  min-width:132px;text-align:center;padding:7px 10px;border-radius:13px;
+  background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.10);
+}
+.session-clock-label{font-size:7px;font-weight:800;letter-spacing:.14em;color:#64748b}
+.session-clock-value{margin-top:2px;font-size:16px;line-height:1.1;font-weight:900;font-family:ui-monospace,monospace;letter-spacing:.08em;color:#f8fafc}
+.session-clock-date{margin-top:3px;font-size:8px;font-weight:700;color:#94a3b8;white-space:nowrap}
+.session-logout-btn{
+  height:46px;padding:0 13px;border-radius:13px;display:flex;align-items:center;gap:7px;
+  border:1px solid rgba(244,63,94,.22);background:rgba(244,63,94,.10);
+  color:#fda4af;font-size:10px;font-weight:900;cursor:pointer;transition:.18s ease;
+}
+.session-logout-btn:hover{background:rgba(244,63,94,.18);border-color:rgba(244,63,94,.35);transform:translateY(-1px)}
+@media(max-width:760px){
+  .session-header{grid-template-columns:1fr auto;gap:8px}
+  .session-header-main{border-right:0;padding:3px 5px}
+  .session-sites-box{grid-column:1/-1;grid-row:2;padding:5px;border-top:1px solid rgba(148,163,184,.07)}
+  .session-header-actions{grid-column:2;grid-row:1}
+  .session-logos{margin-top:5px}
+  .session-logo-item span{display:none}
+  .session-clock-box{min-width:105px}
+  .session-clock-date{font-size:7px}
+  .session-logout-btn{width:42px;padding:0;justify-content:center}
+  .session-logout-btn span{display:none}
+}
+
 </style>
