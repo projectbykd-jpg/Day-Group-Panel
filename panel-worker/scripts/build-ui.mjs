@@ -16,6 +16,7 @@ const src = (name) => readFileSync(resolve(root, "ui-src", name), "utf8");
 const indexHtml = src("Index.html");
 const stylesHtml = src("Styles.html");
 const scriptsHtml = src("Scripts.html");
+const fixesHtml = src("Fixes.html");
 const redesignCss = src("Redesign.css");
 
 // Positional-arg -> /api body-field mapping, keyed by function name.
@@ -175,7 +176,7 @@ if (tailwindCss) {
 		stylesHtml + `\n<style id="kd-professional-redesign">\n${redesignCss}\n</style>`,
 	);
 }
-out = out.replace(/<\?!?=?\s*include\(\s*['"]Scripts['"]\s*\)\s*;?\s*\?>/, shim + "\n" + scriptsHtml);
+out = out.replace(/<\?!?=?\s*include\(\s*['"]Scripts['"]\s*\)\s*;?\s*\?>/, shim + "\n" + scriptsHtml + "\n" + fixesHtml);
 out = out.replace(/<\?!?=?[\s\S]*?\?>/g, "");
 
 if (/<\?/.test(out) || /include\(/.test(out)) {
