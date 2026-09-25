@@ -212,7 +212,7 @@ input:focus, select:focus, textarea:focus {
 .sidebar-nav span, .nav-group-head span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (max-width: 1023px) {
-  #app-container { display: flex !important; flex-direction: column !important; width: 100% !important; }
+  #app-container { flex-direction: column !important; width: 100% !important; }
   #app-container > .sidebar-frozen {
     position: fixed !important;
     left: 8px !important;
