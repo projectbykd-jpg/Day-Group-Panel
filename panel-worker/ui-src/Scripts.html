@@ -1463,14 +1463,24 @@
     }
 
     function lapMotionCopyScript(mode) {
-      lapEnsureConfig(() => {
+      // Selalu ambil konfigurasi terbaru dari database saat menyalin skrip.
+      // Ini mencegah Vendor ID lama/empty tertahan di lapConfig yang sudah tercache.
+      google.script.run.withSuccessHandler(res => {
+        if (!res || !res.success) { toast('Gagal memuat konfigurasi Setting.'); return; }
+        lapConfig = res.config || {};
+        if (mode === 'deposit' && !String(lapConfig.vendorIdMotion || '').trim()) {
+          toast('Vendor ID Motion belum tersimpan. Isi di Setting lalu klik SIMPAN KONFIGURASI.');
+          return;
+        }
         const code = lapMotionConsoleScript(mode);
         const done = () => toast('Skrip disalin. Buka menu ' + (mode === 'deposit' ? 'RIWAYAT PGA' : 'WD REQUEST') + ' di tab Motion, Console, tempel, Enter.');
         navigator.clipboard.writeText(code).then(done).catch(() => {
           const ta = document.getElementById(mode === 'deposit' ? 'lapMotionCodeDeposit' : 'lapMotionCodeWithdraw');
           if (ta) { document.getElementById('lapMotionCodeWrap').hidden = false; ta.focus(); ta.select(); try { document.execCommand('copy'); done(); } catch(e){ toast('Salin manual dari kotak di bawah'); } }
         });
-      });
+      }).withFailureHandler(e => {
+        toast('Gagal memuat konfigurasi: ' + ((e && e.message) || e || 'unknown'));
+      }).lapGetConfig(currentSessionToken);
     }
 
     function lapRenderMotion(host) {
