@@ -542,11 +542,27 @@
             // Cadangan: server versi lama membalas profil langsung (tanpa .profile).
             applyAuthenticatedSession(res, currentSessionToken);
           } else {
+            // Jangan langsung menghapus token pada satu kegagalan bootstrap.
+            // Cloudflare/KV bisa mengalami transient failure; retry dulu.
+            const msg = (res && res.message) || 'Sesi belum dapat diverifikasi.';
+            if (window.__bootstrapRetry < 2) {
+              window.__bootstrapRetry = (window.__bootstrapRetry || 0) + 1;
+              setTimeout(() => window.location.reload(), 700);
+              return;
+            }
             clearLocalSession();
-            openLoginScreen((res && res.message) || 'Sesi telah berakhir. Silakan login kembali.');
+            openLoginScreen(msg);
           }
         })
-        .withFailureHandler(() => { clearLocalSession(); openLoginScreen('Sesi tidak valid. Silakan login kembali.'); })
+        .withFailureHandler(() => {
+          if (window.__bootstrapRetry < 2) {
+            window.__bootstrapRetry = (window.__bootstrapRetry || 0) + 1;
+            setTimeout(() => window.location.reload(), 700);
+            return;
+          }
+          clearLocalSession();
+          openLoginScreen('Sesi tidak valid. Silakan login kembali.');
+        })
         .getBootstrapData(currentSessionToken);
     });
 
