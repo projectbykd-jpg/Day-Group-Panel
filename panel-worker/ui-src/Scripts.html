@@ -1536,7 +1536,24 @@
             r => [r.createdAt,r.paidAt,r.user,r.refNo,r.game,r.vendor,r.amount,r.fee,r.status].join('\t'), ['user','refNo','game','vendor'], {title:'Motion DP PGA', open:true})}
           ${lapTable('pga_pending_error', ['CREATED','PAID','USER','REF','WEBSITE','VENDOR','NOMINAL','KETERANGAN'], pe,
             r => `<tr class="bg-rose-950/10">${td(r.createdAt)}${td(r.paidAt)}${td(r.user,'font-bold text-rose-300')}${td(r.refNo,'text-[10px]')}${td(r.game)}${td(r.vendor,'text-[10px]')}${td(lapFmt(r.amount),'text-right')}${td(r.status,'text-center text-rose-300')}</tr>`,
-            r => [r.createdAt,r.paidAt,r.user,r.refNo,r.game,r.vendor,r.amount,r.status].join('\t'), ['user','refNo','game','status'], {title:'PGA Pending / Error'})}
+            r => {
+              // COPY khusus PGA PENDING/ERROR:
+              // durasi = paid_at - created_at.
+              // > 5 menit  -> PGA ERROR
+              // <= 5 menit -> PGA PENDING
+              const parseMotionDate = v => {
+                const s = String(v || '').trim();
+                const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+                return m ? new Date(Number(m[1]), Number(m[2])-1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6])) : null;
+              };
+              const created = parseMotionDate(r.createdAt);
+              const paid = parseMotionDate(r.paidAt);
+              const elapsedMin = created && paid ? (paid.getTime() - created.getTime()) / 60000 : null;
+              const type = elapsedMin != null && elapsedMin > 5 ? 'ERROR' : 'PENDING';
+              const d1 = String(r.createdAt || '').match(/^(\d{4})-(\d{2})-(\d{2})/)?.[3] || '-';
+              const d2 = String(r.paidAt || '').match(/^(\d{4})-(\d{2})-(\d{2})/)?.[3] || '-';
+              return [r.user || '-', 'PGA ' + type + ' DATE ' + d1 + ' - PRO DATE ' + d2, lapFmt(r.amount)].join('\t');
+            }, ['user','refNo','game','status'], {title:'PGA Pending / Error'})}
           ${lapTable('pga_withdraw', ['PAYOUT','CREATED','USER','BANK','REKENING','REF','NOMINAL','STATUS','ADMIN'], wd,
             r => `<tr>${td(r.payoutAt,'text-purple-300')}${td(r.createdAt)}${td(r.user,'font-bold text-cyan-300')}${td(r.bank,'text-[10px]')}${td(r.accountNumber,'text-[10px]')}${td(r.refNo,'text-[9px]')}${td(lapFmt(r.amount),'text-right text-purple-300')}${td(r.status,'text-center')}${td(r.adminName,'text-[10px]')}</tr>`,
             r => [r.user,r.amount].join('\t'), ['user','bank','accountNumber','refNo'],
