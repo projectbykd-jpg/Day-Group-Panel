@@ -30,7 +30,6 @@
 
     ['input', 'change', 'paste'].forEach(function (name) {
       el.addEventListener(name, function () {
-        // Clipboard paste updates .value after the paste event; one frame is enough.
         requestAnimationFrame(function () {
           lastText = null;
           syncResultPreview();
@@ -38,7 +37,6 @@
       }, { passive: true });
     });
 
-    // Existing draft/session restore can populate the textarea without firing input.
     setTimeout(function () {
       lastText = null;
       syncResultPreview();
@@ -51,8 +49,6 @@
     if (installed) return;
     installed = true;
 
-    // Result is rendered dynamically. Observe only the app container and only
-    // react when inputText appears; never scan/rewrite the whole document.
     var root = document.getElementById('app-container') || document.body;
     if (root && window.MutationObserver) {
       observer = new MutationObserver(function (records) {
@@ -72,7 +68,6 @@
       observer.observe(root, { childList: true, subtree: true });
     }
 
-    // Covers navigation that replaces the Result DOM without emitting an input event.
     var originalSwitch = window.switchPage;
     if (typeof originalSwitch === 'function' && !originalSwitch.__kdLivePreviewWrapped) {
       var wrappedSwitch = function () {
@@ -96,5 +91,48 @@
   }
   setTimeout(install, 0);
   setTimeout(install, 300);
+
+  /* The V5 header patch was appended after </style> in Styles.html, so its CSS
+     became a visible text node in the page. Remove only that leaked legacy block;
+     the valid V6 <style> in Fixes.html remains untouched. */
+  function removeLeakedHeaderCss() {
+    var nodes = document.body ? document.body.childNodes : [];
+    for (var i = nodes.length - 1; i >= 0; i--) {
+      var n = nodes[i];
+      if (n.nodeType !== 3) continue;
+      var t = String(n.nodeValue || '');
+      if (/KD HEADER LAYOUT V5|\.session-header\{\s*grid-template-columns:150px/.test(t)) {
+        n.parentNode.removeChild(n);
+      }
+    }
+  }
+
+  /* Re-apply Live Chat visibility after the login profile is restored. The
+     permission rule is unchanged: only ADMIN/OPERATOR may use the panel menu.
+     This fixes the startup race where the menu was hidden before the profile
+     reached localStorage. No polling after the short startup window. */
+  function syncLiveChatMenu() {
+    var group = document.querySelector('.nav-group[data-group="livechat"]');
+    if (!group) return;
+    var profile = {};
+    try { profile = JSON.parse(localStorage.getItem('daygroup_profile') || '{}') || {}; } catch (e) {}
+    var role = String(profile.role || '').trim().toUpperCase();
+    if (!role) return;
+    var allowed = role === 'ADMIN' || role === 'OPERATOR';
+    group.hidden = !allowed;
+    group.style.setProperty('display', allowed ? '' : 'none', 'important');
+  }
+
+  function bootUiRepairs() {
+    removeLeakedHeaderCss();
+    syncLiveChatMenu();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootUiRepairs, { once: true });
+  } else {
+    bootUiRepairs();
+  }
+  [250, 750, 1500, 3000].forEach(function (ms) { setTimeout(bootUiRepairs, ms); });
 })();
 </script>
