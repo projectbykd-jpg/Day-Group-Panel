@@ -732,6 +732,8 @@
     }
 
     window.addEventListener("DOMContentLoaded", () => {
+      // CSS/UI utama sudah terpasang saat DOM siap; sekarang izinkan paint.
+      document.documentElement.classList.remove('kd-booting');
       if (!currentSessionToken) {
         clearLocalSession();
         openLoginScreen('');
