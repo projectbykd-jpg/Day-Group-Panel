@@ -265,11 +265,13 @@
       /* Beranda dirancang muat 1 layar lewat ukuran yang padat (bukan tinggi dikunci).
          Kalau konten toh kelewat tinggi di jendela pendek, kartu-nya yang scroll,
          bukan seluruh halaman. max-height (bukan height) -> tak ada ruang kosong. */
-      #main-panel .glass-card { max-height: calc(100dvh - 10rem); overflow-y: auto; }
+      /* Dashboard card bukan scroll container. Scroll cukup di area kerja kanan
+         (#app-container > .flex-1), supaya hero/statistik/aktivitas tetap utuh. */
+      #main-panel .glass-card { max-height: none; overflow: visible; }
       #main-panel .beranda-flex { flex: 1 1 auto; min-height: 0; }
     }
     @media (min-width: 1024px) and (max-height: 780px) {
-      #main-panel .glass-card { padding: 1.1rem !important; gap: .7rem !important; max-height: calc(100dvh - 8rem); }
+      #main-panel .glass-card { padding: 1.1rem !important; gap: .7rem !important; max-height: none !important; overflow: visible !important; }
       #main-panel .monitor-stats > div { min-height: 62px !important; }
       #main-panel #inputText { min-height: 6rem !important; }
     }
