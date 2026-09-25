@@ -276,31 +276,63 @@ input:focus, select:focus, textarea:focus {
 }
 
 
-/* ---------- mobile navigation v2 ---------- */
+/* ---------- mobile navigation v3: isolated from desktop sidebar ---------- */
 .mobile-nav-shell { display: none; }
 
 @media (max-width: 1023px) {
-  /* The original desktop nav remains the source of truth, but is not rendered
-     as a cramped horizontal menu. The mobile shell exposes the same routes
-     through grouped drawers. */
-  #app-container > .sidebar-frozen .nav-groups { display: none !important; }
-  #app-container > .sidebar-frozen {
-    padding: 7px !important;
-    border-radius: 18px !important;
-    background: rgba(7,12,23,.97) !important;
-    backdrop-filter: blur(18px);
+  #app-container {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    gap: 10px !important;
+    align-items: stretch !important;
   }
-  .mobile-nav-shell { display: block !important; position: relative; width: 100%; }
+
+  #app-container > .sidebar-frozen {
+    display: none !important;
+  }
+
+  #app-container > .mobile-nav-shell {
+    display: block !important;
+    order: 2;
+    position: fixed !important;
+    left: 8px !important;
+    right: 8px !important;
+    bottom: 8px !important;
+    width: auto !important;
+    z-index: 2000 !important;
+  }
+
+  #app-container > .flex-1 {
+    order: 1;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    flex: 1 1 auto !important;
+  }
+
+  #app-container > .flex-1 > * {
+    max-width: 100% !important;
+  }
+
   .mobile-nav-bar {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 4px;
     width: 100%;
+    padding: 5px;
+    border: 1px solid rgba(148,163,184,.16);
+    border-radius: 18px;
+    background: rgba(7,12,23,.97);
+    box-shadow: 0 16px 50px rgba(0,0,0,.48);
+    backdrop-filter: blur(18px);
   }
+
   .mobile-nav-item {
     min-width: 0;
-    min-height: 52px;
-    padding: 7px 4px 6px;
+    min-height: 48px;
+    padding: 6px 3px;
     border: 1px solid transparent;
     border-radius: 12px;
     background: transparent;
@@ -309,34 +341,36 @@ input:focus, select:focus, textarea:focus {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 4px;
-    font-size: 9px;
+    gap: 3px;
+    font-size: 8.5px;
     font-weight: 800;
-    letter-spacing: .03em;
     white-space: nowrap;
   }
+
   .mobile-nav-item i { font-size: 14px; }
-  .mobile-nav-item:active,
-  .mobile-nav-item.is-open,
-  .mobile-nav-item.nav-active {
+
+  .mobile-nav-item.nav-active,
+  .mobile-nav-item.is-open {
     color: #e8fbff;
-    background: rgba(34,211,238,.09);
-    border-color: rgba(34,211,238,.16);
+    background: rgba(34,211,238,.10);
+    border-color: rgba(34,211,238,.18);
   }
+
   .mobile-nav-drawer {
     position: absolute;
     left: 0;
     right: 0;
     bottom: calc(100% + 8px);
-    z-index: 1200;
+    z-index: 2100;
     padding: 10px;
     border: 1px solid rgba(148,163,184,.18);
     border-radius: 16px;
     background: rgba(7,12,23,.985);
-    box-shadow: 0 20px 60px rgba(0,0,0,.48);
-    max-height: min(52vh, 420px);
+    box-shadow: 0 20px 60px rgba(0,0,0,.50);
+    max-height: min(55vh, 430px);
     overflow-y: auto;
   }
+
   .mobile-nav-drawer-title {
     padding: 2px 5px 8px;
     color: #7f91aa;
@@ -345,11 +379,13 @@ input:focus, select:focus, textarea:focus {
     letter-spacing: .16em;
     text-transform: uppercase;
   }
+
   .mobile-nav-drawer-content {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 6px;
   }
+
   .mobile-nav-drawer-content .sidebar-nav {
     width: 100% !important;
     min-height: 44px !important;
@@ -358,11 +394,7 @@ input:focus, select:focus, textarea:focus {
     background: rgba(255,255,255,.025) !important;
     border: 1px solid rgba(148,163,184,.10) !important;
   }
-  .mobile-nav-drawer-content .sidebar-nav:hover,
-  .mobile-nav-drawer-content .sidebar-nav.nav-active {
-    background: rgba(34,211,238,.09) !important;
-    border-color: rgba(34,211,238,.18) !important;
-  }
+
   .mobile-nav-empty {
     grid-column: 1 / -1;
     padding: 14px;
@@ -370,17 +402,18 @@ input:focus, select:focus, textarea:focus {
     color: #64748b;
     font-size: 10px;
   }
-  /* The sidebar is now only the compact navigation container. */
-  #app-container > .sidebar-frozen > div:first-child {
-    display: block !important;
-  }
-  #app-container > .sidebar-frozen > div:first-child > div:first-child {
-    display: none !important;
+
+  body {
+    padding: 8px 8px 82px !important;
+    overflow-x: hidden !important;
   }
 }
 
 @media (max-width: 480px) {
-  .mobile-nav-item { min-height: 50px; font-size: 8.5px; }
+  #app-container { gap: 8px !important; }
+  #app-container > .mobile-nav-shell { left: 6px !important; right: 6px !important; bottom: 6px !important; }
+  .mobile-nav-bar { padding: 4px; }
+  .mobile-nav-item { min-height: 46px; font-size: 8px; }
   .mobile-nav-item i { font-size: 13px; }
   .mobile-nav-drawer-content { grid-template-columns: 1fr; }
 }
