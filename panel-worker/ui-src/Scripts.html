@@ -1385,8 +1385,8 @@
             <input id="lapTokenMotion" placeholder="Token Motion (x-access-token) — isi manual dari Network tab, ini yang dipakai skrip Console" value="${(c.tokenMotion||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
           </div>
           <div>
-            <input id="lapVendorIdMotion" placeholder="Vendor ID Motion (AUTO — boleh kosong)" value="${(c.vendorIdMotion||'').replace(/"/g,'&quot;')}" class="w-full glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
-            <p class="text-[10px] text-slate-500 mt-1 leading-relaxed">Boleh dikosongkan — skrip Deposit akan mencoba cache, membaca state halaman, lalu menangkap request native Motion secara otomatis. Kalau akun ini ngurus BEBERAPA website (dropdown "By Website"), boleh isi lebih dari satu di sini, dipisah koma (mis. <code>6989ad07...,7a12bc55...</code>) — atau biarkan skrip mendeteksi semuanya sekaligus (pilih tiap website di dropdown lalu refresh, satu-satu, sebelum waktu habis).</p>
+            <input id="lapVendorIdMotion" placeholder="Vendor ID Motion (opsional — biarkan kosong, akan terisi otomatis)" value="${(c.vendorIdMotion||'').replace(/"/g,'&quot;')}" class="w-full glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
+            <p class="text-[10px] text-slate-500 mt-1 leading-relaxed">Boleh dikosongkan — kalau belum diisi, Skrip Deposit akan pandu deteksi otomatis di halaman RIWAYAT PGA. Kalau akun ini ngurus BEBERAPA website (dropdown "By Website"), boleh isi lebih dari satu di sini, dipisah koma (mis. <code>6989ad07...,7a12bc55...</code>) — atau biarkan skrip mendeteksi semuanya sekaligus (pilih tiap website di dropdown lalu refresh, satu-satu, sebelum waktu habis).</p>
           </div>
           <div class="grid sm:grid-cols-2 gap-3">
             <input id="lapLinkMozart" placeholder="Link Mozart (opsional)" value="${(c.linkMozart||'').replace(/"/g,'&quot;')}" class="glass-inner rounded-xl px-3 py-2.5 text-xs text-slate-100">
@@ -1453,115 +1453,7 @@
       const mtoken = ((lapConfig && lapConfig.tokenMotion) || '').replace(/^Bearer\s+/i, '').trim();
       const vendorId = ((lapConfig && lapConfig.vendorIdMotion) || '').trim();
       const code = mode === 'deposit'
-        ? "(async()=>{\nconst origTitle=document.title;\ntry{\n  const O=location.origin, PANEL=\"\", TOKEN=\"\", VID=\"\";\n  if(!/motionv2/i.test(O)){alert('Buka skrip ini di TAB MOTION (motionv2.com), bukan di sini.');return;}\n\n  const panelOrigin=\"PLACEHOLDER_PANEL\".replace('PLACEHOLDER_PANEL',location.origin);\n  const sessionToken=\"PLACEHOLDER_TOKEN\".replace('PLACEHOLDER_TOKEN','');\n  const configuredVendor=\"PLACEHOLDER_VENDOR\".replace('PLACEHOLDER_VENDOR','');\n\n  const isJwt=s=>typeof s==='string'&&/^eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/.test(s);\n  const findToken=()=>{\n    try{\n      for(const store of [localStorage,sessionStorage]){\n        for(let i=0;i<store.length;i++){\n          const k=store.key(i);let v;\n          try{v=store.getItem(k);}catch(e){continue;}\n          if(isJwt(v))return v;\n          try{\n            const p=JSON.parse(v);\n            if(isJwt(p))return p;\n            if(p&&isJwt(p.token))return p.token;\n            if(p&&isJwt(p.access_token))return p.access_token;\n            if(p&&isJwt(p.accessToken))return p.accessToken;\n          }catch(e){}\n        }\n      }\n    }catch(e){}\n    return null;\n  };\n\n  const MTOKEN=findToken()||'';\n  if(!MTOKEN){alert('Token Motion tidak ditemukan. Pastikan sudah LOGIN di tab Motion.');return;}\n\n  const p2=n=>('0'+n).slice(-2);\n  const today=()=>{const d=new Date();return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());};\n  const sd=prompt('Tanggal MULAI (YYYY-MM-DD)',today());if(!sd)return;\n  const ed=prompt('Tanggal AKHIR (YYYY-MM-DD)',sd);if(!ed)return;\n\n  let vendor=configuredVendor.trim();\n  const configuredVendors=[...new Set(configuredVendor.split(',').map(s=>s.trim()).filter(Boolean))];\n  const normalizeVendor=s=>String(s??'').trim();\n  const validVendor=s=>/^[A-Za-z0-9_-]{16,80}$/.test(normalizeVendor(s));\n  const addVendor=(set,v)=>{\n    const x=normalizeVendor(v);\n    if(validVendor(x))set.add(x);\n  };\n  const getSiteKey=()=>{\n    try{\n      const sels=[...document.querySelectorAll('select')];\n      const sel=sels.find(s=>/website|site|web/i.test((s.id||'')+' '+(s.name||'')+' '+(s.getAttribute('aria-label')||'')));\n      const opt=sel&&sel.options[sel.selectedIndex];\n      return String((sel&&sel.value)||((opt&&opt.textContent)||'')||location.hostname).trim().slice(0,180);\n    }catch(e){return location.hostname;}\n  };\n  const cacheKey='dg_motion_vendor_v1:'+location.hostname+':'+getSiteKey();\n  const readCached=()=>{\n    try{\n      const v=localStorage.getItem(cacheKey)||'';\n      return validVendor(v)?v:'';\n    }catch(e){return '';}\n  };\n  const writeCached=v=>{\n    try{if(validVendor(v))localStorage.setItem(cacheKey,v);}catch(e){}\n  };\n\n  if(!vendor && configuredVendors.length===1) vendor=configuredVendors[0];\n  if(!vendor) vendor=readCached();\n\n  if(!vendor){\n    const found=new Set();
-
-    // Smart structured detector: jangan hanya mengandalkan regex.
-    // Banyak aplikasi menyimpan vendor_id sebagai nested object/state.
-    const scanValue=(value,depth=0,seen=new Set())=>{
-      if(depth>5||value==null)return;
-      try{
-        if(typeof value==='string'){
-          const s=value.trim();
-          if(validVendor(s))addVendor(found,s);
-          // Tangkap vendor_id yang muncul di JSON/stringified state dengan format apa pun.
-          const re=/["']?vendor[_-]?id["']?\\s*[:=]\\s*["']?([A-Za-z0-9._:-]{6,128})["']?/gi;
-          let m;
-          while((m=re.exec(s)))addVendor(found,m[1]);
-          return;
-        }
-        if(typeof value!=='object')return;
-        if(seen.has(value))return;
-        seen.add(value);
-        if(Array.isArray(value)){
-          for(const v of value.slice(0,300))scanValue(v,depth+1,seen);
-          return;
-        }
-        for(const [k,v] of Object.entries(value).slice(0,300)){
-          if(/vendor/i.test(k)){
-            if(typeof v==='string' || typeof v==='number')addVendor(found,String(v));
-            else scanValue(v,depth+1,seen);
-          }
-          // State global sering nested di bawah state/data/config.
-          if(depth<3&&/state|data|config|user|account|website|vendor/i.test(k)){
-            scanValue(v,depth+1,seen);
-          }
-        }
-      }catch(e){}
-    };
-
-    // 0) JWT payload: vendor sering ikut tersimpan di claim/session object.
-    const decodeJwt=(s)=>{
-      try{
-        const p=String(s||'').split('.')[1];
-        if(!p)return;
-        const json=decodeURIComponent(atob(p.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-p.length%4)%4))
-          .split('').map(ch=>'%'+('00'+ch.charCodeAt(0).toString(16)).slice(-2)).join(''));
-        scanValue(JSON.parse(json));
-      }catch(e){}
-    };
-
-    // 1) Browser storage, termasuk object JSON bertingkat.
-    try{
-      for(const store of [localStorage,sessionStorage]){
-        for(let i=0;i<store.length;i++){
-          const k=store.key(i)||'',raw=store.getItem(k)||'';
-          if(/vendor/i.test(k))addVendor(found,raw);
-          scanValue(raw);
-          try{scanValue(JSON.parse(raw));}catch(e){}
-          if(/token|auth|session|user/i.test(k))decodeJwt(raw);
-        }
-      }
-    }catch(e){}
-
-    // 2) Global JS state / framework stores.
-    try{
-      for(const k of Object.keys(window).slice(0,5000)){
-        if(!/vendor|state|store|auth|user|account|site|website|config|session/i.test(k))continue;
-        try{scanValue(window[k],0,new Set());}catch(e){}
-      }
-    }catch(e){}
-
-    // 3) DOM + embedded JSON/script state.
-    try{
-      document.querySelectorAll('input,select,option,[data-vendor-id],[data-vendor_id],[name*="vendor" i],[id*="vendor" i]')
-        .forEach(el=>{
-          scanValue(el.id||''); scanValue(el.name||''); scanValue(el.value||'');
-          scanValue(el.textContent||'');
-          scanValue(el.getAttribute('data-vendor-id')||'');
-          scanValue(el.getAttribute('data-vendor_id')||'');
-        });
-      document.querySelectorAll('script:not([src])').forEach(s=>scanValue(s.textContent||''));
-      scanValue(document.documentElement.innerHTML||'');
-    }catch(e){}
-
-    // 2) Fetch this exact page once and inspect its returned state without touching UI.\n    if(!found.size){\n      try{\n        const html=await fetch(location.href,{credentials:'include',cache:'no-store'}).then(r=>r.ok?r.text():'');\n        scanText(html);\n      }catch(e){}\n    }\n\n    // 3) Last resort: listen briefly for a NATIVE request that occurs naturally.
-    // Tidak melakukan klik acak pada UI (risiko menekan filter/menu yang salah).
-    if(!found.size){
-      const sniffBody=(u,body)=>{
-        try{
-          if(!String(u||'').toLowerCase().includes('/api/deposit/list/pga')||!body)return;
-          const raw=typeof body==='string'?body:JSON.stringify(body);
-          scanValue(raw);
-          const obj=typeof body==='string'?JSON.parse(body):body;
-          if(obj&&obj.vendor_id!=null)addVendor(found,String(obj.vendor_id));
-        }catch(e){}
-      };
-      const origFetch=window.fetch;
-      const origOpen=XMLHttpRequest.prototype.open;
-      const origSend=XMLHttpRequest.prototype.send;
-      window.fetch=function(u,o){sniffBody(u,o&&o.body);return origFetch.apply(this,arguments);};
-      XMLHttpRequest.prototype.open=function(method,u){this.__lapVendorUrl=u;return origOpen.apply(this,arguments);};
-      XMLHttpRequest.prototype.send=function(body){sniffBody(this.__lapVendorUrl,body);return origSend.apply(this,arguments);};
-
-      const t0=Date.now();
-      while(!found.size&&Date.now()-t0<12000)await new Promise(r=>setTimeout(r,250));
-
-      window.fetch=origFetch;
-      XMLHttpRequest.prototype.open=origOpen;
-      XMLHttpRequest.prototype.send=origSend;
-    }
-
-    if(found.size){\n      const detected=[...found];\n      vendor=detected.join(',');\n      if(detected.length===1)writeCached(detected[0]);\n      console.log('%cVendor ID terdeteksi otomatis: '+vendor,'color:#0f0;font-weight:bold');\n\n      try{\n        const merged=[...new Set([...configuredVendors,...detected])];\n        const save=await fetch(panelOrigin+'/api',{\n          method:'POST',\n          headers:{'content-type':'application/json'},\n          body:JSON.stringify({\n            action:'lapSaveConfig',\n            token:sessionToken,\n            data:{vendorIdMotion:merged.join(',')}\n          })\n        });\n        const saved=await save.json();\n        if(saved&&saved.success){\n          console.log('%cVendor ID berhasil disimpan ke Setting panel. Run berikutnya langsung pakai cache/Setting.','color:#0f0;font-weight:bold');\n        }else{\n          console.warn('Vendor terdeteksi, tetapi save Setting gagal.',saved);\n        }\n      }catch(e){\n        console.warn('Vendor terdeteksi, tetapi save Setting gagal.',e);\n      }\n    }\n  }\n\n  if(!vendor&&configuredVendors.length>1){\n    vendor=configuredVendors.join(',');\n  }\n\n  if(!vendor){\n    alert('Vendor ID belum bisa dideteksi otomatis. Tidak perlu isi manual: buka RIWAYAT PGA, pastikan tabel sudah tampil, lalu jalankan skrip ini sekali lagi.');\n    return;\n  }\n\n\n  const H={'content-type':'application/json','x-access-token':MTOKEN};\n\n  const fetchTO=async(url,opts,ms)=>{\n    const ac=new AbortController(),to=setTimeout(()=>ac.abort(),ms);\n    try{return await fetch(url,{...opts,signal:ac.signal});}\n    finally{clearTimeout(to);}\n  };\n\n  const pull=async(filterBy,sortField)=>{\n    const rows=[];\n    const base={\n      count:0,\n      date1:sd+' 00:00:00',\n      date2:ed+' 23:59:59',\n      filter_by:String(filterBy),\n      filter_game_id:\"682e8b3daa0a12f996e44110\",\n      filter_status:'1',\n      limit:20,\n      sort:{field:sortField,order:'desc'},\n      vendor_id:vendor\n    };\n\n    const requestPage=async page=>{\n      const body={...base,page,start:page*20};\n      console.log('%cMotion Deposit '+sortField+' | '+sd+' -> '+ed+' | page '+page,'color:#0ff;font-weight:bold');\n      const r=await fetchTO(O+'/api/deposit/list/pga',{\n        method:'POST',\n        credentials:'include',\n        headers:H,\n        body:JSON.stringify(body)\n      },240000);\n      if(r.status===401||r.status===403)throw new Error('Motion '+r.status+' pada Deposit page '+page+'.');\n      if(!r.ok)throw new Error('/api/deposit/list/pga HTTP '+r.status+' page '+page);\n      const j=await r.json();\n      return {page,rows:Array.isArray(j&&j.data)?j.data:[],meta:j&&j.data_optional||{}};\n    };\n\n    // Halaman pertama sendiri memberi total_records/total_page.\n    const first=await requestPage(0);\n    rows.push(...first.rows);\n    const total=Number(first.meta.total_records)||0;\n    const totalPages=Number(first.meta.total_page)||Math.ceil(total/20);\n\n    console.log('%cDeposit '+sortField+' page 0 -> '+first.rows.length+' baris | total '+rows.length+(total?' / '+total:'')+' | pages '+totalPages,'color:#0f0');\n\n    if(!first.rows.length || totalPages<=1)return rows;\n\n    // Dua request bersamaan: jauh lebih cepat daripada 39 request berurutan,\n    // tetapi tidak seagresif batch 5 yang sebelumnya berisiko diblokir Motion.\n    const BATCH=5;\n    for(let basePage=1;basePage<totalPages;basePage+=BATCH){\n      const pages=[];\n      for(let p=basePage;p<Math.min(basePage+BATCH,totalPages);p++)pages.push(p);\n      const results=await Promise.all(pages.map(requestPage));\n      results.sort((a,b)=>a.page-b.page);\n      for(const item of results){\n        rows.push(...item.rows);\n        console.log('%cDeposit '+sortField+' page '+item.page+' -> '+item.rows.length+' baris | total '+rows.length+(total?' / '+total:''),'color:#0f0');\n      }\n    }\n    return rows;\n  };\n\n  const paid=await pull('0','paid_at');\n  const create=await pull('1','created_at');\n\n  const x=await fetchTO(PANEL+'/api',{\n    method:'POST',\n    headers:{'content-type':'application/json'},\n    body:JSON.stringify({\n      action:'lapMotionImport',\n      token:\"TOKEN_PLACEHOLDER\",\n      startDate:sd,\n      endDate:ed,\n      depoPaidRows:paid,\n      depoCreateRows:create\n    })\n  },30000);\n\n  const jr=await x.json();\n  console.log(jr);\n  document.title=origTitle;\n  alert(jr.success?('Motion (Deposit) terkirim ke panel OK\\nDP '+jr.dp+' · Pending '+jr.pending+'\\n\\nBuka panel -> Lap Motion -> Muat Ulang.'):('Gagal: '+(jr.message||'?')));\n}catch(e){\n  document.title=origTitle;\n  alert('Gagal: '+((e&&e.message)||e));\n  console.error(e);\n}\n})();"
+        ? "(async()=>{\nconst origTitle=document.title;\ntry{\n  const O=location.origin, PANEL=\"\", TOKEN=\"\", VID=\"\";\n  if(!/motionv2/i.test(O)){alert('Buka skrip ini di TAB MOTION (motionv2.com), bukan di sini.');return;}\n\n  const panelOrigin=\"PLACEHOLDER_PANEL\".replace('PLACEHOLDER_PANEL',location.origin);\n  const sessionToken=\"PLACEHOLDER_TOKEN\".replace('PLACEHOLDER_TOKEN','');\n  const configuredVendor=\"PLACEHOLDER_VENDOR\".replace('PLACEHOLDER_VENDOR','');\n\n  const isJwt=s=>typeof s==='string'&&/^eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/.test(s);\n  const findToken=()=>{\n    try{\n      for(const store of [localStorage,sessionStorage]){\n        for(let i=0;i<store.length;i++){\n          const k=store.key(i);let v;\n          try{v=store.getItem(k);}catch(e){continue;}\n          if(isJwt(v))return v;\n          try{\n            const p=JSON.parse(v);\n            if(isJwt(p))return p;\n            if(p&&isJwt(p.token))return p.token;\n            if(p&&isJwt(p.access_token))return p.access_token;\n            if(p&&isJwt(p.accessToken))return p.accessToken;\n          }catch(e){}\n        }\n      }\n    }catch(e){}\n    return null;\n  };\n\n  const MTOKEN=findToken()||'';\n  if(!MTOKEN){alert('Token Motion tidak ditemukan. Pastikan sudah LOGIN di tab Motion.');return;}\n\n  const p2=n=>('0'+n).slice(-2);\n  const today=()=>{const d=new Date();return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());};\n  const sd=prompt('Tanggal MULAI (YYYY-MM-DD)',today());if(!sd)return;\n  const ed=prompt('Tanggal AKHIR (YYYY-MM-DD)',sd);if(!ed)return;\n\n  const vendor=prompt('Vendor ID Motion',configuredVendor)||configuredVendor;\n  if(!vendor){alert('Vendor ID Motion belum tersedia. Isi di Setting panel.');return;}\n\n  const H={'content-type':'application/json','x-access-token':MTOKEN};\n\n  const fetchTO=async(url,opts,ms)=>{\n    const ac=new AbortController(),to=setTimeout(()=>ac.abort(),ms);\n    try{return await fetch(url,{...opts,signal:ac.signal});}\n    finally{clearTimeout(to);}\n  };\n\n  const pull=async(filterBy,sortField)=>{\n    const rows=[];\n    const base={\n      count:0,\n      date1:sd+' 00:00:00',\n      date2:ed+' 23:59:59',\n      filter_by:String(filterBy),\n      filter_game_id:\"682e8b3daa0a12f996e44110\",\n      filter_status:'1',\n      limit:20,\n      sort:{field:sortField,order:'desc'},\n      vendor_id:vendor\n    };\n\n    for(let page=0;page<500;page++){\n      const body={...base,page,start:page*20};\n      console.log('%cMotion Deposit '+sortField+' | '+sd+' -> '+ed+' | page '+page,'color:#0ff;font-weight:bold');\n      const r=await fetchTO(O+'/api/deposit/list/pga',{\n        method:'POST',\n        credentials:'include',\n        headers:H,\n        body:JSON.stringify(body)\n      },240000);\n\n      if(r.status===401||r.status===403) throw new Error('Motion '+r.status+' pada Deposit. Request yang dikirim sudah mengikuti Payload native Motion.');\n      if(!r.ok) throw new Error('/api/deposit/list/pga HTTP '+r.status);\n\n      const j=await r.json();\n      const rr=Array.isArray(j&&j.data)?j.data:[];\n      rows.push(...rr);\n\n      const meta=j&&j.data_optional||{};\n      const total=Number(meta.total_records)||0;\n      const totalPages=Number(meta.total_page)||0;\n      console.log('%cDeposit '+sortField+' page '+page+' -> '+rr.length+' baris | total '+rows.length+(total?' / '+total:''),'color:#0f0');\n\n      if(!rr.length || rr.length<20 || (totalPages&&page+1>=totalPages) || (total&&rows.length>=total)) break;\n      await new Promise(r=>setTimeout(r,300));\n    }\n    return rows;\n  };\n\n  const paid=await pull('0','paid_at');\n  const create=await pull('1','created_at');\n\n  const x=await fetchTO(PANEL+'/api',{\n    method:'POST',\n    headers:{'content-type':'application/json'},\n    body:JSON.stringify({\n      action:'lapMotionImport',\n      token:\"TOKEN_PLACEHOLDER\",\n      startDate:sd,\n      endDate:ed,\n      depoPaidRows:paid,\n      depoCreateRows:create\n    })\n  },30000);\n\n  const jr=await x.json();\n  console.log(jr);\n  document.title=origTitle;\n  alert(jr.success?('Motion (Deposit) terkirim ke panel OK\\nDP '+jr.dp+' · Pending '+jr.pending+'\\n\\nBuka panel -> Lap Motion -> Muat Ulang.'):('Gagal: '+(jr.message||'?')));\n}catch(e){\n  document.title=origTitle;\n  alert('Gagal: '+((e&&e.message)||e));\n  console.error(e);\n}\n})();"
         : "(async()=>{\nconst origTitle=document.title;\ntry{\n  const O=location.origin;\n  if(!/motionv2/i.test(O)){alert('Buka skrip ini di TAB MOTION (motionv2.com), bukan di sini.');return;}\n  const isJwt=s=>typeof s==='string'&&/^eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/.test(s);\n  const findToken=()=>{\n    try{for(const store of [localStorage,sessionStorage]){\n      for(let i=0;i<store.length;i++){let v;try{v=store.getItem(store.key(i));}catch(e){continue;}\n        if(isJwt(v))return v;try{const p=JSON.parse(v);if(isJwt(p))return p;if(p&&isJwt(p.token))return p.token;if(p&&isJwt(p.access_token))return p.access_token;if(p&&isJwt(p.accessToken))return p.accessToken;}catch(e){}\n      }\n    }}catch(e){}return null;\n  };\n  const MTOKEN=findToken()||'';\n  if(!MTOKEN){alert('Token Motion tidak ditemukan. Pastikan sudah LOGIN di tab Motion.');return;}\n  const p2=n=>('0'+n).slice(-2),today=()=>{const d=new Date();return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());};\n  const sd=prompt('Tanggal MULAI (YYYY-MM-DD)',today());if(!sd)return;\n  const ed=prompt('Tanggal AKHIR (YYYY-MM-DD)',sd);if(!ed)return;\n  const r=await fetch(O+'/api/withdraw/list/pga',{method:'POST',credentials:'include',headers:{'content-type':'application/json','x-access-token':MTOKEN},body:JSON.stringify({limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'})});\n  if(!r.ok)throw new Error('/api/withdraw/list/pga HTTP '+r.status);\n  const j=await r.json(),wd=Array.isArray(j&&j.data)?j.data:[];\n  const x=await fetch(location.origin+'/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'lapMotionImport',token:'TOKEN_PLACEHOLDER',startDate:sd,endDate:ed,wdRows:wd})});\n  const jr=await x.json();document.title=origTitle;\n  alert(jr.success?('Motion (Withdraw) terkirim ke panel OK\\nWD '+jr.wd+'\\n\\nBuka panel -> Lap Motion -> Muat Ulang.'):('Gagal: '+(jr.message||'?')));\n}catch(e){document.title=origTitle;alert('Gagal: '+((e&&e.message)||e));console.error(e);}\n})();";
       return code
         .replaceAll('PLACEHOLDER_PANEL', panel)
