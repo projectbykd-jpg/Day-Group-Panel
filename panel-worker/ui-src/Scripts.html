@@ -1612,6 +1612,7 @@
         + "      await new Promise(r=>setTimeout(r,250));\n"
         + "    }\n"
         + "  return rows;};\n"
+        + pullCalls
         + (isDepo
             ? "  const dateOnly=v=>String(v||'').trim().split(/[ T]/)[0];\n"
               + "  const inSelectedRange=d=>{const x=dateOnly(d);return !!x&&x>=sd&&x<=ed;};\n"
@@ -1619,7 +1620,6 @@
               + "  const createRows=depo.filter(r=>inSelectedRange(r&&r.created_at));\n"
               + "  console.log('%cMotion Deposit filter tanggal | raw '+depo.length+' | PAID '+paidRows.length+' | CREATE '+createRows.length+' | '+sd+' -> '+ed,'color:#0ff;font-weight:bold');\n"
             : "")
-        + pullCalls
         + "  document.title=origTitle;\n"
         + "  const x=await fetchTO(PANEL+'/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(" + payload + ")},30000);\n"
         + "  const jr=await x.json(); console.log(jr);\n"
