@@ -1621,7 +1621,6 @@
               + "  console.log('%cMotion Deposit | RAW '+depo.length+' | PAID '+paidRows.length+' | CREATE '+createRows.length+' | '+sd+' -> '+ed,'color:#0ff;font-weight:bold');\\n"
               + "  console.table(depo.slice(0,10).map(row=>({reference_no:row&&row.reference_no,paid_at:row&&row.paid_at,paid_date:dateKey(row&&row.paid_at),created_at:row&&row.created_at,created_date:dateKey(row&&row.created_at)})));\\n"
             : "")
-            : "")
         + "  document.title=origTitle;\n"
         + "  const x=await fetchTO(PANEL+'/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(" + payload + ")},30000);\n"
         + "  const jr=await x.json(); console.log(jr);\n"
