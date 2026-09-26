@@ -1464,17 +1464,22 @@
       // Solusi: pakai body yang TERBUKTI jalan (vendor_id saja), lalu saring
       // tanggal di sisi kita (backend panel sudah punya cek `inRange` sendiri).
       const pullCalls = isDepo
-        ? "  const d1=sd+' 00:00:00', d2=ed+' 23:59:59';\\n"
-          + "  const vids=VID.split(/[\\\\s,]+/).filter(Boolean);\\n"
-          + "  let paid=[], create=[];\\n"
-          + "  for(const vid of vids){\\n"
-          + "    console.log('%cMotion: deposit PAID vendor '+vid+' | '+sd+' -> '+ed,'color:#0ff');\\n"
-          + "    paid=paid.concat(await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'0',sort:{field:'paid_at',order:'desc'},vendor_id:vid},20,null,240000));\\n"
-          + "    console.log('%cMotion: deposit CREATE vendor '+vid+' | '+sd+' -> '+ed,'color:#0ff');\\n"
-          + "    create=create.concat(await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'1',sort:{field:'created_at',order:'desc'},vendor_id:vid},20,null,240000));\\n"
-          + "  }\\n"
-        : "  console.log('%cMotion: withdraw...','color:#0ff');\\n"
-          + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'},100);\\n      // Deposit: 1 daftar dipakai utk depoPaidRows DAN depoCreateRows -- tanpa
+        // VID bisa berisi BEBERAPA vendor_id sekaligus (dipisah koma/spasi/baris
+        // baru) -- akun yang ngurus banyak website (dropdown "By Website" di
+        // Motion) punya vendor_id BEDA per website, jadi tarik data 1-per-1 per
+        // vendor lalu digabung, supaya semua website ikut ketarik dalam 1x jalan.
+        ? "  const vids=VID.split(/[\\s,]+/).filter(Boolean);\n"
+          + "  const d1=sd+' 00:00:00', d2=ed+' 23:59:59';\n"
+          + "  let paid=[], create=[];\n"
+          + "  for(const vid of vids){\n"
+          + "    console.log('%cMotion: deposit paid vendor '+vid+'...','color:#0ff');\n"
+          + "    paid=paid.concat(await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'0',sort:{field:'paid_at',order:'desc'},vendor_id:vid},20,null,240000));\n"
+          + "    console.log('%cMotion: deposit create vendor '+vid+'...','color:#0ff');\n"
+          + "    create=create.concat(await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'1',sort:{field:'created_at',order:'desc'},vendor_id:vid},20,null,240000));\n"
+          + "  }\n"
+        : "  console.log('%cMotion: withdraw...','color:#0ff');\n"
+          + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'},100);\n";
+      // Deposit: 1 daftar dipakai utk depoPaidRows DAN depoCreateRows -- tanpa
       // filter_by, server tidak bisa membedakan daftar "paid" vs "create", tapi
       // tiap barisnya sudah punya created_at DAN paid_at sendiri, jadi backend
       // panel tetap bisa hitung keduanya (dan rekonsiliasi "TIDAK ADA DI
@@ -1602,19 +1607,16 @@
         + "      document.title='['+path.split('/').pop()+' hal '+(p+1)+' \u00b7 '+rows.length+(total?'/'+total:'')+' baris] MOTION';\n"
         + "      console.log(path,'hal',p,'(+'+added+' baru, total '+rows.length+(total?'/'+total:'')+')');\n"
         + "      if(!added)break;\n"
+        + "      if(total!==null&&rows.length>=total)break;\n"
         + "      if(stopBefore){\n"
         + "        const days=rr.map(dayOf).filter(Boolean);\n"
-        + "        if(days.length&&days.every(d=>d<stopBefore)){oldStreak++;if(oldStreak>=1)break;}else{oldStreak=0;}\n"
+        + "        if(days.length&&days.every(d=>d<stopBefore)){oldStreak++;if(oldStreak>=2)break;}else{oldStreak=0;}\n"
         + "      }\n"
-        + "      if(!stopBefore&&total!==null&&rows.length>=total)break;\n"
-        + "      if(rr.length<pageLimit)break;\n"
         + "      await new Promise(r=>setTimeout(r,250));\n"
         + "    }\n"
         + "  return rows;};\n"
         + pullCalls
-        + (isDepo
-            ? "  console.log('%cMotion Deposit server filter | '+sd+' -> '+ed,'color:#0ff;font-weight:bold');\\n"
-            : "")
+        + (isDepo ? "" : "")
         + "  document.title=origTitle;\n"
         + "  const x=await fetchTO(PANEL+'/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(" + payload + ")},30000);\n"
         + "  const jr=await x.json(); console.log(jr);\n"
