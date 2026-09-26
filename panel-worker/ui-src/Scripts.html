@@ -1469,10 +1469,10 @@
           + "  let paid=[], create=[], depo=[];\n"
           + "  for(const vid of vids){\n"
           + "    console.log('%cMotion: deposit PAID '+vid+' | '+sd+' -> '+ed,'color:#0ff');\n"
-          + "    const pRows=await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'0',sort:{field:'paid_at',order:'desc'},vendor_id:vid},20,null,240000);\n"
+          + "    const pRows=await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'0',sort:{field:'paid_at',order:'desc'},vendor_id:vid},20,sd,240000,'paid_at');\n"
           + "    paid=paid.concat(pRows); depo=depo.concat(pRows);\n"
           + "    console.log('%cMotion: deposit CREATE '+vid+' | '+sd+' -> '+ed,'color:#0ff');\n"
-          + "    const cRows=await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'1',sort:{field:'created_at',order:'desc'},vendor_id:vid},20,null,240000);\n"
+          + "    const cRows=await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'1',sort:{field:'created_at',order:'desc'},vendor_id:vid},20,sd,240000,'created_at');\n"
           + "    create=create.concat(cRows); depo=depo.concat(cRows);\n"
           + "  }\n"
         
@@ -1591,7 +1591,7 @@
         //   dari tanggal mulai -- 2 halaman, bukan 1, sebagai jaring pengaman
         //   kalau urutan datanya ternyata tidak rapi sempurna.
         + "  const dayOf=r=>String((r&&(r.paid_at||r.created_at||r.approved_at))||'').split(' ')[0];\n"
-        + "  const pull=async(path,bd,pageLimit,stopBefore,timeoutMs=30000)=>{\n"
+        + "  const pull=async(path,bd,pageLimit,stopBefore,timeoutMs=30000,dateField)=>{\n"
         + "    const rows=[], seen=new Set(); let total=null, oldStreak=0;\n"
         + "    for(let p=0;p<500;p++){\n"
         + "      const r=await post(path,{...bd,page:p,start:rows.length},timeoutMs);\n"
@@ -1608,7 +1608,7 @@
         + "      if(!added)break;\n"
         + "      if(total!==null&&rows.length>=total)break;\n"
         + "      if(stopBefore){\n"
-        + "        const days=rr.map(dayOf).filter(Boolean);\n"
+        + "        const days=rr.map(r=>String((r&&(dateField?r[dateField]:(r.paid_at||r.created_at||r.approved_at)))||'').split(' ')[0]).filter(Boolean);\n"
         + "        if(days.length&&days.every(d=>d<stopBefore)){oldStreak++;if(oldStreak>=2)break;}else{oldStreak=0;}\n"
         + "      }\n"
         + "      await new Promise(r=>setTimeout(r,250));\n"
