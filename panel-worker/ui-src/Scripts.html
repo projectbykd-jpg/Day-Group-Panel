@@ -1614,13 +1614,13 @@
         + "  return rows;};\n"
         + pullCalls
         + (isDepo
-            ? "  const toYmd=v=>{const s=String(v??'').trim();if(!s)return '';if(/^\d{4}-\d{2}-\d{2}/.test(s))return s.slice(0,10);if(/^\d{4}\/\d{2}\/\d{2}/.test(s))return s.slice(0,10).replace(/\\//g,'-');if(/^\\d{1,2}\\/\\d{1,2}\\/\\d{4}/.test(s)){const m=s.match(/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})/);return m?m[3]+'-'+('0'+m[1]).slice(-2)+'-'+('0'+m[2]).slice(-2):'';}if(/^\\d{10,13}$/.test(s)){const n=Number(s),d=new Date(s.length===10?n*1000:n);if(!isNaN(d.getTime()))return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);}const d=new Date(s);return isNaN(d.getTime())?'':d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);};\\n"
-              + "  const inSelectedRange=d=>{const x=toYmd(d);return !!x&&x>=sd&&x<=ed;};\\n"
-              + "  const paidRows=depo.filter(r=>inSelectedRange(r&&r.paid_at));\\n"
-              + "  const createRows=depo.filter(r=>inSelectedRange(r&&r.created_at));\\n"
-              + "  const samples=depo.slice(0,5).map(r=>({paid_at:r&&r.paid_at,paidYmd:toYmd(r&&r.paid_at),created_at:r&&r.created_at,createdYmd:toYmd(r&&r.created_at)}));\\n"
-              + "  console.log('%cMotion Deposit filter tanggal | RAW '+depo.length+' | PAID '+paidRows.length+' | CREATE '+createRows.length+' | PILIHAN '+sd+' -> '+ed,'color:#0ff;font-weight:bold');\\n"
-              + "  console.table(samples);\\n"
+            ? "  const dateKey=v=>{const s=String(v??'').trim();if(!s)return '';if(s.length>=10&&s[4]==='-'&&s[7]==='-'&&s[10]!=='T')return s.slice(0,10);if(s.length>=10&&s[4]==='/'&&s[7]==='/')return s.slice(0,10).replaceAll('/','-');const d=new Date(s);if(Number.isNaN(d.getTime()))return '';return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);};\\n"
+              + "  const inSelectedRange=d=>{const x=dateKey(d);return !!x&&x>=sd&&x<=ed;};\\n"
+              + "  const paidRows=depo.filter(row=>inSelectedRange(row&&row.paid_at));\\n"
+              + "  const createRows=depo.filter(row=>inSelectedRange(row&&row.created_at));\\n"
+              + "  console.log('%cMotion Deposit | RAW '+depo.length+' | PAID '+paidRows.length+' | CREATE '+createRows.length+' | '+sd+' -> '+ed,'color:#0ff;font-weight:bold');\\n"
+              + "  console.table(depo.slice(0,10).map(row=>({reference_no:row&&row.reference_no,paid_at:row&&row.paid_at,paid_date:dateKey(row&&row.paid_at),created_at:row&&row.created_at,created_date:dateKey(row&&row.created_at)})));\\n"
+            : "")
             : "")
         + "  document.title=origTitle;\n"
         + "  const x=await fetchTO(PANEL+'/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(" + payload + ")},30000);\n"
