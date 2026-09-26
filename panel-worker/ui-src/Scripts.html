@@ -1464,17 +1464,17 @@
       // Solusi: pakai body yang TERBUKTI jalan (vendor_id saja), lalu saring
       // tanggal di sisi kita (backend panel sudah punya cek `inRange` sendiri).
       const pullCalls = isDepo
-        ? "  const d1=sd+' 00:00:00', d2=ed+' 23:59:59';\\n"
-          + "  const vids=VID.split(/[\\s,]+/).filter(Boolean);\\n"
-          + "  let paid=[], create=[], depo=[];\\n"
-          + "  for(const vid of vids){\\n"
-          + "    console.log('%cMotion: deposit PAID '+vid+' | '+sd+' -> '+ed,'color:#0ff');\\n"
-          + "    const pRows=await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'0',sort:{field:'paid_at',order:'desc'},vendor_id:vid},20,null,240000);\\n"
-          + "    paid=paid.concat(pRows); depo=depo.concat(pRows);\\n"
-          + "    console.log('%cMotion: deposit CREATE '+vid+' | '+sd+' -> '+ed,'color:#0ff');\\n"
-          + "    const cRows=await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'1',sort:{field:'created_at',order:'desc'},vendor_id:vid},20,null,240000);\\n"
-          + "    create=create.concat(cRows); depo=depo.concat(cRows);\\n"
-          + "  }\\n"
+        ? "  const d1=sd+' 00:00:00', d2=ed+' 23:59:59';\n"
+          + "  const vids=VID.split(/[\\s,]+/).filter(Boolean);\n"
+          + "  let paid=[], create=[], depo=[];\n"
+          + "  for(const vid of vids){\n"
+          + "    console.log('%cMotion: deposit PAID '+vid+' | '+sd+' -> '+ed,'color:#0ff');\n"
+          + "    const pRows=await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'0',sort:{field:'paid_at',order:'desc'},vendor_id:vid},20,null,240000);\n"
+          + "    paid=paid.concat(pRows); depo=depo.concat(pRows);\n"
+          + "    console.log('%cMotion: deposit CREATE '+vid+' | '+sd+' -> '+ed,'color:#0ff');\n"
+          + "    const cRows=await pull('/api/deposit/list/pga',{limit:20,count:0,date1:d1,date2:d2,filter_status:'1',filter_by:'1',sort:{field:'created_at',order:'desc'},vendor_id:vid},20,null,240000);\n"
+          + "    create=create.concat(cRows); depo=depo.concat(cRows);\n"
+          + "  }\n"
         
         : "  console.log('%cMotion: withdraw...','color:#0ff');\n"
           + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'},100);\n";
