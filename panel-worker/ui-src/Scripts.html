@@ -1482,7 +1482,7 @@
       // panel tetap bisa hitung keduanya (dan rekonsiliasi "TIDAK ADA DI
       // CREATE/PAID" otomatis tidak pernah salah tuduh).
       const payload = isDepo
-        ? "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,depoPaidRows:depo,depoCreateRows:depo}"
+        ? "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,depoPaidRows:paidRows,depoCreateRows:createRows}"
         : "{action:'lapMotionImport',token:TOKEN,startDate:sd,endDate:ed,wdRows:wd}";
       const okMsg = isDepo
         ? "'Motion (Deposit) terkirim ke panel OK\\nDP '+jr.dp+' · Pending '+jr.pending+'\\n\\nBuka panel -> Lap Motion -> Muat Ulang.'"
@@ -1612,6 +1612,13 @@
         + "      await new Promise(r=>setTimeout(r,250));\n"
         + "    }\n"
         + "  return rows;};\n"
+        + (isDepo
+            ? "  const dateOnly=v=>String(v||'').trim().split(/[ T]/)[0];\n"
+              + "  const inSelectedRange=d=>{const x=dateOnly(d);return !!x&&x>=sd&&x<=ed;};\n"
+              + "  const paidRows=depo.filter(r=>inSelectedRange(r&&r.paid_at));\n"
+              + "  const createRows=depo.filter(r=>inSelectedRange(r&&r.created_at));\n"
+              + "  console.log('%cMotion Deposit filter tanggal | raw '+depo.length+' | PAID '+paidRows.length+' | CREATE '+createRows.length+' | '+sd+' -> '+ed,'color:#0ff;font-weight:bold');\n"
+            : "")
         + pullCalls
         + "  document.title=origTitle;\n"
         + "  const x=await fetchTO(PANEL+'/api',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(" + payload + ")},30000);\n"
