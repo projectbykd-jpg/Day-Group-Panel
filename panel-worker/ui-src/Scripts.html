@@ -1501,8 +1501,11 @@
         + "  let MTOKEN=" + JSON.stringify(mtoken) + "||findToken();\n"
         + "  if(!MTOKEN){alert('Token Motion belum diisi di Setting, dan tidak ketemu otomatis dari sesi browser ini. Isi Token Motion di menu Setting panel (salin x-access-token dari Network tab), atau pastikan sudah LOGIN di tab Motion ini.');return;}\n"
         + "  const p2=n=>('0'+n).slice(-2), td=d=>d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());\n"
-        + "  const sd=prompt('Tanggal MULAI (YYYY-MM-DD)',td(new Date())); if(!sd)return;\n"
-        + "  const ed=prompt('Tanggal AKHIR (YYYY-MM-DD)',sd); if(!ed)return;\n"
+        + (isDepo
+            ? "  const sd=prompt('Tanggal DEPOSIT (YYYY-MM-DD)',td(new Date())); if(!sd)return;\\n"
+              + "  const ed=sd;\\n"
+            : "  const sd=prompt('Tanggal MULAI (YYYY-MM-DD)',td(new Date())); if(!sd)return;\\n"
+              + "  const ed=prompt('Tanggal AKHIR (YYYY-MM-DD)',sd); if(!ed)return;\\n")
         + "  const H={'content-type':'application/json','x-access-token':MTOKEN};\n"
         + "  const rowsOf=j=>{if(Array.isArray(j&&j.data))return j.data;const d=j&&j.data&&j.data.data;return Array.isArray(d)?d:[];};\n"
         + "  const fetchTO=async(url,opts,ms)=>{const ac=new AbortController();const to=setTimeout(()=>ac.abort(),ms);try{return await fetch(url,{...opts,signal:ac.signal});}finally{clearTimeout(to);}};\n"
