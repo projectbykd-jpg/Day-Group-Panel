@@ -1472,7 +1472,7 @@
           + "  let depo=[];\n"
           + "  for(const vid of vids){\n"
           + "    console.log('%cMotion: deposit vendor '+vid+'...','color:#0ff');\n"
-          + "    depo=depo.concat(await pullDeposit('/api/deposit/list/pga',{limit:100,count:0,vendor_id:vid},100));\n"
+          + "    depo=depo.concat(await pullDeposit('/api/deposit/list/pga',{limit:20,count:0,vendor_id:vid},20));\n"
           + "  }\n"
         : "  console.log('%cMotion: withdraw...','color:#0ff');\n"
           + "  const wd=await pull('/api/withdraw/list/pga',{limit:100,count:0,date1:sd,date2:ed,filter_status:'1',filter_by:'0'},100);\n";
